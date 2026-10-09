@@ -323,6 +323,7 @@ class TemplateRenderBody(BaseModel):
     displayName: str = ""
     owner: str = ""
     costCenter: str = ""
+    egressDomain: str = ""
 
 
 @app.post("/api/templates/render", status_code=201)

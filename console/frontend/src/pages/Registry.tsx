@@ -58,7 +58,7 @@ export default function RegistryPage() {
 
   /** 注册新 agent：表单生成模板 YAML → 部署（YAML 落盘 + 导入网关 + 元数据入库）。 */
   const [showRegister, setShowRegister] = useState(false)
-  const [reg, setReg] = useState({ name: '', displayName: '', owner: '', costCenter: '', description: '' })
+  const [reg, setReg] = useState({ name: '', displayName: '', owner: '', costCenter: '', description: '', egressDomain: '' })
   const [registering, setRegistering] = useState(false)
   const [templateId, setTemplateId] = useState('')
   const [tplList, setTplList] = useState<{ id: string; displayName: string; description: string }[]>([])
@@ -75,7 +75,7 @@ export default function RegistryPage() {
         const t = await fetch('/api/console/templates/render', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ templateId, name, displayName: reg.displayName.trim(), owner: reg.owner.trim(), costCenter: reg.costCenter.trim() }),
+          body: JSON.stringify({ templateId, name, displayName: reg.displayName.trim(), owner: reg.owner.trim(), costCenter: reg.costCenter.trim(), egressDomain: reg.egressDomain.trim() }),
         }).then((r) => { if (!r.ok) throw new Error(`${r.status}: template render failed`); return r.json() })
         doc = t.yaml as Record<string, unknown>
       } else {
@@ -110,7 +110,7 @@ export default function RegistryPage() {
       }
       await api.agentCreate(doc)
       setShowRegister(false)
-      setReg({ name: '', displayName: '', owner: '', costCenter: '', description: '' })
+      setReg({ name: '', displayName: '', owner: '', costCenter: '', description: '', egressDomain: '' })
       navigate(`/agents/${name}`)
     } catch (e) {
       setErr(String(e))
@@ -203,6 +203,10 @@ export default function RegistryPage() {
             {!templateId && (
               <Input value={reg.description} onChange={(e) => setReg({ ...reg, description: e.target.value })}
                 placeholder="职责描述（写入 SOUL 护栏，可空）" className={FORM_INPUT_CLS + ' md:col-span-2'} />
+            )}
+            {templateId && (
+              <Input value={reg.egressDomain} onChange={(e) => setReg({ ...reg, egressDomain: e.target.value })}
+                placeholder="目标站点域名（egress 白名单，如 data.example.com，可空）" className={FORM_INPUT_CLS + ' md:col-span-2'} />
             )}
             <div className="flex gap-2 md:col-span-2">
               <Button variant="signal" onClick={register} disabled={registering || !reg.name.trim()}>

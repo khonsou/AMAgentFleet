@@ -18,7 +18,7 @@ TEMPLATE_DIR = os.environ.get(
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ), "agents", "templates"),
 )
 
-_PLACEHOLDER = re.compile(r"\{\{\s*(name|displayName|owner|costCenter)\s*\}\}")
+_PLACEHOLDER = re.compile(r"\{\{\s*(name|displayName|owner|costCenter|egressDomain)\s*\}\}")
 
 
 def list_templates() -> list[dict[str, Any]]:
@@ -51,8 +51,13 @@ def render_template(template_id: str, values: dict[str, str]) -> dict[str, Any]:
         "displayName": values.get("displayName") or values.get("display_name") or name,
         "owner": values.get("owner") or "",
         "costCenter": values.get("costCenter") or values.get("cost_center") or "",
+        "egressDomain": (values.get("egressDomain") or values.get("egress_domain") or "").strip(),
     }
     text = _PLACEHOLDER.sub(lambda m: repl.get(m.group(1), ""), text)
     doc = yaml.safe_load(text)
     doc.setdefault("metadata", {})["name"] = name
+    # 未提供的占位符（如 egressDomain）渲染为空串，从列表里剔除，避免空域名入白名单
+    egress = doc.get("egress")
+    if isinstance(egress, list):
+        doc["egress"] = [e for e in egress if isinstance(e, str) and e.strip()]
     return doc
