@@ -35,6 +35,7 @@
 | [docs/spikes/](docs/spikes/) | 验证性实验：0001 DeerFlow 生命周期 ✅ / 0002 ADR-0008 开门验证 ✅ / 0003 任务池验收 ✅ |
 | [AGENTS.md](AGENTS.md) | 仓库约定：目录结构、安全红线、开发规范（人类与 AI 编码助手共用） |
 | [deploy/DEPLOY.md](deploy/DEPLOY.md) | **生产部署手顺**（运维入口）：上游关系、compose、验收 checklist、2-ECS/RDS 变体、安全红线 |
+| [RELEASE.md](RELEASE.md) | **发布说明**（运维入口）：仓库地图、按 tag 发版、底座升级、回滚、发布前检查清单 |
 
 ## ADR 一览
 
