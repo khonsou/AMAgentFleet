@@ -1,0 +1,128 @@
+name: am-agent-fleet
+
+# AM Agent Fleet 生产编排（ADR-0006：ECS + Docker Compose）
+# 依赖：Docker >= 24、Compose >= 2.24。用法见 DEPLOY.md。
+#
+# 拓扑（单机 all-in-one 为 MVP 默认；2-ECS 拆分手顺见 DEPLOY.md §5）：
+#   postgres        平台数据库（agent/任务池/审计，网关共用）
+#   gateway         DeerFlow 网关（执行底座，来自 khonsou/deer-flow am-fleet 分支）
+#   control-plane   Registry + 任务池 + Dispatcher + Scheduler（:8003）
+#   console-backend Console API 透传层（:8002）
+#   console-web     静态前端 + /api 反代（对公网暴露仅此端口）
+
+x-pg-dsn: &pg-dsn postgresql://postgres:${PG_PASSWORD:?请在 .env 设置 PG_PASSWORD}@postgres:5432/deerflow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: deerflow
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  gateway:
+    # 基线锁定：khonsou/deer-flow tag am-fleet-base-v1（上游 89c9f08 + 配置模板）
+    # 升级底座 = fork 打新 tag 后改下面这个 tag 并 docker compose up -d --build gateway
+    build:
+      context: https://github.com/khonsou/deer-flow.git#refs/tags/am-fleet-base-v1
+      dockerfile: backend/Dockerfile
+      args:
+        UV_EXTRAS: ${UV_EXTRAS:-}
+    image: am-fleet-gateway:am-fleet-base-v1
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        cp /app/config.fleet.yaml /app/backend/config.yaml
+        mkdir -p /etc/deerflow
+        [ -f /etc/deerflow/extensions_config.json ] || echo '{}' > /etc/deerflow/extensions_config.json
+        cd backend
+        PYTHONPATH=/app:/app/backend uv run --no-sync uvicorn app.gateway.app:app \
+          --host 0.0.0.0 --port 8001 --timeout-graceful-shutdown 10
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?请在 .env 设置 DEEPSEEK_API_KEY}
+      DATABASE_URL: *pg-dsn
+      DEER_FLOW_PROJECT_ROOT: /app
+      DEER_FLOW_HOME: /app/backend/.deer-flow
+      DEER_FLOW_EXTENSIONS_CONFIG_PATH: /etc/deerflow/extensions_config.json
+      # 安全提醒：MVP 阶段网关鉴权关闭（P4 OIDC 落地前），
+      # 必须靠安全组限制来源 IP，不得对公网裸奔。见 DEPLOY.md §6。
+      DEER_FLOW_AUTH_DISABLED: ${DEER_FLOW_AUTH_DISABLED:-1}
+    volumes:
+      - deer-flow-home:/app/backend/.deer-flow
+      # MCP 注册表渲染产物（control-plane 写、网关读，共享卷）
+      - deerflow-cfg:/etc/deerflow
+      # 舰队协作工具 agent_spawn/agent_message（ADR-0010），来自本仓库
+      - ../fleet_tools.py:/app/fleet_tools.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 90s
+    restart: unless-stopped
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.fleet-python
+    image: am-fleet-python:1
+    working_dir: /app/control-plane
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003
+    environment:
+      FLEET_PG_DSN: *pg-dsn
+      FLEET_GATEWAY_URL: http://gateway:8001
+      FLEET_DEERFLOW_ROOT: /etc/deerflow
+    volumes:
+      - deerflow-cfg:/etc/deerflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8003/api/templates')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  console-backend:
+    image: am-fleet-python:1
+    working_dir: /app/console/backend
+    command: uvicorn main:app --host 0.0.0.0 --port 8002
+    environment:
+      CONSOLE_PG_DSN: *pg-dsn
+      CONSOLE_GATEWAY_URL: http://gateway:8001
+      CONSOLE_CONTROL_PLANE_URL: http://control-plane:8003
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8002/api/console/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  console-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.console-frontend
+    ports:
+      - "${FLEET_BIND:-0.0.0.0}:${FLEET_PORT:-8080}:80"
+    depends_on:
+      console-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  deer-flow-home:
+  deerflow-cfg:

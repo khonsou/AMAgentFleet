@@ -1,0 +1,15 @@
+# control-plane + console-backend 共用镜像（构建上下文 = AMAgentFleet 仓库根）
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY deploy/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# 平台代码（fleet_tools.py 同时被网关容器经 bind mount 复用，见 docker-compose.yml）
+COPY fleet_tools.py /app/fleet_tools.py
+COPY agents /app/agents
+COPY control-plane /app/control-plane
+COPY console/backend /app/console/backend
+
+EXPOSE 8002 8003

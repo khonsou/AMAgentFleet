@@ -1,0 +1,12 @@
+# Console 前端：构建静态产物 + nginx 伺服（构建上下文 = AMAgentFleet 仓库根）
+FROM node:20-alpine AS build
+WORKDIR /fe
+COPY console/frontend/package.json console/frontend/package-lock.json ./
+RUN npm ci
+COPY console/frontend ./
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /fe/dist /usr/share/nginx/html
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

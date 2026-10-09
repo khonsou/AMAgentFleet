@@ -1,5 +1,6 @@
 # 机密 / 本地密钥
 control-plane/secrets/
+deploy/.env
 
 # spike 实验区：deer-flow 第三方源码（2.2G）、本地 PG 数据、日志（含真实 slug，绝不入库）
 spike/

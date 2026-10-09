@@ -1,0 +1,12 @@
+# 构建上下文 = 仓库根。排除无关/庞大/敏感内容，加速构建并防止误入镜像。
+spike/
+design-research/
+.git/
+**/__pycache__/
+**/*.pyc
+console/frontend/node_modules/
+console/frontend/dist/
+console/backend/.venv/
+console/logs/
+control-plane/secrets/
+deploy/.env

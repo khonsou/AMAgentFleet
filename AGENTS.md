@@ -13,7 +13,7 @@ deepseek-agent-fleet-mvp-design.md # 总体设计文档（当前真理）
 docs/adr/                          # 架构决策记录（不可变，推翻只能新增 ADR）
 docs/adr/NNNN-title.md
 docs/spikes/                       # 验证性实验（0001 已通过）
-spike/deer-flow/                   # DeerFlow 底座（spike 部署，含 config.yaml/.env）
+spike/deer-flow/                   # DeerFlow 底座（开发期快照，含 config.yaml/.env；生产用 fork tag am-fleet-base-v1，见 deploy/）
 spike/pgdata/                      # 内嵌 PostgreSQL 数据目录（pgserver 提供二进制）
 console/                           # Fleet Console v0（已可用）
 console/backend/main.py            #   FastAPI:8002 —— 只读 PG + 转发网关:8001
@@ -34,7 +34,7 @@ agents/ ✅           # agent YAML 定义（版本化，每个 agent 一个文�
 gateway/             # MCP Gateway：工具白名单校验、令牌网关侧注入、审计
 vault/               # Token Vault：OAuth token 托管（KMS 加密）
 skills/              # SKILL.md 能力包（同步 OSS）
-deploy/              # Docker Compose / 阿里云资源 IaC
+deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + Dockerfile + .env.example；底座镜像按 khonsou/deer-flow tag am-fleet-base-v1 构建）
 ```
 
 ## 安全红线（任何代码不得违反）
