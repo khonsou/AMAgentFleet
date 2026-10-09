@@ -1,0 +1,24 @@
+# 机密 / 本地密钥
+control-plane/secrets/
+
+# spike 实验区：deer-flow 第三方源码（2.2G）、本地 PG 数据、日志（含真实 slug，绝不入库）
+spike/
+spike/deer-flow/extensions_config.json
+
+# 内部设计调研资料（截图/mockup，非交付物）
+design-research/
+
+# Python
+__pycache__/
+*.pyc
+console/backend/.venv/
+
+# Node
+console/frontend/node_modules/
+console/frontend/dist/
+
+# 日志与系统文件
+*.log
+*.pid
+.DS_Store
+console/logs/

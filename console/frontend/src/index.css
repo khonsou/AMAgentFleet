@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ===== 机架仪器调色板（中间色偏深 · 哑光石墨） ===== */
+    --chassis: 220 5% 11%;        /* 页面机箱底 #1B1C1E */
+    --rack: 225 7% 9%;            /* 顶栏机架 #16171A */
+    --panel: 210 5% 15%;          /* 模块面板 #242628 */
+    --inset: 220 5% 13%;          /* 面板内凹陷行 #1F2022 */
+    --raised: 216 5% 18%;         /* 凸起控件面 #2C2E31 */
+    --hairline: 220 5% 24%;       /* 发丝线 #3A3C40 */
+    --hairline-soft: 210 4% 20%;  /* 面板内分隔线 */
+    --ink: 60 3% 90%;             /* 主文字（暖白） #E8E8E4 */
+    --ink-2: 100 3% 60%;          /* 次文字/丝印 #9A9C96 */
+    --ink-3: 86 3% 43%;           /* 弱文字 #6E7069 */
+    --signal: 16 100% 56%;        /* 信号橙：唯一强调色 #FF5C1F */
+    --signal-foreground: 30 33% 7%;
+    --led-green: 142 69% 58%;
+    --led-amber: 43 96% 56%;
+    --led-cyan: 187 80% 60%;
+    --led-red: 0 84% 63%;
+
+    /* ===== shadcn token 映射 ===== */
+    --background: var(--chassis);
+    --foreground: var(--ink);
+    --card: var(--panel);
+    --card-foreground: var(--ink);
+    --popover: var(--panel);
+    --popover-foreground: var(--ink);
+    --primary: var(--signal);
+    --primary-foreground: var(--signal-foreground);
+    --secondary: var(--raised);
+    --secondary-foreground: var(--ink);
+    --muted: var(--raised);
+    --muted-foreground: var(--ink-2);
+    --accent: var(--raised);
+    --accent-foreground: var(--ink);
+    --destructive: var(--led-red);
+    --destructive-foreground: var(--ink);
+    --border: var(--hairline);
+    --input: var(--hairline);
+    --ring: var(--signal);
+    --radius: 0.1875rem;          /* 3px：仪器面板的直角感 */
+    --sidebar-background: var(--panel);
+    --sidebar-foreground: var(--ink);
+    --sidebar-primary: var(--signal);
+    --sidebar-primary-foreground: var(--signal-foreground);
+    --sidebar-accent: var(--raised);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: var(--hairline);
+    --sidebar-ring: var(--signal);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: hsl(var(--signal) / 0.3);
+  }
+}
+
+@layer components {
+  /* 丝印标签：面板上的蚀刻小字 */
+  .silk {
+    font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--ink-3));
+  }
+  .silk b {
+    color: hsl(var(--ink-2));
+    font-weight: 500;
+  }
+
+  /* 控制台链接：暖白 + 点状下划线，hover 变信号橙 */
+  .link-console {
+    color: hsl(var(--ink-2));
+    text-decoration: none;
+    border-bottom: 1px dotted hsl(var(--ink-3));
+    padding-bottom: 1px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .link-console:hover {
+    color: hsl(var(--signal));
+    border-color: hsl(var(--signal));
+  }
+
+  /* LED 指示灯 */
+  .led {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    flex: none;
+    background: hsl(var(--ink-3));
+  }
+  .led-green { background: hsl(var(--led-green)); box-shadow: 0 0 6px hsl(var(--led-green) / 0.55); }
+  .led-amber { background: hsl(var(--led-amber)); box-shadow: 0 0 6px hsl(var(--led-amber) / 0.5); }
+  .led-cyan  { background: hsl(var(--led-cyan));  box-shadow: 0 0 6px hsl(var(--led-cyan) / 0.5); }
+  .led-red   { background: hsl(var(--led-red));   box-shadow: 0 0 6px hsl(var(--led-red) / 0.5); }
+  .led-off   { background: hsl(var(--ink-3) / 0.5); box-shadow: none; }
+  .led-blink { animation: led-blink 1.6s ease-in-out infinite; }
+  @keyframes led-blink { 50% { opacity: 0.35; } }
+
+  /* 面板四角螺丝（配合 Panel 使用） */
+  .panel-screws {
+    background-image:
+      radial-gradient(circle at 35% 35%, hsl(220 5% 30%), hsl(220 5% 16%)),
+      radial-gradient(circle at 35% 35%, hsl(220 5% 30%), hsl(220 5% 16%)),
+      radial-gradient(circle at 35% 35%, hsl(220 5% 30%), hsl(220 5% 16%)),
+      radial-gradient(circle at 35% 35%, hsl(220 5% 30%), hsl(220 5% 16%));
+    background-size: 5px 5px;
+    background-position: 6px 6px, calc(100% - 6px) 6px, 6px calc(100% - 6px), calc(100% - 6px) calc(100% - 6px);
+    background-repeat: no-repeat;
+  }
+
+  /* LCD 屏：YAML/代码编辑区，比凹陷更深一档 */
+  .lcd {
+    background: hsl(220 6% 8%);
+    box-shadow: inset 0 2px 8px hsl(220 10% 4% / 0.6);
+    font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  /* 原生 select 统一为控件面 */
+  select.ctl {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, hsl(var(--ink-3)) 50%),
+      linear-gradient(135deg, hsl(var(--ink-3)) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 26px;
+  }
+
+  /* 读数带刻度装饰 */
+  .ticks { display: flex; gap: 3px; margin-top: 8px; }
+  .ticks i { width: 3px; height: 5px; background: hsl(var(--hairline)); display: block; }
+  .ticks i.on { background: hsl(var(--ink-2)); }
+
+  /* 任务树缩进导轨 */
+  .task-rail {
+    margin-left: 22px;
+    border-left: 1px solid hsl(var(--hairline));
+    padding-left: 14px;
+    padding-top: 6px;
+  }
+}

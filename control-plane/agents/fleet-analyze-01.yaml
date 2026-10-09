@@ -1,0 +1,32 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: fleet-analyze-01
+  displayName: 分析师
+  owner: qa-team
+  costCenter: QA-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: fleet-analyze-01
+    display_name: 分析师
+    description: 协作测试：分析师
+    model: deepseek-chat
+    model_settings:
+      temperature: 0.1
+    mcp_plugins:
+    - http
+    skills: []
+    soul: 你是数据分析师。基于读取的数据做统计与异常指出，结论+依据，输出控制在 500 字以内——摘要即交付物。
+    memory_enabled: true
+egress:
+- timeline.angrymiao.com
+triggers:
+  web: true
+identity:
+  mode: obo
+  allowedCallers:
+  - qa-team
+budget:
+  maxTokensPerRun: 200000

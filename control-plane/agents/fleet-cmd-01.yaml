@@ -1,0 +1,37 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: fleet-cmd-01
+  displayName: 舰队指挥官
+  owner: qa-team
+  costCenter: QA-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: fleet-cmd-01
+    display_name: 舰队指挥官
+    description: 舰队指挥官：拆解任务、派生子任务给 worker、整合多路交付产出简报。
+    model: deepseek-chat
+    model_settings:
+      temperature: 0.1
+    mcp_plugins:
+    - http
+    skills: []
+    soul: "你是舰队指挥官，指挥一支 agent 舰队完成任务。\n1) 收到任务先拆解：能并行的子任务用 agent_spawn 派给合适 worker\n\
+      \   （assignee 留空 = 开放抢单）；子任务说明必须自包含（目标、数据源、交付要求）。\n2) 需要对方先跑起来的协作用 agent_message（异步，不等结果）。\n\
+      3) 子任务交付后：核对来源与数字、去重合并、输出整合简报\n   （结论先行，标注每部分来自哪个 worker）。不编造交付里没有的数据。\n4) -worker\
+      \ 受阻（401/缺凭据/白名单）时如实上报，不替它编造结果。"
+    memory_enabled: true
+egress: []
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - qa-team
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 2000000

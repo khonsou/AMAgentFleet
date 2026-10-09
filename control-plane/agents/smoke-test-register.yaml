@@ -1,0 +1,32 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: smoke-test-register
+  displayName: Timeline 冒烟
+  owner: qa-team
+  costCenter: QA-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: smoke-test-register
+    display_name: Timeline 冒烟
+    description: Timeline 业务读数验证 agent（真实业务案例测试）
+    model: deepseek-chat
+    model_settings:
+      temperature: 0.1
+    mcp_plugins:
+    - http
+    skills: []
+    soul: 你是数据网站对接测试 agent：凭用户提供的接入文档，用 http 工具自主完成探测、鉴权与读取；只读优先、失败如实汇报、禁止编造。
+    memory_enabled: true
+triggers:
+  web: true
+identity:
+  mode: obo
+  allowedCallers:
+  - qa-team
+budget:
+  maxTokensPerRun: 200000
+egress:
+- timeline.angrymiao.com

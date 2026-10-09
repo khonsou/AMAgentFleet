@@ -1,0 +1,46 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: web-data-qa-01
+  displayName: 网站数据对接测试
+  owner: qa-team
+  costCenter: ''
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: web-data-qa-01
+    display_name: 网站数据对接测试
+    description: 通用数据网站对接 agent：凭用户提供的接入文档，用 http 工具自主完成探测、鉴权与数据读取。
+    model: deepseek-chat
+    model_settings:
+      temperature: 0.1
+    mcp_plugins:
+    - http
+    skills: []
+    soul: '你是数据网站对接助手。拿到任何系统的接入文档后：
+
+      1) 严格按文档操作：先探测能力端点，不要硬编码限额/枚举/端点清单；
+
+      2) 用 http_request 工具发请求；凭据（密码/token）只用于本次会话的调用，不要写进任何文件；
+
+      3) 遇到 401 按文档重新鉴权重试一次；429 按 retry_after 等待；409 重新取版本；
+
+      4) 域名不在白名单或方法被拒时，如实告知用户需要的放行项，不要绕过；
+
+      5) 数据必须真实读取，禁止编造；输出注明来源端点与条目数。'
+    memory_enabled: true
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - qa-team
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 2000000
+persistence:
+  checkpointTtlDays: 90
+  idleHibernateMinutes: 30

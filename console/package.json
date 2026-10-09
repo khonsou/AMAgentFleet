@@ -1,0 +1,9 @@
+{
+  "name": "agent-fleet-console",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent Fleet Console — fleet 看板 + agent 会话详情（阿里云多 Agent 舰队平台）",
+  "scripts": {
+    "dev": "bash scripts/dev.sh"
+  }
+}

@@ -1,0 +1,33 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: fleet-collect-01
+  displayName: 采集员
+  owner: qa-team
+  costCenter: QA-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: fleet-collect-01
+    display_name: 采集员
+    description: 协作测试：采集员
+    model: deepseek-chat
+    model_settings:
+      temperature: 0.1
+    mcp_plugins:
+    - http
+    skills: []
+    soul: 你是数据采集员。用 http 工具读数据，只输出事实清单（条目、关键字段），输出控制在 500 字以内——你的全量过程不入上级上下文，摘要即交付物。
+    memory_enabled: true
+egress:
+- timeline.angrymiao.com
+triggers:
+  web: true
+  cron: []
+identity:
+  mode: obo
+  allowedCallers:
+  - qa-team
+budget:
+  maxTokensPerRun: 200000
