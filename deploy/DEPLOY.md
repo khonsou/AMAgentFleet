@@ -10,7 +10,7 @@
 
 | 组件 | 来源 | 说明 |
 |------|------|------|
-| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1` | fork 零改源码，仅加网关配置模板 `config.fleet.yaml`；基线 = 上游 `89c9f08`（2026-10-08），验证方式见 fork 的 FLEET.md |
+| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1` | fork 仅作本项目的部署基线镜像来源，不向上游贡献；基线 = 上游 `89c9f08`（2026-10-08），验证方式见 fork 的 FLEET.md |
 | control-plane / Console / fleet_tools | 本仓库 | 平台自有代码 |
 | PostgreSQL | `postgres:16-alpine` 官方镜像 | ECS 自建（容器），换 RDS 见 §5.3 |
 
