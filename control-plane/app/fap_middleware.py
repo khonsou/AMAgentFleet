@@ -158,7 +158,14 @@ def _bucket_key(request: Request) -> str:
 
 
 async def rate_limit_middleware(request: Request, call_next):
-    """简单令牌桶：per-PAT（无 PAT per-IP），60 req/min 默认可配。"""
+    """简单令牌桶：per-PAT（无 PAT per-IP），60 req/min 默认可配。
+
+    loopback 无 Authorization 的内部流量（Console 后端代理、dispatcher 本机
+    调用）与 QA-7 的 PAT 放行同口径，不进限速桶——Console 多页 5s 轮询
+    共享同一 ip 桶，60/min 会被 UI 自身打满。
+    """
+    if _bearer(request) is None and _client_ip(request) == "127.0.0.1":
+        return await call_next(request)
     now = time.monotonic()
     window = 60.0
     limit = RATE_LIMIT_PER_MINUTE
