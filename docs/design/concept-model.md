@@ -145,3 +145,9 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   fallback，非错误）。层级词全部来自 §4 词表，零新概念。实现：by-thread
   接口补带 task.input；验收条 ReviewBar 与层级眉标共用同一份 reviewContext
   （页面级统一拉取）。
+- **2026-10-10 详情页层级眉标补全（三页对齐）**：层级链上每个有父级的详情页
+  都应有 breadcrumb——TaskDetail 新增 `TASK #N`（有父任务时
+  `TASK #父 › TASK #N`，父任务可点击；原 meta 行里的「父任务 #N」迁入
+  breadcrumb 不再重复显示）；AgentDetail 本身处于链顶（agent 定义无父实体），
+  无 breadcrumb，仅将眉标统一为纯 `MODULE 02 / REGISTRY`（实体身份由 h1 承担，
+  与 Thread/Task 页新模式一致）。向下链接（loop→thread、task→loop）此前已齐。

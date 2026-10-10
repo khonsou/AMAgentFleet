@@ -133,7 +133,7 @@ export default function AgentDetailPage() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <Link to="/" className="link-console font-mono text-xs">← FLEET BOARD</Link>
-          <div className="silk mt-2">MODULE&nbsp;02&nbsp;/&nbsp;REGISTRY&nbsp;·&nbsp;AGENT</div>
+          <div className="silk mt-2">MODULE&nbsp;02&nbsp;/&nbsp;REGISTRY</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">
             {r?.display_name || name}
             <span className="ml-3 font-mono text-sm font-normal text-ink-3">{name}</span>
