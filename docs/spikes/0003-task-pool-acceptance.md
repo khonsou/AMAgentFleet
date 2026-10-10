@@ -184,6 +184,32 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
   写代码，agent 自己沉淀的技能跨会话可用。语义三态已固化进
   AGENTS.md「DeerFlow 配置语义坑」，禁止无审查写 `[]`。
 
+## 2026-10-10 P3b 验收（FAP v1 第三方 agent 接入面）
+
+- **范围**：QA 定案落地（QA-1 方案 A / QA-2 D 域维持网关原生 / QA-3
+  方案 a / QA-4/5/6/7 确认），控制面 8003 新增六个 FAP v1 接口，六个
+  任务全落地并逐项实测。
+- **落地清单**：H1 `/api/meta` 自发现（capabilities 动态、
+  `server_version` 统一口径）；H2 `/api/agent-doc`（机器可读接入文档）；
+  H3 `X-Protocol-Version` 全响应头；幂等（`fap_idempotency_keys` 24h
+  窗口，同键同 actor 回放返回原响应并带 `X-Idempotent-Replay`，跨
+  actor 409）；限速（per-PAT/IP 令牌桶 60/min，超限 429 + `retry_after`）；
+  审计 `source`/`actor` 经 contextvar 透传落 `audit_events.detail`；PAT
+  鉴权（复用同库 `personal_access_tokens`，scope 仅 read/write 且
+  在控制面自校验，`/api/pats` 限 loopback，Console SETTINGS 页签发/
+  吊销）。
+- **途中修复 3 个 bug**：a) loopback 内部流量共享 IP 限速桶被 Console
+  轮询打满导致 429 闪断（内部流量豁免，与 QA-7 同口径）；b) `scopes`
+  是 json（非 jsonb）列，asyncpg 返回字符串导致 Settings 页渲染崩溃
+  （一闪后空白页）；c) 幂等回放响应 jsonb 双编码（入库 `$6::jsonb`，
+  取回 str 再 `json.loads`）。
+- **端到端实测**：LAN IP 无 PAT 401 / read PAT 写 403 / 伪造 PAT 401 /
+  write PAT 全流程 200；幂等重试不重复建任务（DB 核验）；65 连打末
+  5 次 429；参考客户端 `examples/fap-quickstart.mjs`（零依赖 Node≥22）
+  经 LAN IP 零先验跑通全流程 + `--demo` 幂等回放；LAN 验收后控制面
+  已绑回 127.0.0.1。Console 冒烟（发起→人领→交付→采纳）无回归。
+- **边界声明**：FAP 公网暴露待 P4 OIDC（ADR-0011 第 5 条）。
+
 ## 遗留（2026-10-09 晚更新：前五项已闭环）
 
 ~~1. dispatcher 多消费者~~ ✅ 已落地：`FLEET_DISPATCHER_WORKERS`（默认 3）并行消费，
