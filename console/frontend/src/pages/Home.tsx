@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { Led, StatusPill, taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/Status'
 
-/** Fleet 任务看板：以协作根任务为锚的任务流。
+/** Fleet 任务看板：以协作根任务为锚的任务池。
  *  指挥官在顶，worker 在下方按线程树流动；无父任务的是独立任务。
  *  设计参考：Hermes Kanban（根任务+扇出子任务同视图可见）/ agentboard（舰队级可见性）。
  *  视觉：机架仪器语言 —— 状态 = LED，数据 = 表盘读数，面板 = 模块。 */
@@ -123,7 +123,7 @@ function TaskNode({ node, depth }: { node: Node; depth: number }) {
               <Link to={`/agents/${t.agent_name}`} onClick={(e) => e.stopPropagation()}
                 className="link-console font-mono text-xs text-ink">{t.agent_name}</Link>
             )}
-            <span className="font-mono text-[11px] text-ink-3">#{t.id} · {t.source}</span>
+            <span className="font-mono text-[11px] text-ink-3">task #{t.id} · {t.source}</span>
             <StatusPill color={st.led} blink={st.blink}>{st.label}</StatusPill>
             <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-3">
               {fmtTokens(t.tokens)} tok · {fmtTime(t.created_at)}
@@ -136,7 +136,7 @@ function TaskNode({ node, depth }: { node: Node; depth: number }) {
           <div className="mt-1.5 flex items-center justify-between font-mono text-[10.5px] text-ink-3">
             {t.thread_id ? (
               <Link to={`/threads/${t.thread_id}`} onClick={(e) => e.stopPropagation()}
-                className="link-console">thread {t.thread_id.slice(0, 8)} →</Link>
+                className="link-console">会话 {t.thread_id.slice(0, 8)} →</Link>
             ) : <span>{t.status === 'queued' ? '未开始' : ''}</span>}
             <span>task #{t.id} 详情 →</span>
           </div>
@@ -196,7 +196,7 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
                 <LinkifyText className="block whitespace-pre-wrap text-[13px] leading-relaxed text-ink" text={l.deliverable || ''} />
               </div>
               {l.thread_id && (
-                <Link to={`/threads/${l.thread_id}`} className="link-console mt-1.5 inline-block font-mono text-[11px]">查看对话 →</Link>
+                <Link to={`/threads/${l.thread_id}`} className="link-console mt-1.5 inline-block font-mono text-[11px]">会话 {l.thread_id.slice(0, 8)} →</Link>
               )}
               {detail.task.pool_status === 'review' && (
                 <div className="mt-2.5 flex items-center gap-2">
@@ -301,7 +301,7 @@ export default function Home() {
           <div className="silk">MODULE <b>01</b> / FLEET BOARD</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">任务看板</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            协作任务流：父任务在顶部，子任务（agent 可拆单协作）在下方流动。点击任意节点看完整详情。
+            任务池：父任务在顶部，子任务（agent 可拆单协作）在下方流动。点击任意节点看完整详情。
           </p>
         </div>
         <div className="silk">4S&nbsp;REFRESH</div>
@@ -355,7 +355,7 @@ export default function Home() {
 
       {/* 过滤开关 */}
       <div className="mb-3 mt-5 flex flex-wrap items-center gap-2">
-        <span className="silk mr-1.5">任务流&nbsp;/&nbsp;TASK&nbsp;STREAM</span>
+        <span className="silk mr-1.5">任务池&nbsp;/&nbsp;TASK&nbsp;POOL</span>
         {TAGS.map((tag) => {
           const on = selectedTags.has(tag)
           return (
@@ -372,7 +372,7 @@ export default function Home() {
         <span className="ml-auto font-mono text-[11px] text-ink-3">默认显示需要你行动的（待分配 / 待确认）</span>
       </div>
 
-      {/* 任务流 */}
+      {/* 任务池 */}
       <div className="space-y-4">
         {forest.map((node) => {
           const st = loopStatus([node])

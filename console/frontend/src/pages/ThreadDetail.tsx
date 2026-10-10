@@ -64,7 +64,7 @@ function ReviewBar({ ctx, reload }: { ctx: ReviewContext | null; reload: () => v
   return (
     <div className="mb-4 rounded-[2px] border border-led-amber/30 bg-led-amber/5 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <StatusPill color="amber" className="text-led-amber">该对话是 task #{loop.task_id} 的交付（待验收）</StatusPill>
+        <StatusPill color="amber" className="text-led-amber">该会话是 task #{loop.task_id} 的交付（待验收）</StatusPill>
         <Button size="sm" variant="signal" disabled={busy}
           onClick={() => act(() => api.taskAccept(loop.task_id, loop.id), '已采纳，task 完成')}
           className="h-7 px-3 text-[11px]">采纳这份</Button>
@@ -145,7 +145,7 @@ export default function ThreadDetailPage() {
             <div className="mt-2 font-mono text-xs text-ink-3">
               <Link to={`/tasks/${rctx.loop.task_id}`} className="link-console">TASK&nbsp;#{rctx.loop.task_id}</Link>
               <span className="mx-1.5 text-ink-3/50">›</span>
-              <span>LOOP&nbsp;#{rctx.loop.id}</span>
+              <Link to={`/tasks/${rctx.loop.task_id}#loop-${rctx.loop.id}`} className="link-console">LOOP&nbsp;#{rctx.loop.id}</Link>
               <span className="mx-1.5 text-ink-3/50">›</span>
               <span className="text-ink-2">THREAD</span>
               {rctx.task?.input?.trim() && (
@@ -197,7 +197,7 @@ export default function ThreadDetailPage() {
         {/* 消息与续跑 */}
         <Panel className="lg:col-span-3">
           <PanelHead>
-            <span className="silk">MESSAGES&nbsp;/&nbsp;对话与任务流</span>
+            <span className="silk">MESSAGES&nbsp;/&nbsp;会话与任务流</span>
             <span className="silk">5S&nbsp;REFRESH</span>
           </PanelHead>
           <PanelBody>

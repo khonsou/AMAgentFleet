@@ -235,7 +235,7 @@ export default function AgentDetailPage() {
                         <div className="mt-1 truncate text-xs text-led-red">{t.error}</div>
                       )}
                       <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] text-ink-3">
-                        <span className="tabular-nums">token: {fmtTokens(t.tokens)}{t.thread_id ? ` · thread ${t.thread_id.slice(0, 8)}` : ''}</span>
+                        <span className="tabular-nums">token: {fmtTokens(t.tokens)}{t.thread_id ? ` · 会话 ${t.thread_id.slice(0, 8)}` : ''}</span>
                         <span>{fmtTime(t.created_at)}</span>
                       </div>
                       <div className="mt-1.5 flex items-center justify-between font-mono text-[10.5px] text-ink-3">

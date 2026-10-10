@@ -102,6 +102,19 @@ export default function TaskDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  // #loop-N 锚点定位：从 Thread Detail 层级眉标跳入时，滚到对应 loop 卡并短暂高亮
+  useEffect(() => {
+    const m = window.location.hash.match(/^#loop-(\d+)$/)
+    if (!m || !detail) return
+    const el = document.getElementById(`loop-${m[1]}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.style.transition = 'box-shadow .3s'
+    el.style.boxShadow = '0 0 0 1.5px hsl(var(--led-amber))'
+    const t = setTimeout(() => { el.style.boxShadow = '' }, 2000)
+    return () => clearTimeout(t)
+  }, [detail])
+
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true); setErr(''); setMsg('')
     try { await fn(); setMsg(ok); await load() } catch (e) { setErr(String(e)) } finally { setBusy(false) }
@@ -186,7 +199,7 @@ export default function TaskDetailPage() {
               {detail!.loops.map((l: Loop) => {
                 const lm = loopStatusMeta(l.status)
                 return (
-                  <InsetRow key={l.id}>
+                  <InsetRow key={l.id} id={`loop-${l.id}`} className="scroll-mt-24">
                     <div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] text-ink-3">
                       <span className="text-ink">loop #{l.id}</span>
                       <span>{l.claimant}</span>
@@ -207,7 +220,7 @@ export default function TaskDetailPage() {
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {l.thread_id && (
                         <Link to={`/threads/${l.thread_id}`} className="link-console font-mono text-[11px]">
-                          thread {l.thread_id.slice(0, 8)} →
+                          会话 {l.thread_id.slice(0, 8)} →
                         </Link>
                       )}
                       {l.claimant_type === 'human' && ['claimed', 'returned'].includes(l.status) && t.pool_status !== 'done' && (

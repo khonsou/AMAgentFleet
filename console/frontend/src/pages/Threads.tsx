@@ -54,7 +54,7 @@ export default function ThreadsPage() {
           <div className="silk">MODULE <b>03</b> / THREADS</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">运行观测</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            thread 执行日志（备用查询）：每个 agent 的一次对话/任务 = 一条 thread。agent 配置请到 Registry 管理。
+            thread 执行日志（备用查询）：每个 agent 的一次会话/任务 = 一条 thread。agent 配置请到 Registry 管理。
           </p>
         </div>
         <div className="silk">5S&nbsp;REFRESH</div>

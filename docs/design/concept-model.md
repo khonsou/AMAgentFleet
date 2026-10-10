@@ -100,6 +100,7 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
 | **交付** | deliver | loop 产出交付物，task 入 review | — |
 | **验收** | accept/return | 采纳（task→done）/ 打回（loop 续跑） | 不叫通过/驳回 |
 | **发起** | create | 人创建 task 入池 | 不叫派发（dispatch 仅指「发起并指派给某 agent」） |
+| **任务池** | task pool | 全部任务的协作池（ADR-0010），任务在其中被发起/认领/交付/验收 | 不叫任务流 |
 
 ### 4.1 页面层级眉标规范（breadcrumb 约定）
 
@@ -110,7 +111,8 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   （`TASK #N › LOOP #M › THREAD`），分隔符 `›`；编号低调跟随，任务内容为主
   （沿用 loop 卡片约定），超出宽度截断、`title` 悬浮给全文。
 - **每段可点击性**：有独立详情页的段（TASK）做链接；无独立页的段（LOOP，
-  其详情寄居于 Task 详情）为纯文本；当前页段（THREAD）为纯文本。
+  其详情寄居于 Task 详情）**链接到寄居页锚点**（`/tasks/:id#loop-N`，落点
+  滚动定位 + 短暂高亮）；当前页段（THREAD）为纯文本。
 - **链顶页无 breadcrumb**：处于概念链顶的实体（如 agent 定义，其上只有
   Registry 模块）不硬造 breadcrumb，实体身份由 h1 承担。
 - **fallback 语义**：数据缺失（如自由对话 thread 无 loop）时 breadcrumb
@@ -170,3 +172,17 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   breadcrumb 不再重复显示）；AgentDetail 本身处于链顶（agent 定义无父实体），
   无 breadcrumb，仅将眉标统一为纯 `MODULE 02 / REGISTRY`（实体身份由 h1 承担，
   与 Thread/Task 页新模式一致）。向下链接（loop→thread、task→loop）此前已齐。
+- **2026-10-10 编号/用词统一修正（13 处，纯文案+锚点）**：
+  A. 裸编号归位：task 卡片头 `#156 · web`（紧邻 agent 名易被误读为 agent
+     编号）→ `task #156 · web`；
+  B. 「对话」→ 标准词「会话」×4（验收台链接、Thread 验收条、运行观测说明、
+     MESSAGES 副标）；
+  C. thread 链接文案三种写法统一为 `会话 {8位id} →`（看板卡片、Agent 详情
+     token 行、Task 详情 loop 卡）；
+  D. LOOP breadcrumb 段由纯文本升级为**寄居页锚点链接**
+     （`/tasks/:id#loop-N`，落点滚动定位 + 琥珀高亮 2s），§4.1 可点击性
+     规则同步修订（「寄居页段为纯文本」→「链接到寄居页锚点」）；
+  E. 「任务流 / TASK STREAM」统一回「任务池 / TASK POOL」——按 ADR-0010，
+     pool_status 是每个 task 的生命周期字段，所有任务皆在池中，「任务流」
+     只是池的可视化说法；**此条反转 §5 映射表「任务流保留」的旧决策**。
+     §4 词表新增「任务池」词条（不叫任务流）。
