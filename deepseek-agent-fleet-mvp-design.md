@@ -380,6 +380,7 @@ DeerFlow 最小验证四项全过（部署 / 拉起 / PG 持久化 / kill 后断
 |------|------|----------|
 | P2 | **前置任务**：fork DeerFlow GitHub 仓库并锁定版本基线（QA-8，替换 tarball 快照）。**开门验证**（ADR-0008 第 4 条，半天；QA-5 已答"全员可见"→ user→org 映射按单一共享组织作用域验证）→ Agent Registry（组织级包装：业务角色/成本维度/版本化）+ Admin API；Dispatcher + Redis 队列 + Inbox；Scheduler(cron)；**Console agent 详情页升级：配置区 + 对话区一页合并**（QA-7） | 验证项半天出结论；注册 10 个 agent，cron 准时触发，休眠/唤醒续跑；fleet 看板数据源切到 Registry；每个 agent 有网页同时看到配置与对话 |
 | P3 | MCP Gateway（令牌网关侧注入）+ 第一个业务 MCP Server（只读）；Token Vault + 一个系统的 OAuth OBO；`agent_message`/`agent_spawn` | 财务 agent 经员工授权查 ERP；agent 唤醒 agent 协作完成，摘要返回，环被拒 |
+| P3b（2026-10-10 新增，ADR-0011） | **FAP v1 第三方 agent 接入面**：`/api/meta` 自发现、`/api/agent-doc`、`X-Protocol-Version`、幂等键、429 退避、source/actor 审计透传、PAT 鉴权接入；功能清单对齐 [agent-api 设计](docs/design/agent-api.md) | 第三方脚本仅凭 `/api/meta` + PAT 完成：自发现 → 发起任务 → 领取 → 交付 → 验收查询 全流程；幂等键重试不重复写入；审计可见 source/actor。**前置：网关鉴权（OIDC/PAT）已上线** |
 | P4 | Console v1（在 v0 上加 OIDC 公网登录 + 审计页）；Langfuse + 成本台账（**按模型 profile 归集**，ADR-0009）+ 预算熔断；IM adapter（依赖 QA-1 选型） | 公网登录对话；导出 per-agent 成本；协作链超深度被拒 |
 
 **刻意不做**：审批流、弹性伸缩（KEDA）、microVM 沙箱、自托管模型、向量记忆库、可视化编排画布、ACP 式多租户（单公司单租户，Project 维度留字段即可）。

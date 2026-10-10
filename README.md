@@ -14,7 +14,9 @@
 
 **P2 主体已落地（2026-10-09）**：`control-plane/`（Registry + Admin API :8003 + Dispatcher + Inbox + Scheduler 薄层）、`agents/` YAML 仓库（首个 agent：应收对账）、Console 升级（Registry agents 区 + agent 详情页配置/对话一页合并，QA-7）。端到端冒烟全过：YAML 部署→网关同步、任务派发 token 落库、Inbox 攒批合并唤醒、cron 对账建任务。**P3 收尾完成（2026-10-09 夜）**：dispatcher 多消费者并行（3 worker，实测 6s vs 串行 40s+）；cron 池化（croniter 触发 → 池任务 → 舰队指挥官认领，防双触发/防补投）；未认领任务池 GUI（横向货架 + 领取/指派/关闭）。**P3 完整收口（2026-10-09 深夜）**：人机认领统一（单代码路径，人=`human`，根治双路线 bug）；人 loop 不计 3-loop 上限 + 人交付框（贴飞书链接进验收台，与 agent 产物同构）；统一认领 UI（🧑/🤖 单一下拉）；URL 自动链接化；会话详情页就地验收；四标签筛选视图（待分配/执行中/待确认/已验收）；批量清理 30 个滞留任务；scheduler sync 返回模型修复；冷启动回归全绿。
 
-**待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1`，基线 `89c9f08` 已按 blob 哈希验证）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
+**P3b 已落地（2026-10-10）**：FAP v1 第三方 agent 接入面（[ADR-0011](docs/adr/0011-third-party-agent-access-protocol.md)，协议清单 [agent-api.md](docs/design/agent-api.md)）——`GET /api/meta` 免鉴权自发现 + `GET /api/agent-doc` 机器可读文档 + 全响应 `X-Protocol-Version`；写操作 `Idempotency-Key` 幂等（`fap_idempotency_keys` 表 24h 窗口，同键同 actor 回放、跨 actor 409）；per-PAT/IP 令牌桶限速（`429 + retry_after`，60/min 可配）；写操作 `source`/`actor` 自报字段透传 `audit_events.detail`；PAT 鉴权（复用 DeerFlow 原生 `personal_access_tokens` 同库表，scope 仅 read/write，控制面自校验；Console 新增 SETTINGS 页签发/吊销）。参考客户端 `examples/fap-quickstart.mjs`（零依赖 Node≥22，自发现→发起→领取→交付→轮询验收全链路实测通过，含幂等回放 demo）。**边界**：FAP 端点仅内网绑定，公网暴露待 P4 OIDC/PAT 全链路（ADR-0011 第 5 条）；loopback 无 PAT 放行仅限 Console 本机代理。
+
+**待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1`，基线 `89c9f08` 已按 blob 哈希验证）；阿里云首次部署实测（ECS 购买后按 DEPLOY.md §4）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
 
 ## Fleet Console（`console/`）
 
@@ -33,6 +35,8 @@
 | [MVP 技术方案 v3](deepseek-agent-fleet-mvp-design.md) | 总体设计：需求确认、硅谷实践、开源调研、架构、关键机制、数据模型、开发计划、成本、风险 |
 | [docs/adr/](docs/adr/) | 架构决策记录（决策历史与否决理由；与设计文档冲突时以最新 ADR 为准） |
 | [docs/spikes/](docs/spikes/) | 验证性实验：0001 DeerFlow 生命周期 ✅ / 0002 ADR-0008 开门验证 ✅ / 0003 任务池验收 ✅ |
+| [docs/design/agent-api.md](docs/design/agent-api.md) | 功能清单（操作→API→现状，v0.1.0 基线）与第三方 agent 接入协议 FAP v1（自发现/幂等/审计透传，ADR-0011） |
+| [docs/dev/p3b-fap-kickoff.md](docs/dev/p3b-fap-kickoff.md) | **P3b 开工说明（给 coder）**：FAP 接入面任务分解、现状资产地图、验收标准 |
 | [AGENTS.md](AGENTS.md) | 仓库约定：目录结构、安全红线、开发规范（人类与 AI 编码助手共用） |
 | [deploy/DEPLOY.md](deploy/DEPLOY.md) | **生产部署手顺**（运维入口）：上游关系、compose、验收 checklist、2-ECS/RDS 变体、安全红线 |
 | [RELEASE.md](RELEASE.md) | **发布说明**（运维入口）：仓库地图、按 tag 发版、底座升级、回滚、发布前检查清单 |
@@ -52,6 +56,7 @@
 | [0008](docs/adr/0008-reuse-deerflow-agents-api-for-per-agent-config.md) | per-agent 配置层复用 DeerFlow agents_api，Registry 降级为组织级包装 | 已接受（方向，P2 开门验证） |
 | [0009](docs/adr/0009-model-policy-provider-lock-profile-free.md) | 模型政策放宽：provider 锁定 + per-agent profile 自由 | 已接受 |
 | [0010](docs/adr/0010-task-loop-pool-mandatory-acceptance.md) | 任务池：task/loop 分离、竞争领取（≤3）、强制验收 | 已接受 |
+| [0011](docs/adr/0011-third-party-agent-access-protocol.md) | 第三方 agent 接入协议：自发现 + 单一能力面 + 复用任务池验收 | 已接受（提案，P3b 实施） |
 
 ## 关键输入（已确认的 QA 结论）
 

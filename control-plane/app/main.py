@@ -15,10 +15,23 @@ from pydantic import BaseModel, Field
 
 from . import inbox, mcpservers, registry, scheduler, templates
 from . import pool as poolmod
+from . import fap, fap_middleware, fap_pats
 from .db import GATEWAY, audit, init_db, pool
 
 app = FastAPI(title="Agent Fleet Control Plane", version="0.2.0")
 _state: dict[str, asyncio.Task] = {}
+
+# FAP 中间件（ADR-0011）：后挂 = 外层。
+# 挂载序（内→外）：audit_passthrough → idempotency → pat_auth → rate_limit → protocol_header
+app.middleware("http")(fap_middleware.audit_passthrough_middleware)
+app.middleware("http")(fap_middleware.idempotency_middleware)
+app.middleware("http")(fap_middleware.pat_auth_middleware)
+app.middleware("http")(fap_middleware.rate_limit_middleware)
+app.middleware("http")(fap.protocol_header_middleware)
+app.include_router(fap.router)
+app.include_router(fap_pats.router)
+fap.set_feature_flag("idempotency", True)
+fap.set_feature_flag("pat_auth", True)
 
 
 @app.on_event("startup")

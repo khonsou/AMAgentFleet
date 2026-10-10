@@ -21,6 +21,8 @@ from typing import Any
 
 import asyncpg
 
+from . import fap_context
+
 PG_DSN = os.environ.get("FLEET_PG_DSN", "postgresql://postgres@127.0.0.1:5432/deerflow")
 GATEWAY = os.environ.get("FLEET_GATEWAY_URL", "http://127.0.0.1:8001")
 AGENTS_DIR = os.environ.get(
@@ -156,6 +158,18 @@ CREATE TABLE IF NOT EXISTS fleet_cron_fires (
     last_fired_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (agent_name, cron_idx)
 );
+-- FAP v1（ADR-0011 H4）：写操作幂等键，24h 去重窗口
+CREATE TABLE IF NOT EXISTS fap_idempotency_keys (
+    key            TEXT NOT NULL,
+    actor          TEXT NOT NULL,
+    method         TEXT NOT NULL,
+    path           TEXT NOT NULL,
+    status_code    INTEGER NOT NULL,
+    response_json  JSONB NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (key, actor)
+);
+CREATE INDEX IF NOT EXISTS idx_fap_idem_created ON fap_idempotency_keys(created_at);
 """
 
 
@@ -188,6 +202,14 @@ async def audit(
     cost_cny: float | None = None,
     detail: dict | None = None,
 ) -> None:
+    # FAP H5：写操作自报 source/actor 透传进 detail（QA-3 方案 a）
+    merged = dict(detail or {})
+    src = fap_context.fap_source.get()
+    act = fap_context.fap_actor.get()
+    if src is not None:
+        merged.setdefault("source", src)
+    if act is not None:
+        merged.setdefault("actor", act)
     digest = hashlib.sha256(
         json.dumps(args, sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()[:32] if args is not None else ""
@@ -197,7 +219,7 @@ async def audit(
                (agent_name, thread_id, actor, event_type, args_digest, tokens, cost_cny, detail)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
             agent_name, thread_id, actor, event_type, digest, tokens, cost_cny,
-            json.dumps(detail or {}),
+            json.dumps(merged),
         )
 
 

@@ -158,6 +158,16 @@ export const api = {
     }),
 
   templates: () => req<Template[]>('/templates'),
+
+  // ---- FAP PAT 管理（ADR-0011 H6，Console 设置页） ----
+  pats: () => req<Pat[]>('/pats'),
+  patCreate: (name: string, scope: 'read' | 'write', expiresInDays?: number) =>
+    req<Pat & { token: string }>('/pats', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, scopes: [scope], expires_in_days: expiresInDays ?? null }),
+    }),
+  patRevoke: (id: string) =>
+    req<{ status: string }>(`/pats/${id}`, { method: 'DELETE' }),
 }
 
 export interface Template {
@@ -165,6 +175,17 @@ export interface Template {
   name: string
   displayName: string
   description: string
+}
+
+export interface Pat {
+  id: string
+  name: string
+  scopes: string[]
+  prefix: string
+  expires_at: string | null
+  revoked_at: string | null
+  last_used_at: string | null
+  created_at: string
 }
 
 export interface RegistryAgent {

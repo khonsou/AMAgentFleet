@@ -9,6 +9,7 @@ const MODULES = [
   { to: '/', label: 'FLEET', end: true },
   { to: '/registry', label: 'REGISTRY' },
   { to: '/threads', label: 'THREADS' },
+  { to: '/settings', label: 'SETTINGS' },
 ]
 
 function Clock() {

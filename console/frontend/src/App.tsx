@@ -6,6 +6,7 @@ import ThreadsPage from './pages/Threads'
 import ThreadDetailPage from './pages/ThreadDetail'
 import AgentDetailPage from './pages/AgentDetail'
 import TaskDetailPage from './pages/TaskDetail'
+import SettingsPage from './pages/Settings'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/agents/:name" element={<AgentDetailPage />} />
         <Route path="/tasks/:tid" element={<TaskDetailPage />} />
         <Route path="/threads/:tid" element={<ThreadDetailPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </div>
   )

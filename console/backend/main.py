@@ -407,3 +407,29 @@ async def cp_thread_artifact(tid: str, path: str):
 @app.get("/api/console/threads/{tid}/review-context")
 async def cp_review_context(tid: str):
     return await _cp(f"/loops/by-thread/{tid}")
+
+
+# ---------------------------------------------------------------------------
+# FAP PAT 管理代理（ADR-0011 H6：Console 设置页签发/吊销/列表）
+# control-plane 侧已限 loopback，此处为本机转发。
+# ---------------------------------------------------------------------------
+
+@app.get("/api/console/pats")
+async def cp_pats():
+    return await _cp("/pats")
+
+
+class PatCreateBody(BaseModel):
+    name: str
+    scopes: list[str]
+    expires_in_days: int | None = None
+
+
+@app.post("/api/console/pats", status_code=201)
+async def cp_pat_create(body: PatCreateBody):
+    return await _cp("/pats", "POST", body.model_dump())
+
+
+@app.delete("/api/console/pats/{pat_id}")
+async def cp_pat_revoke(pat_id: str):
+    return await _cp(f"/pats/{pat_id}", "DELETE", {})
