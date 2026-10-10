@@ -4,6 +4,7 @@ import { api, type AgentTask, type RegistryAgent, type TaskDetail, type Loop } f
 import LinkifyText from '@/components/LinkifyText'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { Led, StatusPill, taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/Status'
 
@@ -310,21 +311,24 @@ export default function Home() {
       <Panel className="mb-5">
         <PanelHead>
           <span className="silk">NEW&nbsp;LOOP&nbsp;/&nbsp;发起</span>
-          <span className="silk">ENTER&nbsp;↵</span>
+          <span className="silk">CTRL+ENTER&nbsp;↵</span>
         </PanelHead>
-        <PanelBody className="flex items-center gap-2.5">
-          <select value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
-            className={SELECT_CLS + ' w-56'}>
-            <option value="">不入池指派 · 先放任务池</option>
-            {agents.map((a) => <option key={a.name} value={a.name}>{a.display_name || a.name}</option>)}
-          </select>
-          <Input value={instruction} onChange={(e) => setInstruction(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && launch()}
-            placeholder="输入任务指令，发起一个 loop（该 agent 可再派生子任务给其它 agent）"
-            className={INPUT_CLS} disabled={launching} />
-          <Button variant="signal" onClick={launch} disabled={launching || !instruction.trim()} className="shrink-0">
-            {launching ? '发起中…' : launchAgent ? '指派并发起' : '放入任务池'}
-          </Button>
+        <PanelBody>
+          <Textarea value={instruction} onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && launch()}
+            rows={3}
+            placeholder="输入任务指令，发起一个 loop（该 agent 可再派生子任务给其它 agent）。支持多行，Ctrl/⌘+Enter 提交。"
+            className={INPUT_CLS + ' min-h-[72px] resize-y'} disabled={launching} />
+          <div className="mt-2.5 flex items-center gap-2.5">
+            <select value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
+              className={SELECT_CLS + ' w-56'}>
+              <option value="">不入池指派 · 先放任务池</option>
+              {agents.map((a) => <option key={a.name} value={a.name}>{a.display_name || a.name}</option>)}
+            </select>
+            <Button variant="signal" onClick={launch} disabled={launching || !instruction.trim()} className="shrink-0">
+              {launching ? '发起中…' : launchAgent ? '指派并发起' : '放入任务池'}
+            </Button>
+          </div>
         </PanelBody>
       </Panel>
 
