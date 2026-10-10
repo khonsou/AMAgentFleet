@@ -126,9 +126,10 @@ async def audit_passthrough_middleware(request: Request, call_next):
     """写操作 body 的 source/actor 自报字段 → contextvar → audit_events.detail。
 
     Starlette _CachedRequest 保证本层读 body 后下游端点仍能读到（QA-3 方案 a）。
-    注意：既有端点 body 里 `source`/`actor` 是字符串字段（fleet_tasks.source /
-    DispatchBody.actor），与 FAP 自报 dict 撞名——本中间件提取后**从 body 剥离**
-    再传给端点，避免 422。
+    撞名处理分形态：**dict 形态**（FAP 自报）剥离出 body（留之会让 legacy
+    端点字符串字段 422），只进审计；**字符串形态**（fleet_tasks.source /
+    DispatchBody.actor）是 legacy 端点的业务字段，保留在 body 里照常落库，
+    同时复制一份进审计 contextvar。
     """
     if request.method in _WRITE_METHODS:
         try:
@@ -137,12 +138,22 @@ async def audit_passthrough_middleware(request: Request, call_next):
         except Exception:  # noqa: BLE001
             data = None
         if isinstance(data, dict):
-            src, act = data.pop("source", None), data.pop("actor", None)
-            if src is not None or act is not None:
-                if src is not None:
-                    fap_context.fap_source.set(src if isinstance(src, dict) else {"value": src})
-                if act is not None:
-                    fap_context.fap_actor.set(act if isinstance(act, dict) else {"value": act})
+            # 只剥离 dict 形态（FAP 自报格式，留之会让 legacy 端点字符串字段 422）；
+            # 字符串形态是 legacy 端点的业务字段（fleet_tasks.source / DispatchBody.actor），
+            # 保留在 body 里，仅同时记入审计 contextvar（2026-10-10 A2A 验收抓到的回归：
+            # agent_spawn 的 source='agent' 被剥成默认 'web'，任务来源链路失真）。
+            changed = False
+            if (src := data.get("source")) is not None:
+                fap_context.fap_source.set(src if isinstance(src, dict) else {"value": src})
+                if isinstance(src, dict):
+                    data.pop("source")
+                    changed = True
+            if (act := data.get("actor")) is not None:
+                fap_context.fap_actor.set(act if isinstance(act, dict) else {"value": act})
+                if isinstance(act, dict):
+                    data.pop("actor")
+                    changed = True
+            if changed:
                 # 剥离后回写 body（_CachedRequest 会把 _body 传给下游，见上）
                 request._body = json.dumps(data, ensure_ascii=False).encode("utf-8")
     return await call_next(request)
