@@ -73,6 +73,30 @@ function extractArtifacts(raw: unknown): string[] {
   return [...paths]
 }
 
+/** 把消息文本中已知产物路径渲染成下载链接。
+ *  模型只需说路径（它不知道也不该知道 Console 地址——那是部署细节，
+ *  随环境变化），URL 由前端拼，回复里的路径即点即下。 */
+function ArtifactText({ text, tid, files }: { text: string; tid: string; files: string[] }) {
+  if (files.length === 0) return <>{text}</>
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(`(${files.map(esc).join('|')})`, 'g')
+  const parts = text.split(pattern)
+  return (
+    <>
+      {parts.map((part, i) =>
+        files.includes(part) ? (
+          <a key={i} href={api.artifactUrl(tid, part)} download={part.split('/').pop()}
+            className="link-console font-mono text-[12.5px] underline decoration-led-green/60 underline-offset-2">
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
+}
+
 /** 会话内验收条：task 在 review 态时，读对话即可就地采纳/退回。
  *  验收上下文由页面级统一拉取（同一接口也喂层级眉标），此处只负责动作。 */
 function ReviewBar({ ctx, reload }: { ctx: ReviewContext | null; reload: () => void }) {
@@ -269,7 +293,9 @@ export default function ThreadDetailPage() {
                   <div className="silk mb-1">
                     {m.role === 'human' ? '人类指令' : m.role === 'ai' ? 'AGENT' : m.role}
                   </div>
-                  <div className="whitespace-pre-wrap break-words">{m.content.slice(0, 4000)}</div>
+                  <div className="whitespace-pre-wrap break-words">
+                    <ArtifactText text={m.content.slice(0, 4000)} tid={tid!} files={files} />
+                  </div>
                 </div>
               ))}
               {sending && (
