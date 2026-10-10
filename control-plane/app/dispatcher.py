@@ -114,7 +114,10 @@ async def _run_loop(loop_id: int) -> None:
         "assistant_id": agent,
         "input": {"messages": [{"role": "user", "content": input_text}]},
         "on_disconnect": "continue",
-        "config": {"configurable": {"thread_id": thread_id}},
+        # subagent_enabled：fleet run 默认开 in-thread subagent（task 工具）。
+        # per-agent 开关 = agent YAML allowed_subagents（[] = 硬拒，见 DeerFlow
+        # lead_agent 解析：subagent_enabled = requested and allowed != []）。
+        "config": {"configurable": {"thread_id": thread_id, "subagent_enabled": True}},
     }
 
     try:

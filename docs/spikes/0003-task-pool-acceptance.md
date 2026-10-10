@@ -184,6 +184,25 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
   写代码，agent 自己沉淀的技能跨会话可用。语义三态已固化进
   AGENTS.md「DeerFlow 配置语义坑」，禁止无审查写 `[]`。
 
+## 2026-10-10 「真 fleet」双测试（A2A + subagent 产物交付）
+
+- **A2A（task 131/132、137/138）**：向舰队指挥官派发「用 agent_spawn 派子任务给
+  fleet-collect-01」。指挥官 thread 内真实调用 `agent_spawn`（工具返回
+  「子任务已入池（created_by=fleet-cmd-01）」），子任务经 caller_thread_id
+  反解挂树（parent_task_id 正确）、采集员自动领取执行并交付，指挥官交付派单摘要。
+  途中抓到并修复 P3b 回归：`audit_passthrough_middleware` 无条件剥离 body 的
+  `source`/`actor`，把 legacy 字符串业务字段剥掉（agent_spawn 的 source='agent'
+  落库成默认 'web'、dispatch actor 丢失）——改为仅剥离 dict 形态（FAP 自报），
+  字符串形态保留 body 落库 + 复制进审计 contextvar（commit `116d77c`）。
+- **subagent 产物（task 141）**：发现 fleet run 的 `subagent_enabled` 未开
+  （DeerFlow 默认 False），agent 无 `task` 工具、退化为 agent_spawn（一轮测试
+  如实汇报"无法拿到产物"）。dispatcher run body 补 `subagent_enabled: true`
+  （per-agent 关闭 = YAML `allowed_subagents: []` 硬拒）。二轮：分析师用 `task`
+  工具派 in-thread subagent 写《AM Agent Fleet 协作机制速览》→ subagent 落盘
+  工作区 → lead 复制 `/mnt/user-data/outputs/` + `present_files` → dispatcher
+  捕获 artifacts 在交付里附 📎 Console 代理 URL → 实测 HTTP 200 下载
+  1441 字节 Markdown（与 subagent 自报字节数一致）。任务验收采纳。
+
 ## 2026-10-10 P3b 验收（FAP v1 第三方 agent 接入面）
 
 - **范围**：QA 定案落地（QA-1 方案 A / QA-2 D 域维持网关原生 / QA-3
