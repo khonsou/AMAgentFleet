@@ -90,12 +90,21 @@ async def pat_list(request: Request) -> list[dict]:
                FROM personal_access_tokens
                WHERE user_id LIKE 'fap:%'
                ORDER BY created_at DESC""")
-    return [
-        {"id": r["id"], "name": r["name"], "scopes": r["scopes"],
-         "prefix": PAT_PREFIX, "expires_at": r["expires_at"], "revoked_at": r["revoked_at"],
-         "last_used_at": r["last_used_at"], "created_at": r["created_at"]}
-        for r in rows
-    ]
+    import json as _json
+    out = []
+    for r in rows:
+        scopes = r["scopes"]
+        if isinstance(scopes, str):  # json 列 asyncpg 返回原始字符串（jsonb 才自动解析）
+            try:
+                scopes = _json.loads(scopes)
+            except ValueError:
+                scopes = []
+        out.append(
+            {"id": r["id"], "name": r["name"], "scopes": scopes,
+             "prefix": PAT_PREFIX, "expires_at": r["expires_at"], "revoked_at": r["revoked_at"],
+             "last_used_at": r["last_used_at"], "created_at": r["created_at"]}
+        )
+    return out
 
 
 @router.delete("/api/pats/{pat_id}")
