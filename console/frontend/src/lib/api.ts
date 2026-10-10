@@ -128,7 +128,7 @@ export const api = {
       body: JSON.stringify({ content, author }),
     }),
   reviewContext: (threadId: string) =>
-    req<{ loop: Loop | null; task?: { id: number; pool_status: string } }>(`/threads/${threadId}/review-context`),
+    req<ReviewContext>(`/threads/${threadId}/review-context`),
   loopRequeue: (loopId: number) =>
     req<{ status: string }>(`/loops/${loopId}/requeue`, { method: 'POST' }),
   loopReturn: (loopId: number, comment: string, author = 'human') =>
@@ -205,6 +205,11 @@ export interface RegistryAgent {
 export interface AgentDetail {
   registry: RegistryAgent | null
   yaml: Record<string, unknown>
+}
+
+export interface ReviewContext {
+  loop: Loop | null
+  task?: { id: number; pool_status: string; input?: string }
 }
 
 export interface Loop {

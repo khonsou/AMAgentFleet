@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { api, type ThreadDetail, type ChatMessage, type Loop } from '@/lib/api'
+import { api, type ThreadDetail, type ChatMessage, type ReviewContext } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
@@ -47,21 +47,18 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
   return out
 }
 
-/** 会话内验收条：task 在 review 态时，读对话即可就地采纳/退回。 */
-function ReviewBar({ tid }: { tid: string }) {
-  const [ctx, setCtx] = useState<{ loop: Loop | null; task?: { id: number; pool_status: string } } | null>(null)
+/** 会话内验收条：task 在 review 态时，读对话即可就地采纳/退回。
+ *  验收上下文由页面级统一拉取（同一接口也喂层级眉标），此处只负责动作。 */
+function ReviewBar({ ctx, reload }: { ctx: ReviewContext | null; reload: () => void }) {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
-
-  const load = () => api.reviewContext(tid).then(setCtx).catch(() => setCtx(null))
-  useEffect(() => { load() }, [tid])
 
   if (!ctx?.loop || ctx.task?.pool_status !== 'review') return null
   const loop = ctx.loop
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true); setMsg('')
-    try { await fn(); setMsg(ok); await load() } catch (e) { setMsg(String(e)) } finally { setBusy(false) }
+    try { await fn(); setMsg(ok); reload() } catch (e) { setMsg(String(e)) } finally { setBusy(false) }
   }
 
   return (
@@ -88,6 +85,7 @@ export default function ThreadDetailPage() {
   const { tid } = useParams<{ tid: string }>()
   const [detail, setDetail] = useState<ThreadDetail | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [rctx, setRctx] = useState<ReviewContext | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
@@ -103,6 +101,8 @@ export default function ThreadDetailPage() {
     } catch (e) {
       setErr(String(e))
     }
+    // 验收上下文独立容错：thread 不一定挂在任务链上，失败不阻塞页面
+    api.reviewContext(tid).then(setRctx).catch(() => setRctx(null))
   }
 
   useEffect(() => {
@@ -140,7 +140,22 @@ export default function ThreadDetailPage() {
       <div className="mb-6 flex items-end justify-between">
         <div>
           <Link to="/threads" className="link-console font-mono text-xs">← THREADS</Link>
-          <div className="silk mt-2">MODULE&nbsp;03&nbsp;/&nbsp;THREADS&nbsp;·&nbsp;THREAD</div>
+          <div className="silk mt-2">MODULE&nbsp;03&nbsp;/&nbsp;THREADS</div>
+          {rctx?.loop && (
+            <div className="mt-2 font-mono text-xs text-ink-3">
+              <Link to={`/tasks/${rctx.loop.task_id}`} className="link-console">TASK&nbsp;#{rctx.loop.task_id}</Link>
+              <span className="mx-1.5 text-ink-3/50">›</span>
+              <span>LOOP&nbsp;#{rctx.loop.id}</span>
+              <span className="mx-1.5 text-ink-3/50">›</span>
+              <span className="text-ink-2">THREAD</span>
+              {rctx.task?.input?.trim() && (
+                <span className="ml-2 inline-block max-w-[380px] truncate align-bottom text-ink-2"
+                  title={rctx.task.input}>
+                  ·&nbsp;{rctx.task.input.trim()}
+                </span>
+              )}
+            </div>
+          )}
           <h1 className="mt-1.5 max-w-[640px] truncate text-[21px] font-semibold tracking-tight"
             title={firstHuman?.content || ''}>
             {firstHuman?.content.trim() || 'Agent 会话详情'}
@@ -153,7 +168,7 @@ export default function ThreadDetailPage() {
         {runMeta && <StatusPill color={runMeta.led} blink={runMeta.blink}>{runMeta.label}</StatusPill>}
       </div>
 
-      {tid && <ReviewBar tid={tid} />}
+      {tid && <ReviewBar ctx={rctx} reload={() => { if (tid) api.reviewContext(tid).then(setRctx).catch(() => setRctx(null)) }} />}
 
       {err && (
         <div className="mb-5 rounded-[2px] border border-led-red/30 bg-led-red/10 px-4 py-3 text-sm text-led-red">{err}</div>

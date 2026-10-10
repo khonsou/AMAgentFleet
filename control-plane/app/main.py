@@ -516,5 +516,6 @@ async def loop_by_thread(thread_id: str) -> dict[str, Any]:
             "SELECT * FROM fleet_task_loops WHERE thread_id=$1 ORDER BY id DESC LIMIT 1", thread_id)
         if row is None:
             return {"loop": None}
-        task = await conn.fetchrow("SELECT id, pool_status FROM fleet_tasks WHERE id=$1", row["task_id"])
+        task = await conn.fetchrow(
+            "SELECT id, pool_status, input FROM fleet_tasks WHERE id=$1", row["task_id"])
     return {"loop": dict(row), "task": dict(task)}

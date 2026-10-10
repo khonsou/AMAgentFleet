@@ -136,3 +136,12 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   `MODULE 02 / REGISTRY · AGENT`；ThreadDetail → `MODULE 03 / THREADS · THREAD`。
   Registry 计数 `N UNITS` → `N AGENTS`。全站 UNIT 清零（tsc ✓）。
   **教训**：眉标/装饰词也是用户会读到的词，新词进入 GUI 前须过 §4 词表。
+- **2026-10-10 MODULE 与概念层级解耦 + ThreadDetail 层级眉标**：确认
+  `MODULE NN` 编号只是顶栏导航顺序位的视觉装饰（机架设计语言），与概念
+  模型 L0–L5 无任何对应关系，保留。同时 Thread Detail 页头新增概念层级眉标
+  `TASK #N › LOOP #M › THREAD · 任务内容`（TASK 可点击回 Task 详情；任务
+  内容为主、loop 编号低调跟随，沿用 loop 卡片约定）。无任务上下文的自由
+  对话 thread 退化为纯 `MODULE 03 / THREADS`（`loop: null` 是有真实语义的
+  fallback，非错误）。层级词全部来自 §4 词表，零新概念。实现：by-thread
+  接口补带 task.input；验收条 ReviewBar 与层级眉标共用同一份 reviewContext
+  （页面级统一拉取）。
