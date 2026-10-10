@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { api, type AgentTask, type RegistryAgent, type TaskDetail, type Loop } from '@/lib/api'
-import LinkifyText from '@/components/LinkifyText'
+import LoopOutput from '@/components/console/LoopOutput'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
@@ -188,13 +188,7 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
                 <StatusPill color={lm.led}>{lm.label} v{l.version}</StatusPill>
                 <span className="ml-auto tabular-nums">{fmtTokens(l.tokens)} tok</span>
               </div>
-              <div className="mt-2.5 rounded-[2px] border border-led-green/40 bg-led-green/[0.07] px-3.5 py-3">
-                <div className="silk mb-2 flex items-center gap-2">
-                  <Led color="green" />
-                  OUTPUT&nbsp;/&nbsp;交付内容
-                </div>
-                <LinkifyText className="block whitespace-pre-wrap text-[13px] leading-relaxed text-ink" text={l.deliverable || ''} />
-              </div>
+              {l.latest_output?.trim() || l.deliverable ? <LoopOutput l={l} /> : null}
               {l.thread_id && (
                 <Link to={`/threads/${l.thread_id}`} className="link-console mt-1.5 inline-block font-mono text-[11px]">会话 {l.thread_id.slice(0, 8)} →</Link>
               )}

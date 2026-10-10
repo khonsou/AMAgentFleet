@@ -188,3 +188,13 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
      pool_status 是每个 task 的生命周期字段，所有任务皆在池中，「任务流」
      只是池的可视化说法；**此条反转 §5 映射表「任务流保留」的旧决策**。
      §4 词表新增「任务池」词条（不叫任务流）。
+- **2026-10-10 loop OUTPUT 展示派生（方案 A）**：「OUTPUT / 交付内容」主显
+  thread 最新 AI 回复（派生自 run_events），物理快照 `deliverable` 降级为
+  「交付快照 vN（入库时的交付记录）」低调标注，仅在两者不一致时出现。
+  背景 bug：人直接进 Thread Detail 续对话不经过 dispatcher，`deliverable`
+  快照停在旧回复，而快照本应是「当前 output」。方案 A 的理由：loop 与
+  thread 1:1，thread 最新 AI 回复即该 loop 的当前 output，展示无需物理落库
+  第二份；退回重派路径本来就重新捕获快照，语义不受影响。实现：控制面
+  task detail 附 `latest_output`（单条 SQL 按 thread_id 批量取）；前端共享
+  `LoopOutput` 组件用于 TaskDetail loop 卡与验收台；对比时剥掉 dispatcher
+  追加的「📎 产物：」段。零新概念、零信息架构改动。

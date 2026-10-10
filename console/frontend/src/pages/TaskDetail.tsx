@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LinkifyText from '@/components/LinkifyText'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
-import { StatusPill, loopStatusMeta, Led } from '@/components/console/Status'
+import { StatusPill, loopStatusMeta } from '@/components/console/Status'
+import LoopOutput from '@/components/console/LoopOutput'
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '—'
@@ -207,15 +208,7 @@ export default function TaskDetailPage() {
                       <StatusPill color={lm.led} blink={lm.blink}>{lm.label} v{l.version}</StatusPill>
                       <span className="ml-auto tabular-nums">{l.tokens ?? '—'} tok · {fmtTime(l.created_at)}</span>
                     </div>
-                    {l.deliverable && (
-                      <div className="mt-2.5 rounded-[2px] border border-led-green/40 bg-led-green/[0.07] px-3.5 py-3">
-                        <div className="silk mb-2 flex items-center gap-2">
-                          <Led color="green" />
-                          OUTPUT&nbsp;/&nbsp;交付内容
-                        </div>
-                        <LinkifyText className="block whitespace-pre-wrap text-[13px] leading-relaxed text-ink" text={l.deliverable} />
-                      </div>
-                    )}
+                    {l.deliverable && <LoopOutput l={l} />}
                     {l.error && <div className="mt-1 text-xs text-led-red">{l.error}</div>}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {l.thread_id && (

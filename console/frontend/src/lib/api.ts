@@ -223,6 +223,8 @@ export interface Loop {
   thread_id: string | null
   status: string
   deliverable: string | null
+  /** 当前产出：thread 最新 AI 回复（展示用，派生）；deliverable 是交付时刻快照 */
+  latest_output?: string | null
   tokens: number | null
   version: number
   error: string | null

@@ -469,7 +469,53 @@ async def task_get(task_id: int) -> dict[str, Any]:
     d = await poolmod.task_detail(task_id)
     if d is None:
         raise HTTPException(404, f"task {task_id} not found")
+    await _attach_latest_outputs(d)
     return d
+
+
+def _ai_text(content: Any) -> str | None:
+    # run_events.content 是 JSON 文本列（非 jsonb），先解析
+    if isinstance(content, str):
+        import json
+        try:
+            content = json.loads(content)
+        except ValueError:
+            return content.strip() or None  # 纯文本事件直接当内容
+    c = content.get("content") if isinstance(content, dict) else None
+    if isinstance(c, str) and c.strip():
+        return c.strip()
+    if isinstance(c, list):
+        t = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
+        return t.strip() or None
+    return None
+
+
+async def _attach_latest_outputs(d: dict[str, Any]) -> None:
+    """loop 的当前产出 = 其 thread 最新一条 AI 回复（方案 A：展示派生，
+    deliverable 降级为交付时刻快照）。查 run_events 一次取齐，不走网关。
+    打回续跑同 thread、人直接续对话，展示均自动跟随。"""
+    loops = d.get("loops") or []
+    tids = [l["thread_id"] for l in loops if l.get("thread_id")]
+    if not tids:
+        for l in loops:
+            l["latest_output"] = None
+        return
+    async with (await pool()).acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT thread_id, content FROM run_events "
+            "WHERE event_type = 'llm.ai.response' AND thread_id = ANY($1::text[]) "
+            "ORDER BY thread_id, seq DESC", tids)
+    latest: dict[str, str] = {}
+    for r in rows:
+        tid = r["thread_id"]
+        if tid in latest:
+            continue  # 每 thread 取第一条非空文本即最新产出（seq DESC）
+        t = _ai_text(r["content"])
+        if t:
+            latest[tid] = t[:4000]
+    for l in loops:
+        tid = l.get("thread_id")
+        l["latest_output"] = latest.get(tid) if tid else None
 
 
 @app.get("/api/review-queue")
