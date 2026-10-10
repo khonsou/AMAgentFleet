@@ -69,6 +69,9 @@ export const api = {
   overview: () => req<Overview>('/overview'),
   fleet: () => req<FleetRow[]>('/fleet'),
   thread: (tid: string) => req<ThreadDetail>(`/threads/${tid}`),
+  /** 产物下载地址（agent present_files 呈现的文件，经 Console 代理到网关） */
+  artifactUrl: (tid: string, path: string) =>
+    `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
   messages: (tid: string) => req<unknown>(`/threads/${tid}/messages`),
   send: (tid: string, content: string) =>
     req<unknown>(`/threads/${tid}/messages`, {

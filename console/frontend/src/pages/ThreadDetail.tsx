@@ -47,6 +47,32 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
   return out
 }
 
+/** 从消息事件流提取产物文件路径（present_files 呈现 = 用户可下载意图）：
+ *  1) run.delivery 事件的 paths/presented_paths/matched_paths
+ *  2) ai 消息 tool_calls 中 present_files 的 filepaths
+ *  去重保序。 */
+function extractArtifacts(raw: unknown): string[] {
+  const arr = Array.isArray(raw) ? raw : ((raw as { messages?: unknown[] })?.messages ?? [])
+  const paths = new Set<string>()
+  const add = (p: unknown) => { if (typeof p === 'string' && p.startsWith('/')) paths.add(p) }
+  for (const m of arr as Record<string, unknown>[]) {
+    const inner = (m.content && typeof m.content === 'object' ? m.content : m) as Record<string, unknown>
+    if ((m.event_type ?? inner.event_type) === 'run.delivery') {
+      for (const k of ['paths', 'presented_paths', 'matched_paths']) {
+        const v = inner[k]
+        if (Array.isArray(v)) v.forEach(add)
+      }
+    }
+    if (Array.isArray(inner.tool_calls)) {
+      for (const tc of inner.tool_calls as Record<string, unknown>[]) {
+        const args = tc.args as Record<string, unknown> | undefined
+        if (tc.name === 'present_files' && Array.isArray(args?.filepaths)) args!.filepaths.forEach(add)
+      }
+    }
+  }
+  return [...paths]
+}
+
 /** 会话内验收条：task 在 review 态时，读对话即可就地采纳/退回。
  *  验收上下文由页面级统一拉取（同一接口也喂层级眉标），此处只负责动作。 */
 function ReviewBar({ ctx, reload }: { ctx: ReviewContext | null; reload: () => void }) {
@@ -85,6 +111,7 @@ export default function ThreadDetailPage() {
   const { tid } = useParams<{ tid: string }>()
   const [detail, setDetail] = useState<ThreadDetail | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [files, setFiles] = useState<string[]>([])
   const [rctx, setRctx] = useState<ReviewContext | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -97,6 +124,7 @@ export default function ThreadDetailPage() {
       const [d, m] = await Promise.all([api.thread(tid), api.messages(tid)])
       setDetail(d)
       setMessages(normalizeMessages(m))
+      setFiles(extractArtifacts(m))
       setErr('')
     } catch (e) {
       setErr(String(e))
@@ -190,6 +218,33 @@ export default function ThreadDetailPage() {
               </div>
             ))}
           </div>
+        </Panel>
+      )}
+
+      {files.length > 0 && tid && (
+        <Panel className="mb-5">
+          <PanelHead>
+            <span className="silk flex items-center gap-2">
+              <Led color="green" />
+              FILES&nbsp;/&nbsp;产物
+            </span>
+            <span className="silk">{files.length}&nbsp;FILES</span>
+          </PanelHead>
+          <PanelBody className="space-y-1.5">
+            {files.map((p) => {
+              const name = p.split('/').pop() || p
+              return (
+                <div key={p} className="flex items-center justify-between gap-3 rounded-[2px] border border-hairline-soft bg-inset px-3.5 py-2">
+                  <span className="min-w-0 truncate font-mono text-xs text-ink" title={p}>
+                    {name}
+                    <span className="ml-2 text-ink-3">{p}</span>
+                  </span>
+                  <a href={api.artifactUrl(tid, p)} download={name}
+                    className="link-console shrink-0 font-mono text-[11px]">下载 ↓</a>
+                </div>
+              )
+            })}
+          </PanelBody>
         </Panel>
       )}
 
