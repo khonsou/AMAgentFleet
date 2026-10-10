@@ -46,6 +46,7 @@
 | [docs/spikes/](docs/spikes/) | 验证性实验：0001 DeerFlow 生命周期 ✅ / 0002 ADR-0008 开门验证 ✅ / 0003 任务池验收 ✅ |
 | [docs/design/agent-api.md](docs/design/agent-api.md) | 功能清单（操作→API→现状，v0.1.0 基线）与第三方 agent 接入协议 FAP v1（自发现/幂等/审计透传，ADR-0011） |
 | [docs/dev/p3b-fap-kickoff.md](docs/dev/p3b-fap-kickoff.md) | **P3b 开工说明（给 coder）**：FAP 接入面任务分解、现状资产地图、验收标准 |
+| [docs/dev/p2-scale-acceptance.md](docs/dev/p2-scale-acceptance.md) | **P2 规模化验收测试计划**：10 agent 注册、cron 准时、休眠/唤醒全链路 |
 | [AGENTS.md](AGENTS.md) | 仓库约定：目录结构、安全红线、开发规范（人类与 AI 编码助手共用） |
 | [deploy/DEPLOY.md](deploy/DEPLOY.md) | **生产部署手顺**（运维入口）：上游关系、compose、验收 checklist、2-ECS/RDS 变体、安全红线 |
 | [RELEASE.md](RELEASE.md) | **发布说明**（运维入口）：仓库地图、按 tag 发版、底座升级、回滚、发布前检查清单 |
