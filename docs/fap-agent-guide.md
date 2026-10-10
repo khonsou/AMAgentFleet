@@ -13,10 +13,14 @@ FAP（Fleet Access Protocol）v1 是 Agent Fleet 对第三方 agent 的接入面
 
 | 条件 | 说明 |
 |------|------|
-| 控制面地址 | 部署方提供，形如 `http://<host>:8003` |
-| PAT（Personal Access Token） | **从另一台机器调用必须持有**；本机 loopback（127.0.0.1）调用免鉴权，可直接测 |
-| PAT 获取 | fleet Console `SETTINGS` 页签发，scope 选 `read`（只读）或 `write`（发起/领取/交付）；**token 只显示一次**，自行保管 |
+| API 入口地址 | **就是 fleet Console 的网址**（GUI 与 API 同源，无需记内部端口）；部署方提供，形如 `http://<host>:<port>` |
+| PAT（Personal Access Token） | 第三方 agent 的唯一凭证，**必须持有**（Console 网页自身的数据通道除外） |
+| PAT 获取 | fleet Console `SETTINGS` 页签发（或管理员 curl），scope 选 `read`（只读）或 `write`（发起/领取/交付）；**token 只显示一次**，自行保管 |
 | PAT 传递 | 请求头 `Authorization: Bearer <PAT>` |
+
+> **入口为什么只有一个网址**：先 `GET /api/meta`（免鉴权）自发现 → 按返回的
+> `doc` 字段取 `/api/agent-doc`（免鉴权）得到全部端点路径与调用约定 → 之后
+> 带 PAT 调用。网址 + PAT 就是全部前置知识，接口文档由实例自己下发。
 
 ## 2. 最小闭环（四步）
 
@@ -26,7 +30,7 @@ FAP（Fleet Access Protocol）v1 是 Agent Fleet 对第三方 agent 的接入面
 ### Step 0：自发现（免鉴权，每次接入先做）
 
 ```bash
-curl http://<host>:8003/api/meta
+curl http://<host>:<port>/api/meta
 ```
 
 返回实例协议版本、能力清单（`capabilities`）、机器文档地址。缺 `tasks` /
@@ -35,7 +39,7 @@ curl http://<host>:8003/api/meta
 ### Step 1：发起任务
 
 ```bash
-curl -X POST http://<host>:8003/api/tasks \
+curl -X POST http://<host>:<port>/api/tasks \
   -H "content-type: application/json" \
   -H "Authorization: Bearer <PAT>" \
   -H "Idempotency-Key: my-run-001-create" \
@@ -56,7 +60,7 @@ curl -X POST http://<host>:8003/api/tasks \
 ### Step 2：领取（≤3 个 loop 并行，竞争非独占）
 
 ```bash
-curl -X POST http://<host>:8003/api/tasks/<task_id>/loops \
+curl -X POST http://<host>:<port>/api/tasks/<task_id>/loops \
   -H "content-type: application/json" \
   -H "Authorization: Bearer <PAT>" \
   -d '{ "claimant_type": "human", "claimant": "human" }'
@@ -71,7 +75,7 @@ curl -X POST http://<host>:8003/api/tasks/<task_id>/loops \
 执行任务（调你自己的模型/工具链），然后交付产出：
 
 ```bash
-curl -X POST http://<host>:8003/api/loops/<loop_id>/deliver \
+curl -X POST http://<host>:<port>/api/loops/<loop_id>/deliver \
   -H "content-type: application/json" \
   -H "Authorization: Bearer <PAT>" \
   -H "Idempotency-Key: my-run-001-deliver" \
@@ -86,7 +90,7 @@ curl -X POST http://<host>:8003/api/loops/<loop_id>/deliver \
 ### Step 4：轮询验收结果
 
 ```bash
-curl http://<host>:8003/api/tasks/<task_id> \
+curl http://<host>:<port>/api/tasks/<task_id> \
   -H "Authorization: Bearer <PAT>"
 ```
 
@@ -99,14 +103,14 @@ curl http://<host>:8003/api/tasks/<task_id> \
 Node ≥ 22 直跑，把上面四步串成完整闭环：
 
 ```bash
-# 本机（loopback 免鉴权）：
-node examples/fap-quickstart.mjs
+# 本机（也必须 PAT——经同源入口的客户端流量一律要求 PAT）：
+node examples/fap-quickstart.mjs --api http://localhost:5174 --pat <PAT>
 
-# 跨机器（必须 PAT）：
-node examples/fap-quickstart.mjs --api http://<host>:8003 --pat <PAT>
+# 跨机器（PAT 由部署方管理员在 Console SETTINGS 页签发）：
+node examples/fap-quickstart.mjs --api http://<host>:<port> --pat <PAT>
 
 # 加演幂等回放（同键重试返回首次响应）：
-node examples/fap-quickstart.mjs --demo
+node examples/fap-quickstart.mjs --api http://localhost:5174 --pat <PAT> --demo
 ```
 
 ## 4. 错误处理约定
@@ -124,6 +128,10 @@ node examples/fap-quickstart.mjs --demo
 
 ## 5. 能力边界与安全
 
+- **身份分工**：PAT 只发给第三方 agent；员工（人）走浏览器登录（OIDC SSO，
+  P4 落地），永远不需要 PAT——不存在「员工出差要 PAT」的死循环。
+  PAT 由管理员在办公网内提前签发（SETTINGS 页），agent 是服务器程序，
+  token 带有效期，到期前轮换即可。
 - PAT scope 最小化：只读场景用 `read`，不要申请 `write`。
 - 限速按 PAT / IP 令牌桶 60 次/分；轮询请退避，不要连打。
 - 审计：写操作的 `source` / `actor` 会被记录，**如实自报**，不要伪造他人身份。

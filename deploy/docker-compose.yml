@@ -79,6 +79,10 @@ services:
       FLEET_PG_DSN: *pg-dsn
       FLEET_GATEWAY_URL: http://gateway:8001
       FLEET_DEERFLOW_ROOT: /etc/deerflow
+      # FAP 同源暴露的 XFF 信任链：可信 proxy = 本机 + compose 内网网段
+      # （console-backend 容器直连 _cp 拉数、fap_proxy 转发客户端流量）。
+      # 客户端自带 XFF 一律由 console-backend 重建，不可信来源的 XFF 被忽略。
+      FAP_TRUSTED_PROXIES: ${FAP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8}
     volumes:
       - deerflow-cfg:/etc/deerflow
     depends_on:

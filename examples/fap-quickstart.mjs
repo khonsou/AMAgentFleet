@@ -15,8 +15,9 @@
  *
  *   PAT 获取：fleet Console「SETTINGS」页签发（scope 选 write），token 只显示一次。
  *
- * 参数（CLI 优先，环境变量兜底）：--api / FAP_API（缺省 http://127.0.0.1:8003）、
- *   --pat / FAP_PAT。注意：经 LAN IP 调用必须带 PAT（loopback 才免鉴权）。
+ * 参数（CLI 优先，环境变量兜底）：--api / FAP_API（缺省 http://localhost:5174，
+ *   即 Console 同源入口——GUI 网址就是 API 入口）、--pat / FAP_PAT。
+ *   经同源入口的客户端流量一律要求 PAT，无豁免。
  *
  * 注意：这是参考实现而非生产代码——真实 agent 应替换「执行任务」部分；
  * 429 按 retry_after 退避一次；幂等键重试返回首次响应（X-Idempotent-Replay: true）。
@@ -32,7 +33,7 @@ const flag = (name) => {
 }
 const has = (name) => args.includes(name)
 
-const API = (flag('--api') ?? process.env.FAP_API ?? 'http://127.0.0.1:8003').replace(/\/+$/, '')
+const API = (flag('--api') ?? process.env.FAP_API ?? 'http://localhost:5174').replace(/\/+$/, '')
 const PAT = flag('--pat') ?? process.env.FAP_PAT
 const DEMO = has('--demo')
 

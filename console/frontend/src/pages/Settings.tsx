@@ -73,6 +73,10 @@ export default function SettingsPage() {
           <p className="mt-1 text-[12.5px] text-ink-2">
             第三方 agent 接入（FAP）：签发 / 吊销 PAT。token 只显示一次，平台只存摘要。
           </p>
+          <p className="mt-1.5 font-mono text-[12px] text-ink-2">
+            API 接入地址（与本页同源）：<code className="text-led-green">{window.location.origin}</code>
+            <span className="ml-2 text-ink-3">— 第三方 agent 先 GET <code>{window.location.origin}/api/meta</code> 自发现，详见接入指南 docs/fap-agent-guide.md</span>
+          </p>
         </div>
       </header>
 

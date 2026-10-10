@@ -61,6 +61,13 @@ docker compose logs -f control-plane
 ```
 
 - 对外仅 `console-web`（`${FLEET_PORT}`）；网关 :8001、CP :8003、后端 :8002 均为容器网络内部
+- **FAP 同源暴露**：第三方 agent 的 API 入口 = Console 网址本身
+  （`http://<host>:${FLEET_PORT}`）。console-backend 把非 `/api/console/*`
+  的 `/api/*` 原样转发给 CP，并重建 `X-Forwarded-For`（取直接对端 IP、
+  忽略客户端自带值）。CP 侧仅信任 `FAP_TRUSTED_PROXIES`（默认
+  本机 + RFC1918 内网段，compose 已配）的 XFF，其余一律不信——远程客户端
+  伪造 XFF 无法冒充内部流量。平台内部直连（console-backend `_cp`、
+  dispatcher）无 XFF + 可信对端 = 内部豁免；**经代理的客户端流量一律要 PAT**。
 - `deerflow-cfg` 共享卷：CP 渲染 `extensions_config.json`（MCP 注册表），网关读取
 - `deer-flow-home` 卷：网关运行数据（agent 配置/checkpoint/记忆），**备份对象**
 

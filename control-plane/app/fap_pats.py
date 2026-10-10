@@ -27,10 +27,11 @@ PAT_PREFIX = "dfp_"
 _B62 = string.digits + string.ascii_letters
 _ALLOWED_SCOPES = {"read", "write"}
 
-# 管理端点仅限 loopback（Console 后端代理路径）
+# 管理端点仅限平台内部调用（Console 后端 _cp 路径：可信 proxy 直连、无 XFF）。
+# 用 _is_internal 口径：经同源代理的远程客户端流量必带 XFF，不会被误判为内部。
 def _assert_loopback(request: Request) -> None:
-    host = request.client.host if request.client else ""
-    if host not in ("127.0.0.1", "::1", "localhost"):
+    from .fap_middleware import _is_internal
+    if not _is_internal(request):
         raise HTTPException(403, "PAT 管理端点仅限 Console 本机调用")
 
 

@@ -37,8 +37,49 @@ _WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 _PAT_TOKEN_RE = __import__("re").compile(r"^dfp_[0-9A-Za-z]+$")
 
 
-def _client_ip(request: Request) -> str:
+def _peer(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+# 可信反向代理网段/地址（本机 console backend、compose 内 console-backend 等）。
+# 逗号分隔，支持单 IP 与 CIDR；可用 FAP_TRUSTED_PROXIES 覆盖。
+import ipaddress as _ipaddress
+
+_TRUSTED_NETWORKS = tuple(
+    _ipaddress.ip_network(h.strip(), strict=False)
+    for h in __import__("os").environ.get(
+        "FAP_TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if h.strip())
+
+
+def _is_trusted_proxy(peer: str) -> bool:
+    try:
+        ip = _ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(ip in n for n in _TRUSTED_NETWORKS)
+
+
+def _client_ip(request: Request) -> str:
+    """真实客户端 IP：直连对端是可信 proxy（Console 后端同源转发）时取
+    X-Forwarded-For 首跳；其余情况一律不信 XFF——否则远程客户端伪造
+    XFF=127.0.0.1 即可冒充内部流量，静默击穿 PAT 强制（QA-7 口径）。"""
+    peer = _peer(request)
+    if _is_trusted_proxy(peer):
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    return peer
+
+
+def _is_internal(request: Request) -> bool:
+    """平台内部直连流量（Console 后端 _cp 拉数、dispatcher 本机调用）：
+    无 Authorization、直连对端是可信 proxy、且未携带 XFF——fap_proxy 转发的
+    客户端流量必重建 XFF，故带 XFF 的一律视为外部客户端，不享内部豁免。"""
+    return (_bearer(request) is None
+            and _is_trusted_proxy(_peer(request))
+            and "x-forwarded-for" not in request.headers)
 
 
 def _bearer(request: Request) -> str | None:
@@ -175,7 +216,7 @@ async def rate_limit_middleware(request: Request, call_next):
     调用）与 QA-7 的 PAT 放行同口径，不进限速桶——Console 多页 5s 轮询
     共享同一 ip 桶，60/min 会被 UI 自身打满。
     """
-    if _bearer(request) is None and _client_ip(request) == "127.0.0.1":
+    if _is_internal(request):
         return await call_next(request)
     now = time.monotonic()
     window = 60.0
@@ -239,8 +280,8 @@ async def _lookup_pat(token: str) -> dict | None:
 async def pat_auth_middleware(request: Request, call_next):
     """PAT 校验：写操作要 write scope，读操作要 read scope。
 
-    放行（QA-7）：127.0.0.1 且无 Authorization 的内部流量
-    （Console 后端转发、dispatcher 本机调用）。
+    放行（QA-7）：平台内部直连流量（Console 后端 _cp、dispatcher 本机调用），
+    口径与限速豁免一致：可信 proxy 直连 + 无 Authorization + 无 XFF。
     """
     path = request.url.path
     # 自发现与文档永远免鉴权
@@ -248,7 +289,7 @@ async def pat_auth_middleware(request: Request, call_next):
         return await call_next(request)
     token = _bearer(request)
     if token is None:
-        if _client_ip(request) == "127.0.0.1":
+        if _is_internal(request):
             return await call_next(request)
         return JSONResponse({"detail": "缺少 PAT（Authorization: Bearer <PAT>）"}, status_code=401)
     if not _PAT_TOKEN_RE.match(token):

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import asyncpg
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -433,3 +433,32 @@ async def cp_pat_create(body: PatCreateBody):
 @app.delete("/api/console/pats/{pat_id}")
 async def cp_pat_revoke(pat_id: str):
     return await _cp(f"/pats/{pat_id}", "DELETE", {})
+
+
+# ---------------------------------------------------------------------------
+# FAP 同源暴露：非 /api/console/* 的 /api/* 原样转发到 control-plane。
+# 第三方 agent 与人用同一入口（GUI 网址即 API 入口），只需网址 + PAT。
+# 注册在所有显式路由之后；显式 /api/console/* 优先，不会落入本转发。
+# 安全要点：X-Forwarded-For 由本后端重建（取直接对端 IP、忽略客户端自带
+# 值），防止伪造 XFF=127.0.0.1 冒充内部流量绕过 PAT 强制。
+# ---------------------------------------------------------------------------
+
+_FAP_PASS_HEADERS = ("authorization", "idempotency-key", "content-type")
+_FAP_PASS_RESP_HEADERS = ("x-protocol-version", "x-idempotent-replay", "retry-after")
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def fap_proxy(path: str, request: Request) -> Response:
+    headers = {h: request.headers[h] for h in _FAP_PASS_HEADERS if h in request.headers}
+    headers["x-forwarded-for"] = request.client.host if request.client else "unknown"
+    body = await request.body()
+    async with httpx.AsyncClient(base_url=CONTROL_PLANE, timeout=120) as client:
+        resp = await client.request(
+            request.method, f"/api/{path}", content=body or None, headers=headers
+        )
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers={h: resp.headers[h] for h in _FAP_PASS_RESP_HEADERS if h in resp.headers},
+        media_type=resp.headers.get("content-type"),
+    )
