@@ -208,7 +208,7 @@ export default function AgentDetailPage() {
         {/* 对话区 */}
         <Panel className="flex flex-col">
           <PanelHead>
-            <span className="silk">SESSION&nbsp;/&nbsp;对话（经 Dispatcher 派发）</span>
+            <span className="silk">TASKS&nbsp;/&nbsp;认领任务</span>
             <span className="silk">{tasks.length}&nbsp;TASKS</span>
           </PanelHead>
           <PanelBody className="flex flex-1 flex-col">
@@ -260,7 +260,7 @@ export default function AgentDetailPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && dispatch()}
                 rows={3}
-                placeholder={(stopped ? 'Agent 已停止：先点上方"拉起"再派发任务。' : '输入指令派发新任务（新 thread 执行）。') + ' Ctrl/⌘+Enter 派发'}
+                placeholder={(stopped ? 'Agent 已停止：先点上方"拉起"再发起任务。' : '输入指令发起新任务。') + ' Ctrl/⌘+Enter 指派'}
                 className={INPUT_CLS + ' min-h-[72px] resize-y'}
                 disabled={dispatching || stopped}
               />

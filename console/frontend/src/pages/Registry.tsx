@@ -100,7 +100,7 @@ export default function RegistryPage() {
           <div className="silk">MODULE <b>02</b> / REGISTRY</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">Agent 定义</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            注册 / 配置 / 停止拉起。派发与协作运行流见「Fleet 看板」，执行日志见「运行观测」。
+            注册 / 配置 / 停止拉起。发起任务见「任务看板」，会话日志见「运行观测」。
           </p>
         </div>
         <div className="flex items-center gap-3">

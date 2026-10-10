@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { Led, StatusPill, taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/Status'
 
-/** Fleet 看板（Loop 视图）：以协作根任务为锚的运行流。
+/** Fleet 任务看板：以协作根任务为锚的任务流。
  *  指挥官在顶，worker 在下方按线程树流动；无父任务的是独立任务。
  *  设计参考：Hermes Kanban（根任务+扇出子任务同视图可见）/ agentboard（舰队级可见性）。
  *  视觉：机架仪器语言 —— 状态 = LED，数据 = 表盘读数，面板 = 模块。 */
@@ -206,7 +206,7 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
                   <Textarea value={target === l.id ? comment : ''}
                     onChange={(e) => { setTarget(l.id); setComment(e.target.value) }}
                     rows={2}
-                    placeholder="退回意见（对方同 thread 续跑修正）"
+                    placeholder="退回意见（对方在同一会话中续跑修正）"
                     className={INPUT_CLS + ' min-w-64 resize-y text-xs'}
                     disabled={busy} />
                   <Button size="sm" variant="outline" disabled={busy || target !== l.id || !comment.trim()}
@@ -286,7 +286,7 @@ export default function Home() {
   const totalTokens = tasks.reduce((s, t) => s + (t.tokens ?? 0), 0)
 
   const readouts = [
-    { label: 'RUNNING LOOPS', value: runningLoops, display: String(runningLoops), hot: true },
+    { label: 'RUNNING TASKS', value: runningLoops, display: String(runningLoops), hot: true },
     { label: 'TASKS TOTAL', value: tasks.length, display: String(tasks.length) },
     { label: 'AGENTS REG', value: agents.length, display: String(agents.length) },
     { label: 'TOKENS CUM', value: totalTokens, display: fmtTokens(totalTokens) },
@@ -301,23 +301,23 @@ export default function Home() {
           <div className="silk">MODULE <b>01</b> / FLEET BOARD</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">任务看板</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            协作运行流：指挥官发起的 loop 在顶部，worker 在下方流动。点击任意节点看完整对话。
+            协作任务流：父任务在顶部，子任务（agent 可拆单协作）在下方流动。点击任意节点看完整详情。
           </p>
         </div>
         <div className="silk">4S&nbsp;REFRESH</div>
       </header>
 
-      {/* 发起新 loop */}
+      {/* 发起新任务 */}
       <Panel className="mb-5">
         <PanelHead>
-          <span className="silk">NEW&nbsp;LOOP&nbsp;/&nbsp;发起</span>
+          <span className="silk">NEW&nbsp;TASK&nbsp;/&nbsp;发起任务</span>
           <span className="silk">CTRL+ENTER&nbsp;↵</span>
         </PanelHead>
         <PanelBody>
           <Textarea value={instruction} onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && launch()}
             rows={3}
-            placeholder="输入任务指令，发起一个 loop（该 agent 可再派生子任务给其它 agent）。支持多行，Ctrl/⌘+Enter 提交。"
+            placeholder="输入任务指令发起任务；认领的 agent 可再拆分子任务协作。支持多行，Ctrl/⌘+Enter 提交。"
             className={INPUT_CLS + ' min-h-[72px] resize-y'} disabled={launching} />
           <div className="mt-2.5 flex items-center gap-2.5">
             <select value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
@@ -355,7 +355,7 @@ export default function Home() {
 
       {/* 过滤开关 */}
       <div className="mb-3 mt-5 flex flex-wrap items-center gap-2">
-        <span className="silk mr-1.5">TASK&nbsp;STREAM</span>
+        <span className="silk mr-1.5">任务流&nbsp;/&nbsp;TASK&nbsp;STREAM</span>
         {TAGS.map((tag) => {
           const on = selectedTags.has(tag)
           return (
@@ -372,7 +372,7 @@ export default function Home() {
         <span className="ml-auto font-mono text-[11px] text-ink-3">默认显示需要你行动的（待分配 / 待确认）</span>
       </div>
 
-      {/* Loop 流 */}
+      {/* 任务流 */}
       <div className="space-y-4">
         {forest.map((node) => {
           const st = loopStatus([node])
@@ -389,7 +389,7 @@ export default function Home() {
                     title={node.task.input || ''}>
                     {node.task.input?.trim() || '（无任务说明）'}
                   </span>
-                  <span className="font-mono text-[11px] text-ink-3">loop #{node.task.id}</span>
+                  <span className="font-mono text-[11px] text-ink-3">task #{node.task.id}</span>
                   {node.task.pool_status === 'review' && <StatusPill color="amber" className="text-led-amber">待验收</StatusPill>}
                   {node.task.pool_status === 'done' && <StatusPill color="green">已验收</StatusPill>}
                   <StatusPill color={agg.led} blink={agg.blink}>{agg.label}</StatusPill>

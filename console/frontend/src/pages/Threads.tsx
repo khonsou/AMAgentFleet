@@ -68,7 +68,7 @@ export default function ThreadsPage() {
 
       <Panel>
         <PanelHead>
-          <span className="silk">THREAD&nbsp;LOG&nbsp;/&nbsp;执行日志</span>
+          <span className="silk">会话日志&nbsp;/&nbsp;THREAD&nbsp;LOG</span>
           <span className="silk">{rows.length}&nbsp;THREADS</span>
         </PanelHead>
         <div className="overflow-x-auto">
