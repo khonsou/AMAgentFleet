@@ -28,6 +28,15 @@
 - 启动：`cd console && npm run dev`（`scripts/dev.sh` 依次拉起 PG→网关:8001→后端:8002→前端，退出全回收）。
 - 注意：依赖网关 `run_events.backend: db`（spike 期间已从 memory 修正，否则消息只存进程内存，重启即丢）。
 
+## Agent YAML 常用开关（`agents/`）
+
+| 字段 | 语义 |
+|------|------|
+| `spec.agent.skills` | 三态：`null`（不写值）= 全部已启用技能可见（含对话沉淀）；`["a"]` = 白名单；`[]` = 零技能。**禁止无审查写 `[]`** |
+| `spec.agent.allowed_subagents` | 不写（null）= 随 fleet 默认开启 in-thread subagent（dispatcher 统一 `subagent_enabled=true`）；`[]` = 硬拒（该 agent 无 `task` 工具，派 subagent 的诉求会退化为 `agent_spawn` 入池） |
+| `spec.agent.tool_groups` | 不写（null）= 全部工具组（含 fleet 的 `agent_spawn`/`agent_message`）；按需白名单收紧 |
+| `egress` | 出站域名白名单；留空 = 不放开任何出站 |
+
 ## 文档索引
 
 | 文档 | 内容 |

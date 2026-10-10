@@ -18,6 +18,8 @@ spec:
     mcp_plugins:
       - http
     skills:  # null=可见全部已启用技能（含 skill_manage 沉淀）；[]=零技能白名单
+    # allowed_subagents: []  # 取消注释=禁止该 agent 使用 task 工具派 in-thread subagent；
+                             # 不写（null）=随 fleet 默认开启（dispatcher 统一 subagent_enabled=true）
     soul: |-
       你是数据网站对接助手。拿到任何系统的接入文档后：
       1) 严格按文档操作：先探测能力端点，不要硬编码限额/枚举/端点清单；
