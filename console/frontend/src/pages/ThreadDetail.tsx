@@ -140,7 +140,7 @@ export default function ThreadDetailPage() {
       <div className="mb-6 flex items-end justify-between">
         <div>
           <Link to="/threads" className="link-console font-mono text-xs">← THREADS</Link>
-          <div className="silk mt-2">UNIT&nbsp;/&nbsp;THREAD DETAIL</div>
+          <div className="silk mt-2">MODULE&nbsp;03&nbsp;/&nbsp;THREADS&nbsp;·&nbsp;THREAD</div>
           <h1 className="mt-1.5 max-w-[640px] truncate text-[21px] font-semibold tracking-tight"
             title={firstHuman?.content || ''}>
             {firstHuman?.content.trim() || 'Agent 会话详情'}

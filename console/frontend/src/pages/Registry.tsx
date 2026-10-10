@@ -159,7 +159,7 @@ export default function RegistryPage() {
       <Panel className="mb-6">
         <PanelHead>
           <span className="silk">REGISTRY&nbsp;AGENTS&nbsp;/&nbsp;配置面 · 全员可见</span>
-          <span className="silk">{agents.length}&nbsp;UNITS</span>
+          <span className="silk">{agents.length}&nbsp;AGENTS</span>
         </PanelHead>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

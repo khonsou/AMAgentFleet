@@ -129,3 +129,10 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   续跑」→「在同一会话中续跑修正」。保留不动的正确用法：TaskDetail/验收台中
   「采纳/退回/重派 loop #N」（动作对象就是执行轮次，属准确术语）。
   核对结论：tsc ✓、Vite 编译 ✓、逐页 silk/placeholder 术语复核 ✓。
+- **2026-10-10 消灭 UNIT**：详情页眉标 `UNIT / X DETAIL` 经追问确认不是任何
+  概念，只是与列表页 `MODULE NN` 对应的装饰性排版词（详情页版），从未进入
+  概念模型。替换为所属模块归属（复用既有 MODULE 约定、零新概念）：
+  TaskDetail → `MODULE 01 / FLEET BOARD · TASK`；AgentDetail →
+  `MODULE 02 / REGISTRY · AGENT`；ThreadDetail → `MODULE 03 / THREADS · THREAD`。
+  Registry 计数 `N UNITS` → `N AGENTS`。全站 UNIT 清零（tsc ✓）。
+  **教训**：眉标/装饰词也是用户会读到的词，新词进入 GUI 前须过 §4 词表。

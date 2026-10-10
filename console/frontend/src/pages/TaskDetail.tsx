@@ -119,7 +119,7 @@ export default function TaskDetailPage() {
     <div className="mx-auto max-w-4xl px-7 pb-20 pt-7">
       <div className="mb-6">
         <Link to="/" className="link-console font-mono text-xs">← FLEET BOARD</Link>
-        <div className="silk mt-2">UNIT&nbsp;/&nbsp;TASK DETAIL</div>
+        <div className="silk mt-2">MODULE&nbsp;01&nbsp;/&nbsp;FLEET&nbsp;BOARD&nbsp;·&nbsp;TASK</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
           <h1 className="max-w-[560px] truncate text-[21px] font-semibold tracking-tight"
             title={t?.input || ''}>
