@@ -69,6 +69,13 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
   进 facts（存服务端数据卷，不进 git）。高敏场景 per-agent 关 `memory_enabled`。
 - **网关 PYTHONPATH 必须含仓库根**：config 的 fleet 工具组 `use: fleet_tools:*`
   依赖它；dev.sh 与生产 compose 均已配置，手工重启网关时勿漏。
+- **spike venv 的 editable 安装会记住绝对路径**：`spike/deer-flow/backend/.venv`
+  里 `_editable_impl_deerflow_*.pth` 指向创建时的源码位置；源码目录被移动/删除后
+  （如旧任务工作区被清理），运行中的网关表面正常、一跑就报
+  `FileNotFoundError: [Errno 2]`（certifi 证书路径等运行时文件访问全断）。
+  修复：在 backend 目录执行
+  `uv pip install --python .venv/bin/python --no-deps -e ./packages/extension-api -e ./packages/harness`
+  然后重启网关。控制台/控制面两个 venv 已检查无此问题。
 
 ## 常用命令
 
