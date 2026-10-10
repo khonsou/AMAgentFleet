@@ -54,6 +54,22 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
 - **审计**：`audit_events` 只追加，不更新不删除。
 - **依赖**：引入新核心依赖需 ADR；优先标准库与已在用的栈（Python/FastAPI、LangGraph 生态、React）。
 
+### DeerFlow 配置语义坑（已实测，改前先读）
+
+- **agent YAML `skills:` 三态**（上游白名单语义，极易踩雷）：缺省/`null` = 可见
+  全部已启用技能（含 agent 自己 `skill_manage` 沉淀的自定义技能）；`["a","b"]` =
+  白名单；`[]` = **零技能**——agent 创建的技能永远不可见。fleet 仓库统一用
+  `skills:`（null），禁止无审查地写 `[]`。
+- **`skill_evolution.enabled`** 已开启（fork tag `am-fleet-base-v2`）：agent 获得
+  `skill_manage` 工具，可在对话中沉淀持久化技能到 `skills/custom/`（静态扫描 +
+  moderation 模型双闸，写完即刷新 system prompt、跨会话生效）。
+- **`memory_enabled: true`**（deermem）：per-agent 持久化事实自动落盘
+  `.deer-flow/.../agents/<name>/facts/*.md` 并注入后续会话。注意：自动提取
+  无法被 agent soul 的「凭据不写文件」约束约束——对话中的敏感信息可能被提炼
+  进 facts（存服务端数据卷，不进 git）。高敏场景 per-agent 关 `memory_enabled`。
+- **网关 PYTHONPATH 必须含仓库根**：config 的 fleet 工具组 `use: fleet_tools:*`
+  依赖它；dev.sh 与生产 compose 均已配置，手工重启网关时勿漏。
+
 ## 常用命令
 
 ```bash

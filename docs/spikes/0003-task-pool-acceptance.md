@@ -165,6 +165,25 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
 ~~MVP secrets 过渡方案~~（agent YAML credentials + secrets 目录注入）
 **明确否决**，与可见性原则冲突。
 
+## 2026-10-10 增补（skill 沉淀全链路验收）
+
+- **skill_evolution 开启并同步 fork**：`config.fleet.yaml` 打开
+  `skill_evolution`，agent 获得 `skill_manage` 工具（对话中创建/沉淀
+  持久化技能，落盘 `skills/custom/`，静态扫描 + moderation 双闸，
+  写完即刷新 system prompt、跨会话生效）；fork（`khonsou/deer-flow`
+  分支 `am-fleet/base`）已提交并打 tag `am-fleet-base-v2`。
+- **实测链路**：对话中让 agent 创建 `probe-board-skill`（task 103 /
+  loop 146）沉淀成功 → 途中抓到并修复两个 bug：
+  a) agent YAML `skills: []` 空白名单导致沉淀技能在新会话不可见
+  （上游白名单语义：`null`=全部可见 / `["a"]`=白名单 / `[]`=零技能），
+  8 个 agent YAML 统一改 `skills:`（null），commit `3cee940`；
+  b) 手工重启网关时 PYTHONPATH 缺仓库根，`fleet_tools:*` ImportError
+  导致对话递归触顶（task 104 命中 100 步上限）；dev.sh 修复后新会话
+  （task 105 / loop 148）agent 能列出并引用沉淀技能 ✓。
+- **验收结论**：「通过对话给 agent 持久化 skills」成立——用户不需要
+  写代码，agent 自己沉淀的技能跨会话可用。语义三态已固化进
+  AGENTS.md「DeerFlow 配置语义坑」，禁止无审查写 `[]`。
+
 ## 遗留（2026-10-09 晚更新：前五项已闭环）
 
 ~~1. dispatcher 多消费者~~ ✅ 已落地：`FLEET_DISPATCHER_WORKERS`（默认 3）并行消费，
