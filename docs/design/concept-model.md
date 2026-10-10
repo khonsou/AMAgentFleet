@@ -101,6 +101,25 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
 | **验收** | accept/return | 采纳（task→done）/ 打回（loop 续跑） | 不叫通过/驳回 |
 | **发起** | create | 人创建 task 入池 | 不叫派发（dispatch 仅指「发起并指派给某 agent」） |
 
+### 4.1 页面层级眉标规范（breadcrumb 约定）
+
+详情页页头的固定版式，自上而下四行：**返回链接 → MODULE 眉标（视觉装饰，
+纯模块名，不带实体后缀）→ 概念层级 breadcrumb（仅当有父级时）→ 实体标题 h1**。
+
+- **breadcrumb 用词**：只允许 §4 词表内的实体大写形式
+  （`TASK #N › LOOP #M › THREAD`），分隔符 `›`；编号低调跟随，任务内容为主
+  （沿用 loop 卡片约定），超出宽度截断、`title` 悬浮给全文。
+- **每段可点击性**：有独立详情页的段（TASK）做链接；无独立页的段（LOOP，
+  其详情寄居于 Task 详情）为纯文本；当前页段（THREAD）为纯文本。
+- **链顶页无 breadcrumb**：处于概念链顶的实体（如 agent 定义，其上只有
+  Registry 模块）不硬造 breadcrumb，实体身份由 h1 承担。
+- **fallback 语义**：数据缺失（如自由对话 thread 无 loop）时 breadcrumb
+  整行消失，`loop: null` 是真实语义而非错误——禁止显示空壳或报错。
+- **MODULE 眉标**：`MODULE NN / <模块名>` 是机架设计语言的导航装饰，编号
+  = 顶栏顺序位（01 FLEET / 02 REGISTRY / 03 THREADS / 04 SETTINGS），
+  与概念层级无关；不得把概念层级信息塞进 MODULE 行。
+- **禁例**：不得在页头引入无概念对应的装饰词（UNIT 事件教训，见 §6）。
+
 ## 5. 命名统一建议（改动映射，纯文案，待批准后执行）
 
 | 位置 | 现状 | 建议 | 涉及面 |
