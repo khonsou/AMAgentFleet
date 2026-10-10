@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { api, type Overview, type RegistryAgent } from '@/lib/api'
+import { api, type RegistryAgent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelBody, PanelHead } from '@/components/console/Panel'
@@ -11,27 +11,15 @@ function fmtTime(iso: string | null) {
   return new Date(iso).toLocaleString('zh-CN', { hour12: false })
 }
 
-function fmtNum(n: number) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
-  return String(n)
-}
-
 const SELECT_CLS = 'ctl h-9 shrink-0 rounded-[2px] border border-hairline bg-inset px-2 font-mono text-xs text-ink'
-const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
 const FORM_INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-sm text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
 
 export default function RegistryPage() {
-  const [ov, setOv] = useState<Overview | null>(null)
   const [agents, setAgents] = useState<RegistryAgent[]>([])
   const [err, setErr] = useState('')
-  const [instruction, setInstruction] = useState('')
-  const [launchAgent, setLaunchAgent] = useState('')
-  const [launching, setLaunching] = useState(false)
   const navigate = useNavigate()
 
   const load = () => {
-    api.overview().then(setOv).catch((e) => setErr(String(e)))
     api.agents().then(setAgents).catch(() => setAgents([]))
   }
 
@@ -41,20 +29,6 @@ export default function RegistryPage() {
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const launch = async () => {
-    if (launching || !launchAgent) return
-    setLaunching(true)
-    setErr('')
-    try {
-      await api.agentDispatch(launchAgent, instruction.trim() || '开始工作：请先介绍你的职责。')
-      setInstruction('')
-      navigate(`/agents/${launchAgent}`)
-    } catch (e) {
-      setErr(String(e))
-      setLaunching(false)
-    }
-  }
 
   /** 注册新 agent：表单生成模板 YAML → 部署（YAML 落盘 + 导入网关 + 元数据入库）。 */
   const [showRegister, setShowRegister] = useState(false)
@@ -119,15 +93,6 @@ export default function RegistryPage() {
     }
   }
 
-  const readouts = [
-    { label: 'AGENT 会话', value: ov?.threads },
-    { label: '运行中', value: ov?.running, hot: true },
-    { label: '异常任务', value: ov?.errored, bad: (ov?.errored ?? 0) > 0 },
-    { label: '今日 TOKEN', value: ov ? fmtNum(ov.tokens_today) : undefined },
-    { label: '累计 TOKEN', value: ov ? fmtNum(ov.tokens_total) : undefined },
-    { label: 'CHECKPOINT', value: ov?.checkpoints },
-  ]
-
   return (
     <div className="mx-auto max-w-7xl px-7 pb-20 pt-7">
       <header className="mb-6 flex items-end justify-between">
@@ -135,49 +100,16 @@ export default function RegistryPage() {
           <div className="silk">MODULE <b>02</b> / REGISTRY</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">Agent 定义</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            注册 / 配置 / 派发 / 停止拉起。协作运行流见「Fleet 看板」，执行日志见「运行观测」。
+            注册 / 配置 / 停止拉起。派发与协作运行流见「Fleet 看板」，执行日志见「运行观测」。
           </p>
         </div>
-        <div className="silk">5S&nbsp;REFRESH</div>
-      </header>
-
-      {/* 拉起 = 选 Registry agent 派发任务（不再创建裸 lead_agent 会话） */}
-      <Panel className="mb-5">
-        <PanelHead>
-          <span className="silk">DISPATCH&nbsp;/&nbsp;派发</span>
-          <span className="silk">ENTER&nbsp;↵</span>
-        </PanelHead>
-        <PanelBody className="flex items-center gap-2.5">
-          <select
-            value={launchAgent}
-            onChange={(e) => setLaunchAgent(e.target.value)}
-            className={SELECT_CLS + ' w-56'}
-          >
-            <option value="">选择 Registry Agent…</option>
-            {agents.map((a) => (
-              <option key={a.name} value={a.name}>{a.display_name || a.name}</option>
-            ))}
-          </select>
-          <Input
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && launch()}
-            placeholder="输入任务指令，派发该 agent 执行（新 thread）"
-            className={INPUT_CLS}
-            disabled={launching}
-          />
-          <Button variant="signal" onClick={launch} disabled={launching || !launchAgent} className="shrink-0">
-            {launching ? '派发中…' : '派发任务'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setShowRegister(!showRegister)}
-            className="shrink-0"
-          >
+        <div className="flex items-center gap-3">
+          <span className="silk hidden md:inline">5S&nbsp;REFRESH</span>
+          <Button variant="signal" onClick={() => setShowRegister(!showRegister)} className="shrink-0">
             + 注册新 Agent
           </Button>
-        </PanelBody>
-      </Panel>
+        </div>
+      </header>
 
       {showRegister && (
         <Panel className="mb-5 border-signal/40">
@@ -223,20 +155,6 @@ export default function RegistryPage() {
           后端连接异常：{err}（确认 console backend :8002 与 DeerFlow 网关 :8001 已启动）
         </div>
       )}
-
-      {/* 表盘读数带 */}
-      <Panel className="mb-6">
-        <div className="grid grid-cols-2 md:grid-cols-6">
-          {readouts.map((c, i) => (
-            <div key={c.label} className={i < readouts.length - 1 ? 'border-r border-hairline-soft px-4 pb-3 pt-3.5' : 'px-4 pb-3 pt-3.5'}>
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-ink-3">{c.label}</span>
-              <div className={`mt-1 font-mono text-xl font-medium tabular-nums ${c.hot ? 'text-led-green' : c.bad ? 'text-led-red' : 'text-ink'}`}>
-                {c.value ?? '—'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Panel>
 
       <Panel className="mb-6">
         <PanelHead>
