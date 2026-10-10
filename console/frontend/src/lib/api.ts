@@ -225,6 +225,8 @@ export interface Loop {
   deliverable: string | null
   /** 当前产出：thread 最新 AI 回复（展示用，派生）；deliverable 是交付时刻快照 */
   latest_output?: string | null
+  /** 产物路径（run.delivery 提取，present_files 呈现 = 用户可下载意图） */
+  artifacts?: string[] | null
   tokens: number | null
   version: number
   error: string | null

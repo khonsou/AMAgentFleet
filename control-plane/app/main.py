@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import httpx
@@ -476,7 +477,6 @@ async def task_get(task_id: int) -> dict[str, Any]:
 def _ai_text(content: Any) -> str | None:
     # run_events.content 是 JSON 文本列（非 jsonb），先解析
     if isinstance(content, str):
-        import json
         try:
             content = json.loads(content)
         except ValueError:
@@ -505,6 +505,10 @@ async def _attach_latest_outputs(d: dict[str, Any]) -> None:
             "SELECT thread_id, content FROM run_events "
             "WHERE event_type = 'llm.ai.response' AND thread_id = ANY($1::text[]) "
             "ORDER BY thread_id, seq DESC", tids)
+        devs = await conn.fetch(
+            "SELECT thread_id, content FROM run_events "
+            "WHERE event_type = 'run.delivery' AND thread_id = ANY($1::text[]) "
+            "ORDER BY thread_id, seq", tids)
     latest: dict[str, str] = {}
     for r in rows:
         tid = r["thread_id"]
@@ -513,9 +517,29 @@ async def _attach_latest_outputs(d: dict[str, Any]) -> None:
         t = _ai_text(r["content"])
         if t:
             latest[tid] = t[:4000]
+    # 产物路径（present_files 呈现 = 用户可下载意图），供行内路径渲染下载链接
+    arts: dict[str, list[str]] = {}
+    for r in devs:
+        tid = r["thread_id"]
+        try:
+            c = json.loads(r["content"]) if isinstance(r["content"], str) else r["content"]
+        except ValueError:
+            continue
+        if not isinstance(c, dict):
+            continue
+        for k in ("paths", "presented_paths", "matched_paths"):
+            v = c.get(k)
+            if isinstance(v, list):
+                for p in v:
+                    if isinstance(p, str) and p.startswith("/"):
+                        if tid not in arts:
+                            arts[tid] = []
+                        if p not in arts[tid]:
+                            arts[tid].append(p)
     for l in loops:
         tid = l.get("thread_id")
         l["latest_output"] = latest.get(tid) if tid else None
+        l["artifacts"] = arts.get(tid) if tid else None
 
 
 @app.get("/api/review-queue")
