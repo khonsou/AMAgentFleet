@@ -452,9 +452,14 @@ async def fap_proxy(path: str, request: Request) -> Response:
     headers = {h: request.headers[h] for h in _FAP_PASS_HEADERS if h in request.headers}
     headers["x-forwarded-for"] = request.client.host if request.client else "unknown"
     body = await request.body()
+    # path:path 不含 query string，必须显式转发，否则 limit/status/agent 等
+    # 查询参数在代理层被静默丢弃（下游拿到的是默认值，非调用方意图）。
+    url = f"/api/{path}"
+    if request.url.query:
+        url = f"{url}?{request.url.query}"
     async with httpx.AsyncClient(base_url=CONTROL_PLANE, timeout=120) as client:
         resp = await client.request(
-            request.method, f"/api/{path}", content=body or None, headers=headers
+            request.method, url, content=body or None, headers=headers
         )
     return Response(
         content=resp.content,

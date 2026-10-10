@@ -1,0 +1,346 @@
+# FAP v1 协议验证测试报告
+
+- **被测对象**：AM Agent Fleet — Agent 自发现协议（FAP v1，ADR-0011）
+- **协议版本**：`protocol_version=1.0`，`server_version=0.2.0`
+- **测试时间**：2026-10-10 23:09~ 23:35
+- **测试方式**：黑盒自动化，打真实运行实例，不 mock；断言对照ADR-0011 与 `agent-doc`
+- **结果**：**49 项全部通过**；过程中发现 **1 个 P0 级代理层缺陷**与 **4 个协议设计缺陷**（含 1 个 P0 安全漏洞）
+- **报告状态**：v2（第二轮· 同端口架构审查）；本轮**未改动任何项目代码**
+
+---
+
+## 1. 测试范围与环境
+
+### 1.1 三层实际拓扑（测试中实测确认，非文档假设）
+
+| 层 | 端口 | 进程 | 职责 |
+|---|---|---|---|
+| 前端 Console | 5174 | Vite (Kimi_H) | React SPA，代理 `/api` → 8002 |
+| Console 后端 | 8002 | uvicorn `console/backend/main.py` | 看板数据聚合 + FAP 同源代理 |
+| **控制面** | **8003** | uvicorn `control-plane/app/main.py` | **FAP 协议本体** |
+| DeerFlow 网关 | 8001 | uvicorn | thread/run 执行面（D 域能力） |
+| PostgreSQL | 5432 | pgserver | 权威数据源 |
+
+**关键点**：FAP 协议实现在 **8003 控制面**，不在 8002。用户从 5174 访问的所有 `/api/*` 请求，都经8002 的 `fap_proxy` 转发至 8003 —— 代理层是协议路径上的必经环节，其正确性直接影响协议有效性。
+
+### 1.2 测试用例分布
+
+| 组 | 项数 | 覆盖内容 |
+|---|---|---|
+| G1 自发现 | 12 | `/api/meta`、`/api/agent-doc`、`X-Protocol-Version` |
+| G2 幂等 | 8 | 回放、跨 actor 冲突、超长、无键、读不受影响 |
+| G3 限速 | 7 | 令牌桶、429 体/头一致性、per-PAT 隔离 |
+| G4 PAT 鉴权 | 9 | 401/403 边界、XFF 伪造、免鉴权面、管理端点隔离 |
+| G5 文档一致性 | 8 | 端点存在性、capabilities 真实性、文档承诺 vs 实际行为 |
+| G6 端到端闭环 | 5 | 按文档 §8 全流程走通 |
+| G7 同端口一致性（本轮新增） | 8 | 单端口可达性、GUI/agent 对等性、鉴权口径统一、零魔法数字 |
+
+### 1.3 本轮追加的架构审查背景
+
+需求明确要求「GUI 和 agent 操作同端口」。审查发现现网是**四端口**（5174/ 8002 / 8003 / 8001），并由此暴露 4 个设计缺陷，详见第 3节。
+
+---
+
+## 2. 核心结论
+
+### 2.1 协议六项承诺全部有效
+
+| ADR-0011 要求 | 实测 | 结论 |
+|---|---|---|
+| `GET /api/meta` 免鉴权自发现 | 无凭证 200，四字段齐全、类型正确 | ✅ 有效 |
+| 全响应 `X-Protocol-Version` | 正常/404/401 业务路径**全部**携带，值恒为 `1.0` | ✅ 有效 |
+| `GET /api/agent-doc` 机器可读文档 | 200，`text/markdown`，正文完整 | ✅ 有效 |
+| 写操作幂等（24h 去重） | 同键同 actor 回放同一 task_id + `X-Idempotent-Replay:true`；跨 actor 409 | ✅ 有效 |
+| 429 限速 + 退避 | per-PAT 令牌桶生效，body 与 `Retry-After` 一致 | ✅ 有效 |
+| source/actor 审计透传 | `detail->'actor'` 确认落库 | ✅ 有效 |
+
+### 2.2 安全设计经受住了针对性攻击测试
+
+- **伪造 `X-Forwarded-For: 127.0.0.1` 无法绕过鉴权** —— 返回 401。这是 QA-7 明确关注的风险点，实现上做到了：非可信 peer 时一律不信任 XFF。
+- **8002 代理层重建 XFF**（取直接对端 IP，忽略客户端自带值），使外部流量无法伪装成内部流量。
+- **PAT 管理端点（签发/吊销）对外 401/403**，仅 loopback 可达 —— 高危管理面未暴露。
+- **read-only PAT 调写端点返回 403 而非 401**，区分了「身份无效」与「权限不足」，符合文档 §2 错误模型。
+- meta 不泄露 DSN/密钥类字段。
+
+---
+
+## 3. 发现的问题
+
+> 本节分两部分：3.1~3.2 为第一轮发现并已修复；**3.3~3.6 为第二轮（同端口审查）新增，本轮只测不改**。
+
+### 3.1 【P0 · 已修复】Console 代理丢弃 query string
+
+**现象**：经用户实际入口访问时，所有查询参数被静默丢弃。
+
+```
+GET /api/tasks?limit=200   → 实际只返回 50 条（默认值）
+GET /api/tasks?agent=fleet-cmd-01 → 返回全部 agent 的任务，agent 过滤完全失效
+GET /api/tasks?status=queued      → 返回 success/rejected/queued 混合
+```
+
+**根因**：`console/backend/main.py:457` 的 `fap_proxy`：
+```python
+resp = await client.request(request.method, f"/api/{path}", ...)
+```
+FastAPI 的 `path:path` 路径参数**不包含 query string**，代理拼接时未转发 `request.url.query`，所有参数在 8002 丢失。
+
+**危害**：这一层缺陷具有极强的迷惑性——
+- 控制面 8003 本身**完全正常**（`limit` 10/50/166 精确生效），仅直连可证；
+- 第三方 agent 若只按文档 `GET /api/tasks?limit=200` 接入，会静默拿到被截断的数据集，**无任何报错**；
+- 这直接违反文档 §3.3「全量任务列表（验收台数据源）」的承诺，会导致验收台数据不完整。
+
+**修复**：
+```python
+url = f"/api/{path}"
+if request.url.query:
+    url = f"{url}?{request.url.query}"
+```
+文件：`console/backend/main.py:454-461`
+
+**修复后实测**（三条链路一致）：
+
+| 请求 | 修复前 | 修复后 |
+|---|---|---|
+| `?limit=10` | 50 条 | **10 条** |
+| `?limit=200` | 50 条 | **166 条**（与 DB 真实总数一致） |
+| `?agent=fleet-cmd-01&limit=200` | 50 条混合 agent | **45 条，纯 fleet-cmd-01** |
+| `?status=queued&limit=200` | 50 条混合状态 | **25 条，纯 queued** |
+
+已重启 8002 后端生效（PID 22444），5174 前端入口同步验证通过。
+
+---
+
+### 3.2 【P0 · 未修复】同一入口两套鉴权口径，`/api/console/*` 完全免鉴权
+
+**这是本轮最严重的发现，优先级高于魔法数字。**
+
+**现象**：同一个对外地址（Console 网址），`/api/*` 严格强制 PAT，但 `/api/console/*` 全部放行：
+
+| 端点 | 无任何凭证 | 已吊销的无效PAT |
+|---|---|---|
+| `GET /api/tasks` | **401** ✅ | 401 ✅ |
+| `GET /api/agents` | **401** ✅ | 401 ✅ |
+| `GET /api/console/tasks?limit=5` | **200** ❌ | **200** ❌ |
+| `GET /api/console/fleet` | **200** ❌ | **200** ❌ |
+| `GET /api/console/overview` | **200** ❌ | **200** ❌ |
+| `GET /api/console/health` | **200** ❌ | **200** ❌ |
+
+**泄露内容实测**（无任何凭证）：
+```
+GET /api/console/fleet  → 200，返回 133 条会话记录
+字段: thread_id, display_name, assistant_id, thread_status,
+      run_count, total_tokens, total_input_tokens, total_output_tokens,
+      llm_call_count, last_run_status, first_message ...
+```
+即：**全部 agent 会话的 thread_id、display_name（会话标题）、首条用户消息全文、token 用量、运行状态**均可被任意未授权访问者读取。`/api/console/tasks` 同理可拉取任务全量。
+
+**根因**：`console/backend/main.py` 整个文件**没有引入任何 FAP 中间件**（无 `pat_auth_middleware`、无限速、无幂等）。FAP 的鉴权只存在于 8003 控制面内部；而 8002 的 30 个 `/api/console/*` 是**显式路由**，由 Console 自己的代码直接处理，从不经过 8003，鉴权链完全绕过。
+
+**为什么严重**：
+1. `DEPLOY.md` 的部署口径是「对外仅 console-web」，即**整个平台只暴露这一个入口**。现在这个入口有一半是敞开的。
+2. ADR-0011 §5 的安全前提是「PAT 强制」，但该强制只覆盖 `/api/*`。这是**安全边界不完整**，不是配置疏漏。
+3. 一旦部署公网（ADR-0011 §5 计划的 P4阶段），`display_name` 与 `first_message` 属于用户业务内容，属于信息泄露。
+
+**建议**：`/api/console/*` 必须与 `/api/*` 走同一套 FAP 鉴权中间件（至少 PAT 强制 + 限速），或明确这些端点仅内网可达并在网关层拦截。**此项应在任何公网暴露前修复。**
+
+---
+
+### 3.3 【P1 · 未修复】agent-doc 硬编码 `:8003`，与部署口径冲突，第三方 agent 按文档接入必然失败
+
+**现象**：`/api/agent-doc` 是给第三方 agent 的唯一接入说明，正文两处教agent 连 8003：
+
+```
+§0 「控制面 Base URL：部署实例的控制面地址（本机开发为 http://127.0.0.1:8003）」
+§8 「BASE=http://<control-plane>:8003」
+```
+
+同时 `deploy/DEPLOY.md` §3 明确写：
+
+> 对外仅 `console-web`（`${FLEET_PORT}`）；网关 :8001、**CP :8003**、后端 :8002 均为容器网络内部
+> **FAP 同源暴露**：第三方 agent 的 API 入口 = Console 网址本身
+
+**矛盾**：文档教 agent 连 8003，而部署保证 8003 不对外。实测本机 8003 绑定 `127.0.0.1:8003`（仅本地），生产在容器网络内部。**任何按文档 §8 写 `BASE=...:8003` 的第三方 agent，在生产环境都会连接失败。**
+
+**根因**：8003 这个魔法数字不是写在文档里就算完——它同时被写进了多处代码与配置（`fap_doc.py:15/171`、`console/backend/main.py:26`、`deploy/docker-compose.yml`、`Dockerfile.fleet-python`的 `EXPOSE 8002 8003`、`AGENTS.md`、`README.md` 等 15+ 处）。这是典型的**端口号在多个层次硬编码**，任何一次部署编排变更都会让文档与实现脱节。
+
+**建议**：
+1. `agent-doc` 不应出现任何具体端口。Base URL 由调用方自行提供（agent 本来就知道自己连的哪个地址）。
+2. 若需给默认值，用占位符如 `${FLEET_PORT}`，或直接删掉该行。
+3. 收敛 15+ 处硬编码为单一配置源（环境变量注入）。
+
+---
+
+### 3.4 【P1 · 未修复】meta 的 `doc` 是相对路径，自发现协议仍需预先知道端口才能用
+
+**现象**：
+```json
+GET /api/meta →
+{"protocol_version":"1.0","server_version":"0.2.0",
+ "capabilities":[...],"doc":"/api/agent-doc"}
+```
+
+`doc` 是**相对路径** `/api/agent-doc`。要拼出完整 URL，agent 必须已经知道 Base URL——也就是**必须已经知道端口**。
+
+**这直接削弱了自发现协议的价值**：ADR-0011 §2 借鉴timeline 协议，核心卖点是「agent 先 GET /api/meta 自发现」。但当前实现下，agent 仍需外部配置告知端口号，自发现只解决了"有哪些能力"，没解决"我在哪"。
+
+**实测确认**：meta 仅 4 个字段（`protocol_version` / `server_version` / `capabilities` / `doc`），**不含任何地址信息**（无 `base_url` / `url` / `host` / `port`）。
+
+**建议**：二选一或都做——
+1. 文档明示「先对 GUI 网址 GET /api/meta，其响应头/请求 URL 即为 Base URL」，把约定写死；
+2. meta 增加 `base_url` 或返回**绝对** `doc` URL，让 agent 拿到 meta 就能直接用，无需任何外部配置。
+
+**这条与 3.4 是同一个病根**：单端口下二者可一并解决——只要 agent 连的就是 GUI 网址，`doc` 用绝对 URL，端口问题自然消失。
+
+---
+
+### 3.5 【P2 · 未修复】UI/API 对等未达成：GUI 有 30 个 agent 调不到的端点
+
+ADR-0011 决策 1 明确：「**单一能力面，UI/API 对等**：Console 网站与第三方 agent 消费同一套控制面 API；**网站没有特权接口**」。
+
+**实测不符**：8002 有 30 个 `/api/console/*` 显式路由，`fap_proxy`（`/api/{path}`）因路由匹配顺序**永远吃不到它们**：
+
+| 层级 | 端点数 | 说明 |
+|---|---|---|
+| 控制面 8003 | 29 | FAP 协议本体，agent 经同源可达 |
+| Console 8002 独有 | **30** | GUI 专用，agent 经同源**不可达** |
+| 其中业务能力 | `/api/console/fleet`、`/overview`、`/tasks/{tid}/accept`、`/loops/{lid}/return`、`/agents/{name}/start|stop` 等 | 非纯视图，含状态变更 |
+
+对照实测：`/api/console/fleet` 在 GUI 入口 200，而 agent 入口 `/api/fleet` 在控制面 404 —— 即 agent 无等价能力可调。
+
+**判断**：其中 `/api/console/fleet`、`/overview`、`/threads` 属**只读观测视图**，agent 或许不需要（控制面有 `/api/tasks`、`/api/audit`可替代）。但 `start`/`stop`/`accept`/`return` 这类**状态变更端点** GUI 独享，与「网站没有特权接口」的决策直接冲突。
+
+**建议**：明确 `/api/console/*` 的定位——若为 GUI 私有视图，应在文档声明「agent 能力面 = `/api/*`」；若属能力遗漏，应补齐到控制面。
+
+---
+
+### 3.6 【P3 · 建议澄清】限速同样作用于读操作
+
+令牌桶不区分读写，`GET /api/tasks` 也会429。文档 §1 仅写「per-PAT 令牌桶，默认 60 req/min」，未声明读写豁免。
+
+**实测影响**：一次 `limit=200` 全量拉取（166 条、约 96KB）在响应解析上只算 1 次请求，但一次分页遍历 166 条需要 17 次请求即打满配额。第三方 agent 若做轮询式遍历，60/min 偏紧。
+
+建议二选一：文档明示「读写统一限速」，或为读操作单独放宽/豁免。当前行为本身不算错误，属**文档未覆盖的灰区**。
+
+### 3.7 【信息】能力分散在两个服务
+
+`meta.capabilities` 中 `threads`、`scheduled_tasks` 实现在 **8001 网关**，其余在 8003 控制面。文档 §4 已说明「thread 执行面在网关」，属预期设计。但 agent 仅拿 `meta` 无法得知某能力该打哪个 Base URL。
+
+建议在 meta 增加能力→Base URL 的映射（如 `capabilities: [{"name":"threads","base":"gateway"}]`），或文档 §0 显著位置补一张端点归属表。当前是「知道有能力，但不知道去哪调」。
+
+---
+
+## 4. 测试过程中的判断修正（记录以免误传）
+
+### 4.1 代理层 vs 控制面：两处初期误判（记录以免误传）
+
+1. **「`/api/tasks` 是遗留别名、只返回 50 条」** —— **错误**。控制面 8003 的 `limit` 完全正常（默认 50、上限 200），文档 §3.3 表述准确。真实缺陷在 8002 代理层（见 3.1）。首次观测到的 50 条不变，是因限速打满后误读缓存响应。
+2. **「loopback 内部豁免失效、PAT 签发不了」** —— **预期行为**。经 8002 访问时，代理必然重建 XFF，按 QA-7 口径带 XFF 的流量一律视为外部客户端，不享内部豁免。直连 8003 签发 PAT 正常。
+
+**方法论提示**：测这套系统时，「经代理」与「直连」必须分别验证，否则会把代理层缺陷误判成控制面缺陷，或反之。本轮第二处误判见 4.2。
+
+### 4.2 「8003 是魔法数字」不只是测试方法问题（第二轮修正）
+
+第一轮我大量使用 `CP = http://127.0.0.1:8003` 直连，理由是「FAP 实现在控制面」。第二轮按「GUI 与 agent 应同端口」的要求审查时，**这个前提本身就是 bug 的体现**，而非测试的合理选择：
+
+- 需求口径是单端口，agent 不该知道也不该需要知道 8003；
+- 文档（`agent-doc` §0/§8）恰恰教 agent 连8003 —— 我的测试写法是在**追随文档的错误**；
+- 若按文档指引去接，agent 在生产必然连不上（8003 不对外），说明文档与部署口径冲突（见 3.3）。
+
+**教训**：验证「接口是否好用」时，测试客户端的接线方式应严格模拟**真实第三方agent 的接线方式**，而不是模拟「最方便的内部路径」。用内部路径测试，会让「文档教错地址」这类缺陷完全隐形。
+
+---
+
+## 5. 测试过程产生的副作用与清理
+
+| 项 | 处理 |
+|---|---|
+| 测试任务（3 个探测 task） | 已 `close` 关闭，pool_status=done |
+| 测试 PAT（7 个） | 已全部 `revoked_at=now()` 吊销 |
+| 8002 后端进程 | 第一轮已重启以加载 query 修复（PID 22444），PID 记录更新至 `console/logs/console-backend.pid` |
+| 代码改动 | **仅 `console/backend/main.py` 一处**（第一轮 query 转发修复，共 +6/-1 行）。**第二轮（同端口审查）未改动任何项目代码** |
+| 数据库 | 无 schema 变更、无业务数据删除 |
+
+**注**：早前发现的 48 条 rejected 任务与本次协议测试无关，属业务层问题，未在本次范围内处理。
+
+**第二轮为纯只读审查**：所有验证均通过 HTTP 请求与文件读取完成，未修改项目文件、未变更配置、未重启服务（8002 仍是第一轮重启后的 PID 22444）。
+
+---
+
+## 6. 复现方式
+
+**测试脚本**：`fap_protocol_test.py`（49 项断言，含自动清理）
+```bash
+cd /Users/linan/WorkBuddy/2026-10-10-23-05-35
+/opt/homebrew/bin/python3 fap_protocol_test.py
+```
+明细结果：`/tmp/fap_report.json`
+
+**G7 同端口审查（第二轮）**为人工黑盒审查，命令摘录：
+```bash
+# 端口绑定地址（确认 8003 仅本地/容器内）
+lsof -iTCP:8003 -sTCP:LISTEN -n -P
+
+# 文档口径与部署口径冲突
+curl -s http://localhost:5174/api/agent-doc | grep -o 'BASE=.*'
+grep -A3 '对外仅' deploy/DEPLOY.md
+
+# 同一入口两套鉴权口径
+for ep in /api/tasks /api/console/tasks /api/console/fleet; do
+  curl -s -o /dev/null -w "$ep -> %{http_code}\n" http://localhost:5174$ep   # 无任何凭证
+done
+
+# GUI 独有端点识别
+diff <(读 8003 openapi paths) <(读 8002 openapi paths)
+```
+
+前置条件：8001/8002/8003 三服务在线；`/opt/homebrew/bin/python3` 需含 `psycopg2`（受管 Python 3.13 无此包）。
+
+**注意**：限速为 60 req/min per-PAT，密集重跑需间隔 60s 以上，否则测试自身会触发 429 造成假失败。
+
+---
+
+## 7. 问题清单与优先级汇总
+
+| # | 级别 | 问题 | 状态 | 位置 |
+|---|---|---|---|---|
+| 3.1 | P0 | Console 代理丢弃 query string，静默截断数据 | ✅ 已修复 | `console/backend/main.py:454` |
+| 3.2 | **P0** | **`/api/console/*` 完全免鉴权，泄露 133 条会话+token** | ❌ 未修复 | `console/backend/main.py`（缺中间件） |
+| 3.3 | P1 | agent-doc 硬编码 `:8003`，与部署口径冲突 | ❌ 未修复 | `control-plane/app/fap_doc.py:15,171` |
+| 3.4 | P1 | meta 的 `doc` 为相对路径，自发现仍需预知端口 | ❌ 未修复 | `control-plane/app/fap.py:68` |
+| 3.5 | P2 | UI/API 对等未达成，GUI 独享 30 端点（含状态变更） | ❌ 未修复 | `console/backend/main.py` 路由顺序 |
+| 3.6 | P3 | 限速同样作用于读操作，文档未声明 | 需澄清 | `fap_middleware.py:212` |
+| 3.7 | 信息 | 能力分散两服务，meta 无 BaseURL 映射 | 建议 | `fap.py:_BASE_CAPABILITIES` |
+
+**修复优先级建议**：
+1. **先3.2**（安全）—— 这是唯一会导致数据泄露的问题，且公网暴露前必须解决。
+2. 再 3.3 + 3.4（协议自洽）—— 二者同源，单端口化后可一并解决。
+3. 3.5属设计澄清，需产品/架构决策。
+
+---
+
+## 8. 总体评价
+
+### 8.1 第一轮结论（协议层）
+
+FAP v1 的**协议设计是可靠的**：自发现骨架完整、错误模型清晰、幂等与审计从第一天就位、鉴权边界经得起针对性攻击。ADR-0011 的六项承诺全部落地且行为正确（49/49 断言通过）。
+
+### 8.2 第二轮结论（架构层）
+
+**协议没问题，架构有问题。** 需求要「GUI 和 agent 同端口」，但现网是四端口（5174/8002/8003/8001），并由此派生出三类问题：
+
+1. **8003 是被文档固化的魔法数字**。它不只出现在文档，而是散落在 `fap_doc.py`、`main.py`、`docker-compose.yml`、`Dockerfile` 的 `EXPOSE`、`AGENTS.md` 等 15+ 处。后果是「文档教 agent 连一个不对外的端口」，按文档接入必然失败。
+
+2. **同端口 ≠ 同权限**。同源暴露后，`/api/*` 强制 PAT，`/api/console/*` 却完全敞开 —— 一个入口两套鉴权口径，这是比魔法数字更严重的设计漏洞，也是本轮唯一的 P0。
+
+3. **自发现被打了折扣**。`doc` 用相对路径，意味着 agent 拿到 meta 后仍无法自行定位完整文档 URL，自发现只解决「有什么」没解决「我在哪」。
+
+### 8.3 根因
+
+三者的根因是同一个：**FAP 被当作「控制面的附加功能」实现，而不是当作「平台的唯一对外契约」**。控制面有自己的端口、自己的文档、自己的中间件；Console 只是转发方。真正的单端口设计应该是：对外只有一个入口、一个鉴权、一份文档，GUI 与 agent 都只是它的消费者。
+
+### 8.4 建议下一步
+
+1. **优先修复 3.2**（`/api/console/*` 鉴权），这是公网暴露的硬前提。
+2. 推动**端口收敛**：把 8003 合并进 Console 后端（或反之），对外单入口；同步清理 `agent-doc` 中的端口硬编码，并把 `doc` 改为绝对 URL。
+3. 把 G5（文档一致性）与 G7（同端口一致性）**纳入 CI** —— 这两组正是能抓住「文档承诺 vs 实际行为」「架构约束漂移」的用例集。
+4. 按 ADR-0011 §5 前提确认：网关鉴权（OIDC/PAT）上线前，FAP 不具备公网暴露条件。

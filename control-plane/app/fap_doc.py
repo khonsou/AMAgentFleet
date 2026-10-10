@@ -12,8 +12,13 @@ FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
 
 ## 0. 基本信息
 
-- **控制面 Base URL**：部署实例的控制面地址（本机开发为 `http://127.0.0.1:8003`）。
-- **网关 Base URL**：thread/run 执行面在网关（本机开发为 `http://127.0.0.1:8001`），见 §4。
+- **Base URL（唯一入口）**：你发起 `GET /api/meta` 时用的那个地址——GUI 网址
+  就是 API 入口（同源暴露），无需任何其他端口。本文档所有路径均为相对路径，
+  直接拼在 Base URL 之后。
+- **能力归属**：`tasks / loops / agents_registry / scheduled_tasks / feedback /
+  idempotency / pat_auth` 在本控制面；`threads`（会话执行面，D 域）为
+  DeerFlow 网关原生能力，控制面不代理——公网部署时其入口由部署方另行提供，
+  见 §4。
 - **鉴权**：`Authorization: Bearer <PAT>`（PAT 由员工在 Console 设置页签发，
   scope 仅 `read`/`write`，不做数据隔离）。未启用 PAT 的实例所有端点仅内网可达。
 - **组织作用域**：单一共享组织，全员可见所有 agent 与任务（QA-5）。
@@ -22,7 +27,8 @@ FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
 
 1. **幂等**：请求头 `Idempotency-Key: <任意唯一串>`。同键 + 同 actor 在 24h 窗口内
    重试直接回放首次响应，不重复执行。不同 actor 同键 → 409。
-2. **限速**：per-PAT（无 PAT 时 per-IP）令牌桶，默认 60 req/min。
+2. **限速**：per-PAT（无 PAT 时 per-IP）令牌桶，默认 60 req/min，
+   **读写统一计入配额**（GET 同样受限；分页遍历请控制节奏并遵守 `retry_after`）。
    超限返回 `429 {"error": "rate_limited", "retry_after": <秒>}`，按值退避，勿盲重试。
 3. **审计透传**：写操作 body 可带自报字段，原样落审计：
    ```json
@@ -168,7 +174,8 @@ SQL 可查：`SELECT detail->'actor' FROM audit_events ...`。
 ## 8. 端到端示例（第三方 agent 闭环）
 
 ```bash
-BASE=http://<control-plane>:8003
+# BASE = 你发起 /api/meta 的地址（fleet Console 网址，GUI 与 API 同源）
+BASE=http://<fleet-console-host>:<port>
 PAT=<员工签发的 PAT>
 
 # 1. 自发现

@@ -21,8 +21,12 @@
 
 | # | 操作 | API | 现状 |
 |---|------|-----|------|
-| A1 | 全局概览（任务/loop/agent/token） | `GET /api/overview` | ✅ |
-| A2 | fleet 列表（agent 维度状态/成本） | `GET /api/fleet` | ✅（Registry 数据源） |
+| A1 | 全局概览（任务/loop/agent/token） | `GET /api/console/overview` | ✅ Console 私有视图（GUI 数据源，非 FAP 能力面） |
+| A2 | fleet 列表（agent 维度状态/成本） | `GET /api/console/fleet` | ✅ Console 私有视图（threads_meta 查询，非 FAP 能力面） |
+
+> 第三方 agent 测试（2026-10-10）核对：控制面 FAP 面现有 29 个端点（openapi 实测），
+> A1/A2 及全部状态变更类操作（accept/return/deliver/close/requeue/claim/start/stop/dispatch）
+> 均有 FAP 等价端点；Console 私有视图为只读观测 + 网关 D 域包装，不给 agent 属既定设计。
 
 ### B. Agent 注册与配置
 
