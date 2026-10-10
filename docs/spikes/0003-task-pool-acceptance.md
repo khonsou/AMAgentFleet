@@ -243,6 +243,29 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
   已绑回 127.0.0.1。Console 冒烟（发起→人领→交付→采纳）无回归。
 - **边界声明**：FAP 公网暴露待 P4 OIDC（ADR-0011 第 5 条）。
 
+## 2026-10-10 产物交付链路验收（FILES 面板 + 行内下载 + loop OUTPUT 派生）
+
+- **Thread Detail FILES/产物面板**（commit `fffc0c8`）：present_files 呈现的
+  文件汇总为面板，经 Console 代理（`/api/console/threads/:id/artifacts/*`）
+  下载。
+- **会话消息行内产物路径自动渲染下载链接**（commit `dbea8af`）：模型只需
+  在回复里说文件路径（它不知道也不该知道 Console 地址——部署细节随环境
+  变化），前端把与已知产物匹配的路径渲染成 `<a download>`，回复里即点即下。
+- **loop OUTPUT 展示派生（方案 A）**（commit `485ffe3`，concept-model §6 记
+  决策）：「OUTPUT / 交付内容」主显 thread 最新 AI 回复（控制面 task detail
+  附 `latest_output`，单条 SQL 按 thread_id 批量取 run_events 最新
+  llm.ai.response）；`deliverable` 物理快照降级为「交付快照 vN（入库时的
+  交付记录）」低调标注，仅在不一致时出现。修复 bug：人直接进 Thread Detail
+  续对话不经过 dispatcher，快照停在旧回复冒充当前 output。打回重派路径
+  本就重新捕获快照，语义不受影响。
+- **loop/验收台产物下载链接统一控件**（commit `afe200e`）：ArtifactText
+  抽为共享组件（产物路径 → 下载链接，其余文字照常 URL linkify），
+  ThreadDetail 与 LoopOutput（TaskDetail loop 卡 + 验收台）同控件渲染，
+  消除两处渲染分叉。
+- **实测证据**：task #156 / 会话 `45a972ca` 的 `YYYY.md`、`four-x.md`
+  经 Console 代理下载均 HTTP 200；Task Detail、验收台、Thread Detail
+  三处渲染一致；tsc ✓。
+
 ## 遗留（2026-10-09 晚更新：前五项已闭环）
 
 ~~1. dispatcher 多消费者~~ ✅ 已落地：`FLEET_DISPATCHER_WORKERS`（默认 3）并行消费，
