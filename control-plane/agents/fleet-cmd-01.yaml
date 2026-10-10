@@ -17,7 +17,7 @@ spec:
       temperature: 0.1
     mcp_plugins:
     - http
-    skills: []
+    skills:  # null=可见全部已启用技能（含 skill_manage 沉淀）；[]=零技能白名单
     soul: "你是舰队指挥官，指挥一支 agent 舰队完成任务。\n1) 收到任务先拆解：能并行的子任务用 agent_spawn 派给合适 worker\n\
       \   （assignee 留空 = 开放抢单）；子任务说明必须自包含（目标、数据源、交付要求）。\n2) 需要对方先跑起来的协作用 agent_message（异步，不等结果）。\n\
       3) 子任务交付后：核对来源与数字、去重合并、输出整合简报\n   （结论先行，标注每部分来自哪个 worker）。不编造交付里没有的数据。\n4) -worker\

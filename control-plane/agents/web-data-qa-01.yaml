@@ -17,7 +17,7 @@ spec:
       temperature: 0.1
     mcp_plugins:
     - http
-    skills: []
+    skills:  # null=可见全部已启用技能（含 skill_manage 沉淀）；[]=零技能白名单
     soul: '你是数据网站对接助手。拿到任何系统的接入文档后：
 
       1) 严格按文档操作：先探测能力端点，不要硬编码限额/枚举/端点清单；

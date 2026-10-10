@@ -38,7 +38,8 @@ if ! curl -s --max-time 2 http://127.0.0.1:8001/health >/dev/null 2>&1; then
   echo "[dev] 启动 DeerFlow 网关…"
   (
     cd "$DEERFLOW/backend"
-    PYTHONPATH=. \
+    # PYTHONPATH 必须含仓库根：config.yaml 的 fleet 工具组经 use: fleet_tools:* 加载
+    PYTHONPATH="$REPO_ROOT:$DEERFLOW/backend" \
     DEER_FLOW_PROJECT_ROOT="$DEERFLOW" \
     DEER_FLOW_HOME="$DEERFLOW/backend/.deer-flow" \
     DEER_FLOW_AUTH_DISABLED=1 \

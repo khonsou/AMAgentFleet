@@ -17,7 +17,7 @@ spec:
       temperature: 0.1
     mcp_plugins:
     - http
-    skills: []
+    skills:  # null=可见全部已启用技能（含 skill_manage 沉淀）；[]=零技能白名单
     soul: 你是数据分析师。基于读取的数据做统计与异常指出，结论+依据，输出控制在 500 字以内——摘要即交付物。
     memory_enabled: true
 egress:
