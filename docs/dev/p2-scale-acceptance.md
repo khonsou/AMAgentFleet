@@ -38,7 +38,7 @@
 | B1 | 给 scale-07 注册带 `triggers.cron: [{cron: "*/2 * * * *", prompt: "[验收] cron 报时：回复当前分钟数"}]` 的 YAML | 首次 sync 只记基线、不补投（池里无历史任务） |
 | B2 | 观察 ≥ 3 个触发周期（约 7–8 分钟） | 每周期恰好 1 个 `source='cron'` 任务；任务实际入队时刻 − 应触发点 ≤ 30s 扫描粒度 + 执行排队；指挥官认领并交付；audit 每周期 1 条 `cron.fired` |
 | B3 | 周期 2 与 3 之间重启 control-plane | 不双触发（幂等键 + last_fired 落库）、不漏触发（重启后凭 last_fired 续投） |
-| B4 | 交付内容核对 | 回复的分钟数与触发时刻一致（证明是定时拉起而非人工/随机） |
+| B4 | 节奏对账 | 相邻触发任务 `created_at` 间隔 = 周期 ±45s（扫描粒度+排队余量）；指挥官认领、交付非空。**不用交付内容对时**——沙箱 agent 无可靠时钟来源（实测：三个 agent 均如实回复「无法读取分钟数」，纪律正确但判据不可验证） |
 | B5 | 清理：改 YAML 摘除 cron 并重新部署 | sync 后不再产生新任务 |
 
 已知边界（不判失败，记录在案）：cron 最小有效粒度受 30s 扫描限制，小于 1 分钟的
@@ -83,3 +83,57 @@ cron 表达式不建议验收使用；摘除后 `fleet_cron_fires` 行保留，�
 - **Flake 排查**：任一判定失败先查 `audit_events`（增量区间）与
   `console/logs/control-plane.log`，区分产品 bug 与环境问题，如实记录不做
   选择性重试。
+
+
+## 执行记录（2026-10-10，全绿）
+
+驱动脚本：`scripts/p2-scale-acceptance.py`（`A|B|C|all` 分段可重放，标准库零依赖）。
+
+### 用例 A：10 agent 批量注册生命周期 —— 6/6 ✅
+
+A1 批量注册 10 个（全 201）/ A2 Registry 状态版本 / A3 网关同步抽查 /
+A4 三个派发冒烟交付 / A5 PUT 改配置 v+1 / A6 DELETE 双端 404。
+
+### 用例 B：cron 准时 —— 12/12 ✅
+
+全新 agent scale-07b（`*/2 * * * *`）首见不补投；观察窗内恰好 3 次触发
+（task 149/150/151）；**相邻触发间隔 120.15s / 120.15s**；均指挥官认领交付；
+control-plane 重启后恰好续投 1 次（不漏不双）；摘除 cron 后 150s 零新触发。
+
+**判定修正记录**：首跑 B4「交付分钟数对账」3/3 失败——沙箱 agent 无可靠
+时钟来源（三个 agent 均如实回复「无法读取分钟数」，纪律正确），判据本身
+不可验证。改为节奏对账（created_at 间隔 = 周期 ±45s），文档与脚本同步修正。
+首跑 B1 失败系上一轮被工具超时打断的残留任务污染基线，B0 清场节即为此补。
+
+### 用例 C：休眠/唤醒全链路 —— 9/9 ✅（途中抓修 1 个真 bug）
+
+C1 stop→hibernated / C2 hibernated dispatch 409 / C3 hibernated inbox 409 /
+C4 休眠期改配置 / C5 start 恢复+新配置生效 / C6 三条 inbox 攒批 1 task /
+C8 交付含全部要点 / C7 agent_message A2A 唤醒+交付。
+
+**抓到并修复：休眠唤醒穿透（C3 首轮失败）**。`POST /api/agents/{name}/inbox`
+不校验状态，休眠 agent 照样收信，flush 后建 task 并**真实唤醒执行**（stop
+的「暂停一切唤醒面」语义被击穿）。修复三层：① inbox 端点拒收（409，与
+dispatch 同口径）；② `pool.claim_loop` 加全认领路径门禁（inbox flush /
+cron 指挥官认领 / FAP claim 统一拦截）；③ inbox flush 领取被拒时消息回退
+pending（start 后自动重投，不丢信）。回归：休眠 409 → start 后 inbox 202
+→ 5s 攒批唤醒交付 ✓。
+
+### 冷启动回归 —— ✅
+
+网关 :8001 + control-plane :8003 全杀重启，Console 冒烟（派发→交付
+「ok」→采纳）全通。
+
+### 附带抓修：销毁 agent 500（清理阶段）
+
+`DELETE /api/agents/{name}` 对有 inbox 记录的 agent 报 500：
+`fleet_inbox_agent_name_fkey` 外键阻拦 `fleet_agents` 删行。修复：
+`registry.remove_agent` 先清该 agent 的 fleet_inbox 再删注册表行。
+回归：scale-08/09/10 全 204，scale-* 清零。
+
+### 清理确认
+
+- 10 个 scale-* agent 全部 DELETE（网关/Registry 双端消失）；
+- `fleet_cron_fires` 中 scale-07/07b 行已删；
+- 测试 task/loop 全部验收采纳或关闭，看板无遗留 open/review；
+- 遗留修复 commit：`fix(fleet)` 休眠唤醒门禁三层 + `fix(registry)` 销毁清 inbox。

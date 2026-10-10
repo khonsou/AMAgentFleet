@@ -72,6 +72,15 @@ async def _count_loops(conn: asyncpg.Connection, task_id: int) -> int:
 async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created_by: str) -> dict[str, Any]:
     """领取 = 建 loop（竞争非独占，≤3）。agent 领取直接入队执行；human 领取等人交付。"""
     async with (await pool()).acquire() as conn:
+        if claimant_type == "agent":
+            # 全认领路径统一门禁（inbox flush / cron 指挥官认领 / FAP claim / 指派）：
+            # 休眠/已销毁 agent 不可被唤醒执行，与 dispatch/inbox 端点同口径。
+            status = await conn.fetchval(
+                "SELECT status FROM fleet_agents WHERE name=$1", claimant)
+            if status is None:
+                raise PoolError(404, f"agent not registered: {claimant}")
+            if status not in ("registered", "running"):
+                raise PoolError(409, f"agent '{claimant}' is {status}; start it before dispatching")
         task = await conn.fetchrow("SELECT id, pool_status FROM fleet_tasks WHERE id=$1 FOR UPDATE", task_id)
         if task is None:
             raise PoolError(404, f"task {task_id} not found")

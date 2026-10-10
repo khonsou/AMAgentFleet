@@ -159,10 +159,12 @@ async def apply_agent(name: str, doc: dict[str, Any]) -> dict[str, Any]:
 async def remove_agent(name: str) -> None:
     """真销毁：YAML + 网关配置 + 注册表行全删（与前端确认框"元数据将被清除"一致）。
 
-    fleet_tasks.agent_name 是软引用（外键已降级），历史任务/审计不受影响。"""
+    fleet_tasks.agent_name 是软引用（外键已降级），历史任务/审计不受影响；
+    fleet_inbox 是硬外键——先清该 agent 的收件箱再删注册表行（FK 约束）。"""
     delete_yaml_doc(name)
     await remove_from_gateway(name)
     async with (await pool()).acquire() as conn:
+        await conn.execute("DELETE FROM fleet_inbox WHERE agent_name=$1", name)
         await conn.execute("DELETE FROM fleet_agents WHERE name=$1", name)
     await audit("agent.terminated", agent_name=name, actor="admin")
 

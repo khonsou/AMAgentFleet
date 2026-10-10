@@ -184,6 +184,20 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
   写代码，agent 自己沉淀的技能跨会话可用。语义三态已固化进
   AGENTS.md「DeerFlow 配置语义坑」，禁止无审查写 `[]`。
 
+## 2026-10-10 P2 规模化验收（10 agent / cron / 休眠唤醒，全绿）
+
+- **结论**：用例 A 批量注册 6/6、cron 准时 12/12（相邻触发间隔 120.15s、
+  重启恰好续投 1 次、摘 cron 即停）、休眠/唤醒 9/9；冷启动回归通过。
+  计划与执行记录：docs/dev/p2-scale-acceptance.md；可重放脚本
+  `scripts/p2-scale-acceptance.py`。
+- **抓修 2 个真 bug**：① 休眠唤醒穿透——inbox 端点不校验状态，休眠 agent
+  被消息真实唤醒执行；修复三层（inbox 409 拒收 / claim_loop 全认领路径门禁 /
+  flush 领取失败消息回退 pending）。② 销毁 agent 500——fleet_inbox 硬外键
+  阻拦删注册表行；remove_agent 先清收件箱。
+- **判定教训**：沙箱 agent 无可靠时钟来源，「交付内容对时」类判据不可验证
+  （agent 如实回复无法读时钟，纪律正确）；定时类验收用节奏对账
+  （created_at 间隔 = 周期 ± 扫描粒度）。
+
 ## 2026-10-10 「真 fleet」双测试（A2A + subagent 产物交付）
 
 - **A2A（task 131/132、137/138）**：向舰队指挥官派发「用 agent_spawn 派子任务给

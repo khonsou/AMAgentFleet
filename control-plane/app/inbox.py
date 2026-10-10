@@ -56,10 +56,20 @@ async def flush_agent(agent_name: str) -> int:
     if not rows:
         return 0
     combined = "\n".join(f"[消息 {r['id']}] {r['payload']}" for r in rows)
-    task = await poolmod.create_task(
-        combined, source="inbox", assignee=agent_name, created_by="dispatcher",
-        idempotency_key=f"inbox:{agent_name}:" + "-".join(str(r["id"]) for r in rows),
-    )
+    try:
+        task = await poolmod.create_task(
+            combined, source="inbox", assignee=agent_name, created_by="dispatcher",
+            idempotency_key=f"inbox:{agent_name}:" + "-".join(str(r["id"]) for r in rows),
+        )
+    except poolmod.PoolError:
+        # 领取被拒（如 flush 间隙 agent 被休眠）：消息回退 pending，start 后重投
+        async with (await pool()).acquire() as conn:
+            await conn.execute(
+                """UPDATE fleet_inbox SET status='pending', dispatched_at=NULL
+                   WHERE agent_name=$1 AND id = ANY($2::int[])""",
+                agent_name, [r["id"] for r in rows],
+            )
+        raise
     await audit("inbox.dispatched", agent_name=agent_name, actor="dispatcher",
                 detail={"inbox_ids": [r["id"] for r in rows], "task_id": task["id"],
                         "merged": len(rows)})

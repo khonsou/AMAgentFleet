@@ -218,7 +218,16 @@ class InboxBody(BaseModel):
 
 @app.post("/api/agents/{name}/inbox", status_code=202)
 async def inbox_post(name: str, body: InboxBody) -> dict[str, int]:
-    """入 Inbox 即返回；攒批合并由后台 flush_loop 在 5s 内完成投递。"""
+    """入 Inbox 即返回；攒批合并由后台 flush_loop 在 5s 内完成投递。
+
+    休眠/已销毁 agent 拒收（与 dispatch 同口径，stop 语义 = 暂停一切唤醒面）。
+    """
+    async with (await pool()).acquire() as conn:
+        status = await conn.fetchval("SELECT status FROM fleet_agents WHERE name=$1", name)
+    if status is None:
+        raise HTTPException(404, f"agent not registered: {name}")
+    if status not in ("registered", "running"):
+        raise HTTPException(409, f"agent '{name}' is {status}; start it before waking")
     inbox_id = await inbox.post(name, body.payload, source=body.source)
     return {"inbox_id": inbox_id}
 
