@@ -3,7 +3,6 @@ import { Link } from 'react-router'
 import { api, type AgentTask, type RegistryAgent, type TaskDetail, type Loop } from '@/lib/api'
 import LinkifyText from '@/components/LinkifyText'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { Led, StatusPill, taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/Status'
@@ -204,10 +203,11 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
                   <Button size="sm" variant="signal" disabled={busy}
                     onClick={() => act(() => api.taskAccept(taskId, l.id), `已采纳 loop #${l.id}，task 完成`)}
                     className="h-7 px-2.5 text-[11px]">采纳这份</Button>
-                  <Input value={target === l.id ? comment : ''}
+                  <Textarea value={target === l.id ? comment : ''}
                     onChange={(e) => { setTarget(l.id); setComment(e.target.value) }}
+                    rows={2}
                     placeholder="退回意见（对方同 thread 续跑修正）"
-                    className={INPUT_CLS + ' h-7 text-xs'}
+                    className={INPUT_CLS + ' min-w-64 resize-y text-xs'}
                     disabled={busy} />
                   <Button size="sm" variant="outline" disabled={busy || target !== l.id || !comment.trim()}
                     onClick={() => act(() => api.loopReturn(l.id, comment), `已退回 loop #${l.id}`)}

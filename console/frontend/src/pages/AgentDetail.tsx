@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from 'react-router'
 import yaml from 'js-yaml'
 import { api, type AgentDetail, type AgentTask } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { StatusPill, taskStatusMeta } from '@/components/console/Status'
@@ -255,18 +254,21 @@ export default function AgentDetailPage() {
               )}
               <div ref={bottomRef} />
             </div>
-            <div className="mt-4 flex items-center gap-2 border-t border-hairline-soft pt-4">
-              <Input
+            <div className="mt-4 border-t border-hairline-soft pt-4">
+              <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && dispatch()}
-                placeholder={stopped ? 'Agent 已停止：先点上方"拉起"再派发任务' : '输入指令派发新任务（新 thread 执行）'}
-                className={INPUT_CLS}
+                onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && dispatch()}
+                rows={3}
+                placeholder={(stopped ? 'Agent 已停止：先点上方"拉起"再派发任务。' : '输入指令派发新任务（新 thread 执行）。') + ' Ctrl/⌘+Enter 派发'}
+                className={INPUT_CLS + ' min-h-[72px] resize-y'}
                 disabled={dispatching || stopped}
               />
-              <Button variant="signal" onClick={dispatch} disabled={dispatching || stopped} className="shrink-0">
-                {dispatching ? '派发中…' : '派发'}
-              </Button>
+              <div className="mt-2.5 flex justify-end">
+                <Button variant="signal" onClick={dispatch} disabled={dispatching || stopped} className="shrink-0">
+                  {dispatching ? '派发中…' : '派发'}
+                </Button>
+              </div>
             </div>
           </PanelBody>
         </Panel>

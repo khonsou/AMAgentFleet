@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, type ThreadDetail, type ChatMessage, type Loop } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import { Led, StatusPill, runStatusMeta } from '@/components/console/Status'
 
@@ -71,9 +71,10 @@ function ReviewBar({ tid }: { tid: string }) {
         <Button size="sm" variant="signal" disabled={busy}
           onClick={() => act(() => api.taskAccept(loop.task_id, loop.id), '已采纳，task 完成')}
           className="h-7 px-3 text-[11px]">采纳这份</Button>
-        <Input value={comment} onChange={(e) => setComment(e.target.value)}
+        <Textarea value={comment} onChange={(e) => setComment(e.target.value)}
+          rows={2}
           placeholder="退回意见（对方同 thread 续跑修正）"
-          className={INPUT_CLS + ' h-7 w-72 text-xs'} />
+          className={INPUT_CLS + ' w-72 resize-y text-xs'} />
         <Button size="sm" variant="outline" disabled={busy || !comment.trim()}
           onClick={() => act(() => api.loopReturn(loop.id, comment), '已退回')}
           className="h-7 border-led-amber/40 px-3 text-[11px] text-led-amber hover:bg-led-amber/10 hover:text-led-amber">退回</Button>
@@ -209,18 +210,21 @@ export default function ThreadDetailPage() {
               )}
               <div ref={bottomRef} />
             </div>
-            <div className="flex gap-2">
-              <Input
+            <div>
+              <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && send()}
-                placeholder="向该 agent 投递新指令（同 thread 水合续跑）…"
-                className={INPUT_CLS}
+                onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && send()}
+                rows={3}
+                placeholder="向该 agent 投递新指令（同 thread 水合续跑），Ctrl/⌘+Enter 发送…"
+                className={INPUT_CLS + ' min-h-[72px] resize-y'}
                 disabled={sending}
               />
-              <Button variant="signal" onClick={send} disabled={sending || !input.trim()}>
-                {sending ? '执行中' : '发送'}
-              </Button>
+              <div className="mt-2.5 flex justify-end">
+                <Button variant="signal" onClick={send} disabled={sending || !input.trim()}>
+                  {sending ? '执行中' : '发送'}
+                </Button>
+              </div>
             </div>
           </PanelBody>
         </Panel>
