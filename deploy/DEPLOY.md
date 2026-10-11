@@ -128,6 +128,51 @@ docker compose exec control-plane python -c "import urllib.request;print(urllib.
    口令不会自动同步，需进库 `ALTER USER` 或重建数据卷）。
 4. 数据库与 `deer-flow-home` 卷含全部业务数据与凭据痕迹，纳入备份与加密盘策略。
 
+## 6.1 员工登录（DAO OAuth，angrymiao-auth）
+
+员工（人）侧的鉴权已落地（与 timeline 同一接入规格：Authorization Code + PKCE
+纯前端整页跳转，token 纯内存不落 localStorage）：
+
+```text
+员工浏览器 → DAO 授权页（auth.angrymiao.com）→ /oauth/callback → 内存会话
+          → 调 /api/console/* 带 Bearer JWT
+          → console-backend 本地验签（RSA 公钥 + issuer，不 introspection）
+第三方 agent → PAT（FAP /api/*，两套凭据并存，互不混用）
+```
+
+启用步骤：
+
+1. **DAO 侧登记 Client**：`client_id=agent-fleet`，`redirect_uris` 加
+   `https://<fleet-host>:<FLEET_PORT>/oauth/callback`，`allowed_scopes: profile phone`，
+   `require_pkce: true`（参照 timeline Client 的登记方式）。
+2. **取验签材料**：DAO 提供 RSA 公钥 PEM 与 issuer 值（R4）。
+3. **compose 环境**（console-backend 服务）：
+
+   ```yaml
+   FLEET_AUTH_ENABLED: "1"
+   FLEET_AUTH_JWT_PUBLIC_KEY_PATH: /run/secrets/dao-jwt-pubkey.pem   # 或 _PEM 文本
+   FLEET_AUTH_JWT_ISSUER: <issuer>
+   ```
+
+   前端构建参数（Dockerfile.console-frontend 的 build args / VITE_ 变量）：
+   `VITE_AUTH_ENABLED=1`、`VITE_AUTH_ORIGIN=https://auth.angrymiao.com`、
+   `VITE_OAUTH_CLIENT_ID=agent-fleet`。
+
+4. 本地端到端验证：`node scripts/mock-oauth.mjs`（零依赖 mock，打印所需环境变量），
+   按其输出起 console-backend + vite 即可完整走一遍登录闭环。
+
+**过渡豁免**（启用鉴权后仍免 JWT 的两个端点，后续收口）：`/api/console/health`
+（容器健康检查）、`/api/console/threads/*/artifacts/*`（产物下载是 `<a download>`
+直链不带 Authorization；改 fetch+blob 下载后可纳入保护）。
+**FAP 面不受影响**：`/api/*`（PAT）与内部 `_cp` 直连链路口径不变。
+
+## 6.2 公网暴露前必须完成（P4 收口清单）
+
+- [ ] DAO Client 登记 + compose 启用 §6.1 环境（员工登录生效）
+- [ ] 网关 `DEER_FLOW_AUTH_DISABLED=0`（依赖网关侧 OIDC/PAT 落地）
+- [ ] 产物下载改 fetch+blob 后取消 artifacts 豁免
+- [ ] 安全组白名单收窄到不再依赖「GUI 无鉴权」
+
 ## 7. 常见操作
 
 ```bash

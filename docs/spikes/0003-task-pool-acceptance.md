@@ -266,6 +266,27 @@ fleet-collect-01，子任务应出现在任务列表且独立交付。
   经 Console 代理下载均 HTTP 200；Task Detail、验收台、Thread Detail
   三处渲染一致；tsc ✓。
 
+## 2026-10-11 员工登录落地（DAO OAuth，angrymiao-auth）
+
+- **接入方式**：与 timeline 同一 OAuth 平台同一规格（Authorization Code + PKCE
+  纯前端整页跳转，token 纯内存、refresh token 不落盘，刷新页面重新登录是
+  预期行为）。前端 `lib/auth.ts`（PKCE/state/return_to 同源校验）+
+  `/oauth/callback` 页 + `AuthGate` 登录门；api.ts 自动附 Bearer，
+  401 即回登录门。
+- **后端校验**：`console/backend/authjwt.py` 中间件——DAO JWT 本地验签
+  （RSA 公钥 PEM + issuer，PyJWT RS256，不 introspection 回源，规格同 coin
+  backend），保护 `/api/console/*`；`FLEET_AUTH_ENABLED` 开关（缺省关，
+  开发态零影响）。豁免：`/health`（健康检查）、artifacts 下载
+  （`<a download>` 直链无 Authorization，改 fetch+blob 后收口）。
+- **身份模型闭环**：员工=DAO JWT；第三方 agent=PAT（FAP 面不变）；
+  内部=proxy 白名单。P4 先 OAuth 后收紧的顺序兑现。
+- **端到端实测**：`scripts/mock-oauth.mjs`（零依赖 mock DAO，自动批准 +
+  PKCE 校验 + RS256 签发）——浏览器全链路：登录门 → authorize → callback
+  → exchange → Fleet 看板数据加载 ✓；curl 边界：有效 JWT 200 / 伪造 token
+  401 / 错 issuer 自签 401 ✓；tsc ✓。
+- **待 DAO 侧配合**（部署前置）：登记 `agent-fleet` Client（redirect_uri
+  白名单 + PKCE）、提供 RSA 公钥 PEM 与 issuer（DEPLOY.md §6.1 手顺）。
+
 ## 遗留（2026-10-09 晚更新：前五项已闭环）
 
 ~~1. dispatcher 多消费者~~ ✅ 已落地：`FLEET_DISPATCHER_WORKERS`（默认 3）并行消费，

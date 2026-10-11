@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type Pat } from '@/lib/api'
+import { AUTH_ENABLED, getOauthSession, oauthLogout } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelBody, PanelHead } from '@/components/console/Panel'
@@ -175,6 +176,12 @@ export default function SettingsPage() {
         自发现入口：<code className="font-mono">GET /api/meta</code>（免鉴权）；机器可读文档：<code className="font-mono">GET /api/agent-doc</code>。
         控制面未对公网开放前，PAT 仅在内网链路生效；公网暴露需等待 OIDC/PAT 全链路（P4，见 ADR-0011 第 5 条）。
       </p>
+      {AUTH_ENABLED && getOauthSession() && (
+        <p className="mt-3 font-mono text-[12px] text-ink-2">
+          员工身份（DAO OAuth）：
+          <button onClick={oauthLogout} className="ml-2 text-signal underline decoration-dotted">退出登录</button>
+        </p>
+      )}
     </div>
   )
 }

@@ -1,7 +1,14 @@
+import { getOauthSession, notifySessionExpired } from '@/lib/auth'
+
 const BASE = '/api/console'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`, init)
+  const headers = new Headers(init?.headers)
+  // 员工身份（DAO JWT）随请求附带；认证未启用时 session 恒为 null，零影响
+  const s = getOauthSession()
+  if (s) headers.set('Authorization', `Bearer ${s.accessToken}`)
+  const resp = await fetch(`${BASE}${path}`, { ...init, headers })
+  if (resp.status === 401) notifySessionExpired() // 令牌过期 → 回登录门
   if (!resp.ok) {
     const text = await resp.text()
     throw new Error(`${resp.status}: ${text.slice(0, 300)}`)

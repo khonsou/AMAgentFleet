@@ -128,12 +128,13 @@ node examples/fap-quickstart.mjs --api http://localhost:5174 --pat <PAT> --demo
 
 ## 5. 能力边界与安全
 
-- **身份分工**：PAT 只发给第三方 agent；员工（人）走浏览器登录（OIDC SSO，
-  P4 落地），永远不需要 PAT——不存在「员工出差要 PAT」的死循环。
+- **身份分工**：PAT 只发给第三方 agent；员工（人）走浏览器 DAO 统一账号登录
+  （angrymiao-auth OAuth，Authorization Code + PKCE——员工侧已落地，见
+  deploy/DEPLOY.md §6.1），永远不需要 PAT——不存在「员工出差要 PAT」的死循环。
   PAT 由管理员在办公网内提前签发（SETTINGS 页），agent 是服务器程序，
   token 带有效期，到期前轮换即可。
 - PAT scope 最小化：只读场景用 `read`，不要申请 `write`。
 - 限速按 PAT / IP 令牌桶 60 次/分；轮询请退避，不要连打。
 - 审计：写操作的 `source` / `actor` 会被记录，**如实自报**，不要伪造他人身份。
-- 当前实例的公网暴露以安全组白名单为界（OIDC 企业认证在 P4 路线图上）；
-  不要在不可信网络传输 PAT。
+- 当前实例的公网暴露以安全组白名单为界；员工 OAuth 已落地（DAO），网关侧
+  鉴权收口见 deploy/DEPLOY.md §6.2 清单；不要在不可信网络传输 PAT。

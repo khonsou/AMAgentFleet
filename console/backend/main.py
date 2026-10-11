@@ -19,6 +19,8 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from authjwt import DaoAuthMiddleware
+
 PG_DSN = os.environ.get(
     "CONSOLE_PG_DSN", "postgresql://postgres@127.0.0.1:5432/deerflow"
 )
@@ -32,6 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(DaoAuthMiddleware)
 
 _pool: asyncpg.Pool | None = None
 
