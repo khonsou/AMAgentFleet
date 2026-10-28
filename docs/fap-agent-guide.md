@@ -85,7 +85,7 @@ curl -X POST http://<host>:<port>/api/loops/<loop_id>/deliver \
   }'
 ```
 
-交付后任务进验收台（`pool_status=review`）。
+交付后任务进入交付验收（`pool_status=review`）。
 
 ### Step 4：轮询验收结果
 

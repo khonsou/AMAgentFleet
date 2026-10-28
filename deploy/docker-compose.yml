@@ -41,7 +41,7 @@ services:
       - -c
       - |
         set -e
-        cp /app/config.fleet.yaml /app/backend/config.yaml
+        python /app/prepare_gateway_config.py
         mkdir -p /etc/deerflow
         [ -f /etc/deerflow/extensions_config.json ] || echo '{}' > /etc/deerflow/extensions_config.json
         cd backend
@@ -56,13 +56,19 @@ services:
       # 安全提醒：MVP 阶段网关鉴权关闭（P4 OIDC 落地前），
       # 必须靠安全组限制来源 IP，不得对公网裸奔。见 DEPLOY.md §6。
       DEER_FLOW_AUTH_DISABLED: ${DEER_FLOW_AUTH_DISABLED:-1}
+      # Fleet 工具与全量操作协议执行器（ADR-0010/0017）的服务面
+      FLEET_CONTROL_PLANE: http://control-plane:8003
+      FLEET_CONSOLE_URL: http://console-backend:8002
+      FLEET_GATEWAY_URL: http://gateway:8001
     volumes:
       - deer-flow-home:/app/backend/.deer-flow
       # MCP 注册表渲染产物（control-plane 写、网关读，共享卷）
       - deerflow-cfg:/etc/deerflow
       - ./config.fleet.yaml:/app/config.fleet.yaml:ro
-      # 舰队协作工具 agent_spawn/agent_message（ADR-0010），来自本仓库
+      # 舰队协作工具、配置合并器与唯一机器可读操作清单，来自本仓库
       - ../fleet_tools.py:/app/fleet_tools.py:ro
+      - ../fleet-ops-protocol.json:/app/fleet-ops-protocol.json:ro
+      - ../deploy/prepare_gateway_config.py:/app/prepare_gateway_config.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,8 +90,12 @@ services:
       # （console-backend 容器直连 _cp 拉数、fap_proxy 转发客户端流量）。
       # 客户端自带 XFF 一律由 console-backend 重建，不可信来源的 XFF 被忽略。
       FAP_TRUSTED_PROXIES: ${FAP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8}
+      FLEET_CONSOLE_URL: http://console-backend:8002
+      FLEET_CONTROL_PLANE_SELF_URL: http://127.0.0.1:8003
+      FLEET_OPS_VAULT_KEY_PATH: /run/fleet-ops/ops-vault.key
     volumes:
       - deerflow-cfg:/etc/deerflow
+      - fleet-ops-vault:/run/fleet-ops
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,3 +141,4 @@ volumes:
   pg-data:
   deer-flow-home:
   deerflow-cfg:
+  fleet-ops-vault:

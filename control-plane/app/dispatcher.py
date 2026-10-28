@@ -121,7 +121,7 @@ async def _run_loop(loop_id: int) -> None:
     }
 
     try:
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60) as client:
+        async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60, trust_env=False) as client:
             r = await client.post("/api/runs/wait", json=body)
         if r.status_code != 200:
             await _reset_loop(loop_id, f"gateway {r.status_code}: {r.text[:300]}")
@@ -183,10 +183,13 @@ def _extract_thread_id(result: dict) -> str | None:
 
 
 def _extract_artifacts(result: dict, thread_id: str | None) -> list[str]:
-    """产物链接：agent 经 present_files 呈现的文件 → Console artifacts 代理地址
-    （FLEET_ARTIFACT_LINK_BASE 可配；生产指向公网 Console，网关不出 VPC）。"""
+    """产物链接：agent 经 present_files 呈现的文件 → Console artifacts 代理地址。
+
+    默认同源相对路径，本地与阿里云均不写死主机；需要独立下载域名时可用
+    FLEET_ARTIFACT_LINK_BASE 显式覆盖。
+    """
     from urllib.parse import quote
-    base = os.environ.get("FLEET_ARTIFACT_LINK_BASE", "http://127.0.0.1:8002")
+    base = os.environ.get("FLEET_ARTIFACT_LINK_BASE", "").rstrip("/")
     arts = result.get("artifacts") or []
     links = []
     for p in arts:

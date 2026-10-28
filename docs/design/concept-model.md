@@ -11,7 +11,7 @@
 | 层 | 实体 | 存储 | 定义 | 生命周期 |
 |----|------|------|------|----------|
 | L0 | **Agent 定义** | `fleet_agents` + `agents/*.yaml` + 网关 custom-agent 配置 | 一个 agent 的配置面：soul/模型/工具/预算/触发器/egress。runner 无状态，配置即一切 | registered →（stop）→ hibernated →（start）→ registered；destroy → terminated（配置删除，不可 start 回来） |
-| L1 | **Task 任务** | `fleet_tasks` | **协作与验收单元**。一条自包含指令；谁创建谁验收；可挂树（`parent_task_id`，A2A 拆出来的子任务） | pool_status：open（待领取）→ review（有交付待确认）→ done（已验收/已关闭）；status：queued/success/failed |
+| L1 | **Task 任务** | `fleet_tasks` | **协作与验收单元**。一条自包含指令；任何已识别的人或 Agent 均可验收（ADR-0015）；可挂树（`parent_task_id`，A2A 拆出来的子任务） | pool_status：open（待领取）→ review（有交付待确认）→ done（已验收/已关闭）；status：queued/success/failed |
 | L2 | **Loop 执行轮次** | `fleet_task_loops` | **一次领取 = 一次执行尝试**。同一 task 可竞争多个 loop（agent ≤3，human 不限）；打回只打 loop 不打 task，同 thread 续跑 | claimed → running → delivered ⇄ returned → accepted/archived |
 | L3 | **Thread 会话** | `threads_meta`（DeerFlow） | **agent 的一次对话容器**。agent 的 loop 起跑时绑定，1 个 agent-loop 对应 1 条 thread；打回续跑复用同 thread；human loop 无 thread | 随 agent 运行 idle/running；checkpoint 续水合 |
 | L4 | **Run 运行** | `runs` | **一次图执行**（LangGraph run），token/成本记账与生命周期（success/error）的单位；thread 内可有多个 run（每次续跑 = 新 run） | created → running → success/error |
@@ -20,7 +20,7 @@
 横切设施（不属于上面任何一层）：
 
 - **Inbox**（`fleet_inbox`）：挂在 agent 上的持久消息队列，攒批合并为 task 唤醒 agent（休眠 agent 拒收）。
-- **Cron**（`fleet_cron_fires` + YAML `triggers.cron`）：定时触发器，到点投递为开放 task 由舰队指挥官认领。
+- **Cron**（`fleet_cron_fires` + YAML `triggers.cron`）：定时触发器，到点创建 task/loop，默认由 YAML 所属 Agent 认领；仅显式 `orchestrator` 或全局 `FLEET_COMMANDER_AGENT` 指定编排者（ADR-0016）。
 - **PAT / Settings**：第三方接入令牌，平台配置面。
 
 ### 1.1 实体关系（基数与关键字段语义）
@@ -44,28 +44,31 @@ Agent 1 ────< Inbox 消息；Agent 1 ────< Cron 触发器
 （`fleet_task_loops.thread_id`），所以是严格的 1:1——loop 排队中没有
 thread_id，起跑后才有。看板上「排队中的 loop 无 thread 链接」即此。
 
-## 2. 页面 × 概念矩阵（现状 catalog）
+## 2. 页面 × 概念矩阵与导航规则
 
-| 页面 | 路由 | 承载层级 | 列表实体 | 详情实体 | 概念准确度 |
-|------|------|----------|----------|----------|-----------|
-| 任务看板（Fleet Board） | `/` | L1 为主，L2 验收台 | **task**（含子任务树） | task（卡片链接 → /tasks/:id） | ⚠️ 见 §3-T1~T4 |
-| Agent 详情 | `/agents/:name` | L0 配置 + L1 认领记录 | 右栏列的是**该 agent 认领的 task** | task（→ /tasks/:id） | ⚠️ 见 §3-T5 |
-| Task 详情 | `/tasks/:id` | L1 + L2 | task 的 **loops** | loop（含 thread 链接） | ✅ 全站最准确 |
-| Thread 详情 | `/threads/:id` | L3 + L4 + L5 | runs | messages | ✅ 准确 |
-| 运行观测 | `/threads` | L3 | thread 日志 | thread | ✅ 准确（备用查询定位） |
-| Agent 定义（Registry） | `/agents` | L0 | agent 定义 | agent 定义 | ✅ 准确（配置面） |
-| 设置 | `/settings` | 平台 | PAT | — | ✅ 准确 |
+| 页面 | 路由 | 承载层级 | 列表实体 | 详情实体 | 导航定位 |
+|------|------|----------|----------|----------|----------|
+| 任务实例看板（Fleet Board） | `/` | L1 为主，L2/L3 为执行主体；L1 内交付验收 | **task instance**（含子任务树） | task（卡片链接 → /tasks/:id） | 实例链入口；Output 优先，Agent 定义为辅助引用 |
+| Agent 详情 | `/agents/:name` | L0 定义 + L1 关联实例 | 右栏列的是**该 agent 关联的 task instance** | task（→ /tasks/:id） | 定义页；关联实例是横向引用 |
+| Task 详情 | `/tasks/:id` | L1 + L2 | task 的 **loop instances** | loop（含 thread 链接） | 实例链主枢纽 |
+| Thread 详情 | `/threads/:id` | L3 + L4 + L5 | runs | messages | 实例链末端 |
+| 运行观测 | `/threads` | L3 | thread instance 日志 | thread | 独立实例查询入口 |
+| Agent 定义（Registry） | `/registry` | L0 | agent definition | agent definition | 定义链入口 |
+| 设置 | `/settings` | 平台 | PAT | — | 平台配置面 |
 
-典型浏览路径的概念流（以今天验收过的真实链路为例）：
+**定义线与实例线必须分开：**
 
 ```
-任务看板(任务卡片) → Task 详情(任务输入 + loops) → Thread 详情(runs/messages)
-     ↓ 点击认领人                    ↑ loop 的 thread 链接
-Agent 详情(配置 + 该 agent 认领的 task 列表) ───────────→ Task 详情
+Agent Registry → Agent Definition ──横向筛选──→ Task Instance
+Fleet Board → Task Instance → Loop Instance → Thread Instance → Run / Message
 ```
 
-每一步跳转层级是连贯的（L1→L1→L2→L3→L4/L5）；混乱不在信息架构，
-**在文案命名**（§3）。
+- `Task → Loop → Thread` 是实例层级链；Agent Definition 不进入这条 breadcrumb。
+- `Agent Definition ↔ Task/Thread Instance` 是横向引用，链接文案必须明确「Agent 定义」或「关联任务实例」。
+- Agent Definition 的关联任务卡只进入 Task Detail，不从 task 越层直达 thread。
+- Loop 没有独立页面，继续寄居 Task Detail；全局 Threads 页保留为排查入口。
+
+因此，定义与实例混排以及 Task 卡片直达 Thread 属于**信息架构问题**，不是单纯文案问题。
 
 ## 3. 术语混乱点清单（现状 → 为什么是错的）
 
@@ -92,58 +95,53 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
 
 | 标准词 | 英文 | 定义（一句话） | 禁止混用 |
 |--------|------|----------------|----------|
-| **任务** | task | 协作与验收单元，一条自包含指令 | 不叫 loop / 单 / 需求 |
-| **执行轮次** | loop | 一次领取的一次执行尝试（口语可叫「一次执行」） | 不叫任务/重试（returned 也是同 loop） |
-| **会话** | thread | agent 的一次对话容器（绑定一个 agent loop） | 不叫 session / 对话记录 |
+| **Agent 定义** | agent definition | YAML、配置版本与生命周期组成的声明式定义 | 不叫 agent 实例 / runner |
+| **任务实例** | task instance | 协作与验收单元，一条自包含指令；首页创建的也是实例 | 不叫 task definition / loop / 单 / 需求 |
+| **执行轮次实例** | loop instance | 一次领取的一次执行尝试（口语可叫「一次执行」） | 不叫任务/重试（returned 也是同 loop） |
+| **会话实例** | thread instance | agent 的一次工作会话（绑定一个 agent loop） | 不叫 session / 对话记录 |
 | **运行** | run | 一次图执行，token 记账单位 | 不直接对用户露出（除观测页） |
 | **消息** | message | 对话与工具调用事件 | — |
 | **认领** | claim | task 被领取（人/agent 同词） | 不叫接单/分配（指派是 assign） |
 | **指派** | assign | 人把 task 指定给某 agent | 不等于认领 |
 | **交付** | deliver | loop 产出交付物，task 入 review | — |
 | **验收** | accept/return | 采纳（task→done）/ 打回（loop 续跑） | 不叫通过/驳回 |
-| **发起** | create | 人创建 task 入池 | 不叫派发（dispatch 仅指「发起并指派给某 agent」） |
-| **任务池** | task pool | 全部任务的协作池（ADR-0010），任务在其中被发起/认领/交付/验收 | 不叫任务流 |
+| **发起** | create | 人创建 task instance 入池 | 不叫派发（dispatch 仅指「发起并指派给某 agent」） |
+| **任务池** | task pool | 全部任务实例的协作池（ADR-0010） | 不叫任务流 |
 
 ### 4.1 页面层级眉标规范（breadcrumb 约定）
 
 详情页页头的固定版式，自上而下四行：**返回链接 → MODULE 眉标（视觉装饰，
 纯模块名，不带实体后缀）→ 概念层级 breadcrumb（仅当有父级时）→ 实体标题 h1**。
 
-- **breadcrumb 用词**：只允许 §4 词表内的实体大写形式
-  （`TASK #N › LOOP #M › THREAD`），分隔符 `›`；编号低调跟随，任务内容为主
-  （沿用 loop 卡片约定），超出宽度截断、`title` 悬浮给全文。
-- **每段可点击性**：有独立详情页的段（TASK）做链接；无独立页的段（LOOP，
-  其详情寄居于 Task 详情）**链接到寄居页锚点**（`/tasks/:id#loop-N`，落点
-  滚动定位 + 短暂高亮）；当前页段（THREAD）为纯文本。
-- **链顶页无 breadcrumb**：处于概念链顶的实体（如 agent 定义，其上只有
-  Registry 模块）不硬造 breadcrumb，实体身份由 h1 承担。
-- **fallback 语义**：数据缺失（如自由对话 thread 无 loop）时 breadcrumb
-  整行消失，`loop: null` 是真实语义而非错误——禁止显示空壳或报错。
-- **MODULE 眉标**：`MODULE NN / <模块名>` 是机架设计语言的导航装饰，编号
-  = 顶栏顺序位（01 FLEET / 02 REGISTRY / 03 THREADS / 04 SETTINGS），
-  与概念层级无关；不得把概念层级信息塞进 MODULE 行。
+- **实例 breadcrumb**：只允许 `TASK #N › LOOP #M › THREAD`；Agent Definition
+  是横向引用，不得插入该层级。
+- **每段可点击性**：TASK 链接到 Task Detail；LOOP 链接到寄居页锚点
+  `/tasks/:id#loop-N`（滚动定位 + 短暂高亮）；当前页 THREAD 为纯文本。
+- **链顶页无 breadcrumb**：Agent Definition 上方只有 Registry 模块，不硬造
+  breadcrumb；其实例列表必须标为「关联任务实例」。
+- **fallback 语义**：自由 thread 无 loop 时实例 breadcrumb 整行消失，
+  `loop: null` 是真实语义而非错误——禁止显示空壳或报错。
+- **MODULE 眉标**：编号只是顶栏顺序位（01 FLEET / 02 REGISTRY / 03 THREADS /
+  04 SETTINGS），与概念层级无关。
 - **禁例**：不得在页头引入无概念对应的装饰词（UNIT 事件教训，见 §6）。
 
-## 5. 命名统一建议（改动映射，纯文案，待批准后执行）
+## 5. 定义 / 实例分离改造映射
 
-| 位置 | 现状 | 建议 | 涉及面 |
-|------|------|------|--------|
-| 看板发起框 | `NEW LOOP / 发起` | **`NEW TASK / 发起任务`** | Home.tsx 文案 |
-| 看板卡片头 | `loop #<task.id>` | **`task #<task.id>`**（与行内链接一致） | Home.tsx 文案 |
-| 看板统计 | `RUNNING LOOPS` | **`执行中任务`（RUNNING TASKS）** | Home.tsx 文案 |
-| 看板流区 | `TASK STREAM` | **`任务流 / TASK STREAM`**（保留，中文标注） | Home.tsx 文案 |
-| Agent 详情右栏 | `SESSION / 对话（经 Dispatcher 派发）` | **`TASKS / 认领任务`**（计数已是 TASKS） | AgentDetail.tsx 文案 |
-| 同页输入框占位 | 「…（新 thread 执行）」 | 去掉 thread 暴露：「输入指令发起新任务，Ctrl/⌘+Enter 指派」 | AgentDetail.tsx 文案 |
-| Registry 页头 | 「注册 / 配置 / 停止拉起。派发与协作运行流见 Fleet 看板」 | 与词表对齐：「发起见任务看板」 | Registry.tsx 文案 |
-| 运行观测页 | `THREAD LOG / 执行日志` | **`会话日志 / THREAD LOG`** | Threads.tsx 文案 |
+| 位置 | 改造 | 涉及面 |
+|------|------|--------|
+| 首页 | 标题与发起框明确为任务实例；删除 task 卡片 thread 直达链接 | Home.tsx |
+| Agent 详情 | 返回 Registry；左侧标 Agent Definition，右侧标关联任务实例；删除任务卡 thread 链接 | AgentDetail.tsx |
+| Task 详情 | Agent 链接标为定义引用；保留 loop → thread | TaskDetail.tsx |
+| Thread 详情 | 保留 TASK › LOOP › THREAD；Agent 定义作为独立横向链接 | ThreadDetail.tsx |
+| Threads 列表 | 标为 Thread 实例观测；Agent 链接标为定义引用 | Threads.tsx |
+| 路由与 API | 全部保持兼容，不改数据库和状态机 | 无 |
 
 执行原则：
 
-1. **只改文案不改信息架构**——层级与跳转（§2 矩阵）已验证连贯。
+1. 实例层级只有 `Task → Loop → Thread → Run/Message`；跨定义链接必须显式标注。
 2. 所有改动引用 §4 词表，禁止引入新同义词。
-3. 改完以 §2 矩阵为 checklist 逐页核对（每个页面只允许出现其承载层的标准词）。
-4. `api.*` 函数名、`fleet_*` 字段名不动（实现层命名与展示层命名解耦，
-   实现层保持现状即可，ADR-0008 已定配置层语义）。
+3. 改完以 §2 矩阵为 checklist 逐页核对。
+4. `api.*` 函数名、`fleet_*` 字段名不动；`task.thread_id` 仅为兼容保留，不再作为前端导航依据。
 
 ## 6. 决策记录位
 
@@ -198,3 +196,16 @@ Agent 详情(配置 + 该 agent 认领的 task 列表) ────────�
   task detail 附 `latest_output`（单条 SQL 按 thread_id 批量取）；前端共享
   `LoopOutput` 组件用于 TaskDetail loop 卡与验收台；对比时剥掉 dispatcher
   追加的「📎 产物：」段。零新概念、零信息架构改动。
+- **2026-10-27 定义 / 实例信息架构分离**：确认首页创建的是 task instance，
+  Agent Detail 是 definition，Thread 是 agent loop 的工作实例。反转此前
+  「混乱不在信息架构，只在文案」及「只改文案不改信息架构」的旧结论：
+  删除 Home/Agent Detail 基于 `task.thread_id` 的越层会话入口，实例统一走
+  Task → Loop → Thread；Agent Definition 与实例之间只做显式横向引用。
+  Agent Detail 返回 Registry，右侧任务列表标为关联实例。路由、API、数据库、
+  状态机均保持兼容；本决策不改变 ADR-0010 的 task/loop 运行语义。
+- **2026-10-27 实例执行层与交付验收**：首页以 Task 与最终 Output 为主，
+  每个 task 的最新 Loop/Thread 在执行区主体展示，Agent Definition 降为底部
+  横向辅助引用；不再使用 `task.thread_id` 越层导航。「验收台」统一改为 task 内
+  的「交付验收」，不引入独立验收实例。采纳/退回对任何已识别的人、内部 Agent、
+  FAP/A2A + PAT 第三方 Agent 同权，关闭作废不在放开范围；PAT 身份覆盖 body
+  自报 author 进入审计，见 ADR-0015。

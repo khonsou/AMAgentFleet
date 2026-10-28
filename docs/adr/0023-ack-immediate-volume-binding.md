@@ -1,4 +1,4 @@
-# ADR-0016：ACK 状态盘使用立即绑定
+# ADR-0023：ACK 状态盘使用立即绑定
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -10,7 +10,7 @@ ACK 三台 `ecs.n1.xlarge` 节点都位于 `cn-shenzhen-a`。`cloud_efficiency` 
 ## 决定
 
 1. `am-agent-fleet-efficiency-retain` 使用 `Immediate` 绑定，保留 `cloud_efficiency` 和 `Retain`。
-2. 本 ADR 仅取代 ADR-0015 的 `WaitForFirstConsumer` 绑定策略；磁盘类型、容量和保留策略不变。
+2. 本 ADR 仅取代 ADR-0022 的 `WaitForFirstConsumer` 绑定策略；磁盘类型、容量和保留策略不变。
 
 ## 后果
 

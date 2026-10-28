@@ -1,4 +1,4 @@
-# ADR-0015：ACK 状态盘匹配 n1 节点规格
+# ADR-0022：ACK 状态盘匹配 n1 节点规格
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -11,7 +11,7 @@ ACK 节点规格为 `ecs.n1.xlarge`。部署时创建的 ESSD 能成功建盘，
 
 1. ACK 状态 PVC 改用 `cloud_efficiency`，使用 `am-agent-fleet-efficiency-retain` StorageClass，保留 `WaitForFirstConsumer` 和 `Retain`。
 2. 保持 20Gi 单副本状态卷，供 DeerFlow 运行文件、agent memory/facts 和共享 MCP 配置使用。
-3. 本 ADR 仅取代 ADR-0013 的 ESSD 存储选择；底座镜像与其余运行配置仍按 ADR-0013 执行。
+3. 本 ADR 仅取代 ADR-0020 的 ESSD 存储选择；底座镜像与其余运行配置仍按 ADR-0020 执行。
 
 ## 后果
 

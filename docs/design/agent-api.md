@@ -45,9 +45,9 @@
 | C1 | 任务发起（指派 agent 或开放领取） | `POST /api/tasks` | ✅ |
 | C2 | 领取（agent/人，竞争非独占，≤3 并行 loop） | `POST /api/tasks/{id}/claim` | ✅ |
 | C3 | 任务 / loop 状态与详情 | `GET /api/tasks/{id}`、`GET /api/loops/{id}` | ✅ |
-| C4 | 任务列表 + 验收台（交付并排比较） | `GET /api/tasks?status=` | ✅ Console 验收台 |
-| C5 | 采纳（task → done，记审计） | `POST /api/tasks/{id}/accept` | ✅ |
-| C6 | 打回（附意见，同 thread 水合续跑重做） | `POST /api/loops/{id}/return` | ✅ |
+| C4 | 任务列表 + 交付验收（交付并排比较） | `GET /api/tasks?status=` | ✅ task 内动作区 |
+| C5 | 采纳（task → done，记审计；任何已识别的人或 Agent） | `POST /api/tasks/{id}/accept` | ✅ ADR-0015 |
+| C6 | 打回（附意见，同 thread 水合续跑重做；同权） | `POST /api/loops/{id}/return` | ✅ ADR-0015 |
 | C7 | 指挥官分解子任务 | runner 工具 `agent_spawn` | ✅ 零改上游 |
 | C8 | 人机同构交付（人贴链接交付，同等验收） | `POST /api/loops/{id}/deliver` | ✅ |
 
@@ -67,7 +67,7 @@
 
 | # | 操作 | API | 现状 |
 |---|------|-----|------|
-| E1 | cron 注册/对账（指挥官认领定时任务） | Scheduler 薄层 | ✅ |
+| E1 | cron 注册/对账（默认所属 Agent 认领，显式配置可交编排者） | Scheduler 薄层 | ✅ |
 | E2 | **第三方 agent 发起/操作任务** | FAP 接入面（本协议 H 域） | 🔧 下一步 |
 | E3 | agent 唤醒 agent | `agent_message` / Inbox | ✅ |
 | E4 | IM 触发（钉钉/企微） | webhook adapter | 📅（QA-1 待答） |

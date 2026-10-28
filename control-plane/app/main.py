@@ -11,12 +11,12 @@ import json
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from . import inbox, mcpservers, registry, scheduler, templates
 from . import pool as poolmod
-from . import fap, fap_middleware, fap_pats
+from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials
 from .db import GATEWAY, audit, init_db, pool
 
 app = FastAPI(title="Agent Fleet Control Plane", version="0.2.0")
@@ -31,6 +31,8 @@ app.middleware("http")(fap_middleware.rate_limit_middleware)
 app.middleware("http")(fap.protocol_header_middleware)
 app.include_router(fap.router)
 app.include_router(fap_pats.router)
+app.include_router(fleet_ops.router)
+app.include_router(ops_credentials.router)
 fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
@@ -38,6 +40,7 @@ fap.set_feature_flag("pat_auth", True)
 @app.on_event("startup")
 async def startup() -> None:
     await init_db()
+    await ops_credentials.ensure_system_credential()
     # dispatcher consumer 懒启动（首次领取时拉起，见 dispatcher.enqueue_loop_run）
     _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())
     _state["inbox"] = asyncio.create_task(inbox.flush_loop())
@@ -75,11 +78,19 @@ class AgentUpsertBody(BaseModel):
     yaml: dict[str, Any]
 
 
+def _assert_agent_mutable(name: str) -> None:
+    try:
+        registry.assert_mutable(name)
+    except registry.RegistryError as exc:
+        raise _reg_err(exc)
+
+
 @app.post("/api/agents", status_code=201)
 async def create_agent(body: AgentUpsertBody, actor: str = "admin") -> dict[str, Any]:
     name = (body.yaml.get("metadata") or {}).get("name")
     if not name:
         raise HTTPException(422, "metadata.name required")
+    _assert_agent_mutable(name)
     try:
         row = await registry.apply_agent(name, body.yaml)
     except registry.RegistryError as exc:
@@ -91,6 +102,7 @@ async def create_agent(body: AgentUpsertBody, actor: str = "admin") -> dict[str,
 
 @app.put("/api/agents/{name}")
 async def update_agent(name: str, body: AgentUpsertBody, actor: str = "admin") -> dict[str, Any]:
+    _assert_agent_mutable(name)
     if (body.yaml.get("metadata") or {}).get("name") not in (None, name):
         raise HTTPException(422, "metadata.name mismatch")
     body.yaml.setdefault("metadata", {})["name"] = name
@@ -105,6 +117,7 @@ async def update_agent(name: str, body: AgentUpsertBody, actor: str = "admin") -
 
 @app.delete("/api/agents/{name}", status_code=204)
 async def delete_agent(name: str, actor: str = "admin") -> None:
+    _assert_agent_mutable(name)
     try:
         await registry.remove_agent(name)
     except registry.RegistryError as exc:
@@ -121,7 +134,7 @@ async def _set_agent_status(name: str, status: str) -> None:
 
 
 async def _cron_tasks_of(name: str) -> list[dict]:
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
         tasks = (await client.get("/api/scheduled-tasks")).json()
     return [t for t in tasks
             if t.get("assistant_id") == name and t.get("title", "").startswith("fleet:")]
@@ -134,9 +147,10 @@ async def stop_agent(name: str, actor: str = "admin") -> dict[str, Any]:
     之后新的 dispatch/inbox 唤醒会被拒绝（dispatcher 校验状态），
     已跑任务不受影响；配置可继续修改，start 后恢复。
     """
+    _assert_agent_mutable(name)
     paused = []
     for t in await _cron_tasks_of(name):
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
             r = await client.post(f"/api/scheduled-tasks/{t['id']}/pause")
         if r.status_code == 200:
             paused.append(t["title"])
@@ -150,13 +164,14 @@ async def start_agent(name: str, actor: str = "admin") -> dict[str, Any]:
     """拉起 = 恢复 fleet cron + 状态回 registered（幂等，配置为最新已部署版本）。
 
     配置已销毁（YAML 不存在）时拒绝：拉起不能凭空造出配置，必须重新部署 YAML。"""
+    _assert_agent_mutable(name)
     try:
         registry.load_yaml_doc(name)
     except registry.RegistryError as exc:
         raise _reg_err(exc)
     resumed = []
     for t in await _cron_tasks_of(name):
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
             r = await client.post(f"/api/scheduled-tasks/{t['id']}/resume")
         if r.status_code == 200:
             resumed.append(t["title"])
@@ -199,14 +214,21 @@ async def list_tasks(
 ) -> list[dict[str, Any]]:
     clause, args = "", []
     if agent:
-        args.append(agent); clause = "WHERE agent_name=$1"
+        args.append(agent); clause = "WHERE t.agent_name=$1"
     if status:
         args.append(status)
-        clause += (" AND " if clause else "WHERE ") + f"status=${len(args)}"
+        clause += (" AND " if clause else "WHERE ") + f"t.status=${len(args)}"
     args.append(limit)
     async with (await pool()).acquire() as conn:
         rows = await conn.fetch(
-            f"SELECT * FROM fleet_tasks {clause} ORDER BY id DESC LIMIT ${len(args)}", *args)
+            f"""SELECT t.*, l.id AS latest_loop_id, l.thread_id AS latest_thread_id,
+                       l.status AS latest_loop_status
+                FROM fleet_tasks t
+                LEFT JOIN LATERAL (
+                  SELECT id, thread_id, status FROM fleet_task_loops
+                  WHERE task_id=t.id ORDER BY id DESC LIMIT 1
+                ) l ON true
+                {clause} ORDER BY t.id DESC LIMIT ${len(args)}""", *args)
     return [dict(r) for r in rows]
 
 
@@ -365,6 +387,11 @@ def _pool_err(exc: poolmod.PoolError) -> HTTPException:
     return HTTPException(status_code=exc.status, detail=exc.message)
 
 
+def _acceptance_author(request: Request, author: str) -> str:
+    """人与 Agent 同权验收；外部请求只能以已验证 PAT 身份留痕（ADR-0015）。"""
+    return getattr(request.state, "fap_actor", None) or author
+
+
 class TaskCreateBody(BaseModel):
     input: str = Field(min_length=1)
     source: str = Field(default="web", pattern="^(web|im|agent|inbox|admin|cron)$")
@@ -417,13 +444,25 @@ class AcceptBody(BaseModel):
 
 
 @app.post("/api/tasks/{task_id}/accept")
-async def task_accept(task_id: int, body: AcceptBody) -> dict[str, str]:
-    """强制验收：采纳某个 loop 的交付 → task done；其余 loop 归档。"""
+async def task_accept(task_id: int, body: AcceptBody, request: Request) -> dict[str, str]:
+    """任何已识别的人或 Agent 采纳交付：task done，其余 loop 归档（ADR-0015）。"""
     try:
-        await poolmod.accept_loop(task_id, body.loop_id, author=body.author)
+        await poolmod.accept_loop(
+            task_id, body.loop_id, author=_acceptance_author(request, body.author))
     except poolmod.PoolError as exc:
         raise _pool_err(exc)
     return {"pool_status": "done"}
+
+
+class AcceptReviewedBody(BaseModel):
+    author: str = "human"
+
+
+@app.post("/api/tasks/accept-reviewed")
+async def tasks_accept_reviewed(body: AcceptReviewedBody, request: Request) -> dict[str, Any]:
+    """一次验收当前全部待确认 Task，并返回明确的成功／跳过／剩余明细。"""
+    return await poolmod.accept_pending_review(
+        author=_acceptance_author(request, body.author))
 
 
 class ReturnBody(BaseModel):
@@ -432,10 +471,11 @@ class ReturnBody(BaseModel):
 
 
 @app.post("/api/loops/{loop_id}/return", status_code=202)
-async def loop_return(loop_id: int, body: ReturnBody) -> dict[str, str]:
-    """打回 loop（不动 task）：意见落评论，同 thread 自动续跑修正。"""
+async def loop_return(loop_id: int, body: ReturnBody, request: Request) -> dict[str, str]:
+    """任何已识别的人或 Agent 打回 loop：同 thread 续跑修正（ADR-0015）。"""
     try:
-        await poolmod.return_loop(loop_id, body.comment, author=body.author)
+        await poolmod.return_loop(
+            loop_id, body.comment, author=_acceptance_author(request, body.author))
     except poolmod.PoolError as exc:
         raise _pool_err(exc)
     return {"status": "returned"}

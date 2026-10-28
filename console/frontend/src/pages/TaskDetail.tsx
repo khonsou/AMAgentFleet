@@ -98,7 +98,7 @@ export default function TaskDetailPage() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 4000)
+    const t = setInterval(load, 15000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
@@ -146,7 +146,7 @@ export default function TaskDetailPage() {
         <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
           <h1 className="max-w-[560px] truncate text-[21px] font-semibold tracking-tight"
             title={t?.input || ''}>
-            {t?.input?.trim() || 'Task 详情'}
+            {t?.input?.trim() || 'Task 实例详情'}
           </h1>
           {t && (
             <>
@@ -166,7 +166,7 @@ export default function TaskDetailPage() {
       {t && (
         <>
           <Panel className="mb-5">
-            <PanelHead><span className="silk">INPUT&nbsp;/&nbsp;任务输入</span></PanelHead>
+            <PanelHead><span className="silk">TASK INSTANCE&nbsp;/&nbsp;任务实例输入</span></PanelHead>
             <PanelBody>
               <pre className="lcd whitespace-pre-wrap rounded-[2px] border border-hairline-soft p-3 text-xs leading-relaxed text-ink-2">{t.input}</pre>
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -178,7 +178,7 @@ export default function TaskDetailPage() {
                 )}
                 {t.agent_name !== 'unassigned' && t.agent_name !== 'human' ? (
                   <Link to={`/agents/${t.agent_name}`} className="link-console inline-flex items-center font-mono text-xs">
-                    执行 agent：{t.agent_name} →
+                    Agent 定义：{t.agent_name} →
                   </Link>
                 ) : t.agent_name === 'human' ? (
                   <span className="font-mono text-xs text-ink-2">🧑 人工领取（见下方 loops）</span>
@@ -193,7 +193,7 @@ export default function TaskDetailPage() {
 
           <Panel className="mb-5">
             <PanelHead>
-              <span className="silk">LOOPS&nbsp;/&nbsp;领取与执行记录</span>
+              <span className="silk">LOOP INSTANCES&nbsp;/&nbsp;领取、执行与交付</span>
               <span className="silk">{detail!.loops.length}&nbsp;LOOPS</span>
             </PanelHead>
             <PanelBody className="space-y-2.5">

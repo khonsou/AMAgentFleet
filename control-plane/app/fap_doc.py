@@ -7,16 +7,19 @@
 FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
 
 > 机器可读文档：供第三方 agent 程序化消费。先 `GET /api/meta` 自发现，
-> 再按本文档调用。所有响应携带 `X-Protocol-Version: 1.0`，
-> major 版本不一致时客户端应告警一次（不必中断）。
+> 再从 `operations_protocol` 取得完整操作清单，或按本文档调用。所有响应携带
+> `X-Protocol-Version: 1.0`，major 版本不一致时客户端应告警一次（不必中断）。
 
 ## 0. 基本信息
 
 - **Base URL（唯一入口）**：你发起 `GET /api/meta` 时用的那个地址——GUI 网址
   就是 API 入口（同源暴露），无需任何其他端口。本文档所有路径均为相对路径，
   直接拼在 Base URL 之后。
+- **完整操作协议**：`GET /api/ops/protocol` 返回 Fleet Operations Protocol，
+  以稳定 operation ID 声明系统、Agent、Task、Loop、Thread、Run、验收、cron、
+  MCP、模板、审计和 PAT 的全部操作及其 surface/method/path/确认级别。
 - **能力归属**：`tasks / loops / agents_registry / scheduled_tasks / feedback /
-  idempotency / pat_auth` 在本控制面；`threads`（会话执行面，D 域）为
+  fleet_operations / idempotency / pat_auth` 在本控制面；`threads`（会话执行面，D 域）为
   DeerFlow 网关原生能力，控制面不代理——公网部署时其入口由部署方另行提供，
   见 §4。
 - **鉴权**：`Authorization: Bearer <PAT>`（PAT 由员工在 Console 设置页签发，
@@ -79,7 +82,7 @@ POST /api/tasks/{id}/loops
 ### 3.3 状态查询
 
 ```
-GET /api/tasks?limit=200          → 全量任务列表（验收台数据源）
+GET /api/tasks?limit=200          → 全量任务列表（含最新 loop/thread 引用）
 GET /api/tasks/{id}               → task + loops 详情
 GET /api/review-queue             → 待确认（review）任务列表
 GET /api/loops/by-thread/{tid}    → thread → 所属 loop + task 池状态
@@ -88,11 +91,20 @@ GET /api/loops/by-thread/{tid}    → thread → 所属 loop + task 池状态
 loop 状态机：`claimed → running → delivered`（自动捕获交付）；
 异常回 `claimed`（error 落库，可重派）；验收相关：`accepted / archived / returned`。
 
-### 3.4 验收（强制）
+### 3.4 交付验收（强制）
+
+任何已识别的人或 Agent 均可采纳/退回；write scope PAT 即可调用。
+FAP/A2A 请求以已验证 PAT 身份作为审计 author，body 自报 author 不会覆盖它。
 
 ```
 POST /api/tasks/{id}/accept   {"loop_id": <交付 loop>, "author": "<可选>"}
 → {"pool_status": "done"}        # 采纳：task done，其余 loop 归档
+
+POST /api/tasks/accept-reviewed   {"author": "<可选>"}
+→ {"accepted": [{"task_id": 1, "loop_id": 2}], "skipped": [],
+   "accepted_count": 1, "remaining_review": 0}
+# 一次验收当前全部 review Task；每项采纳最新 delivered Loop。
+# 无 delivered Loop 的项列入 skipped；调用方无需逐项循环或额外分页统计。
 
 POST /api/loops/{id}/return   {"comment": "<退回意见>", "author": "<可选>"}
 → 202 {"status": "returned"}     # 打回：同 thread 水合续跑修正，rounds+1

@@ -164,12 +164,23 @@ CREATE TABLE IF NOT EXISTS fap_idempotency_keys (
     actor          TEXT NOT NULL,
     method         TEXT NOT NULL,
     path           TEXT NOT NULL,
+    request_digest TEXT NOT NULL DEFAULT '',
     status_code    INTEGER NOT NULL,
     response_json  JSONB NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (key, actor)
 );
+ALTER TABLE fap_idempotency_keys ADD COLUMN IF NOT EXISTS request_digest TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_fap_idem_created ON fap_idempotency_keys(created_at);
+-- ADR-0018：系统 Fleet 操作 PAT 的 Vault 密文；原始 token 不落库。
+CREATE TABLE IF NOT EXISTS fleet_system_credentials (
+    name         TEXT PRIMARY KEY,
+    pat_id       TEXT NOT NULL UNIQUE REFERENCES personal_access_tokens(id),
+    ciphertext   TEXT NOT NULL,
+    version      INTEGER NOT NULL DEFAULT 1,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    rotated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 

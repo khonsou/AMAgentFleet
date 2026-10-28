@@ -4,24 +4,27 @@
 > 本表只做提炼与加禁例，与之冲突时以 concept-model.md 为准。
 > **任何 UI 改动合并前逐条打勾。**
 
-## 黄金规则（3 条）
+## 黄金规则（4 条）
 
 1. **词表唯一**：界面上的每个词必须能在 §4 词表找到；想造新词，先改词表再改界面。
 2. **编号必带实体标签**：禁止裸 `#N`。编号前必须是 `task #` / `loop #` / `TASK #` 等实体词——编号旁边出现 agent 名时尤其容易误读。
 3. **装饰词须过审**：眉标、面板副标、统计标签也是用户会读到的词（UNIT 事件教训）。MODULE 编号是唯一的免检装饰（机架设计语言，纯导航顺序位）。
+4. **定义与实例分层**：实例 breadcrumb 只允许 `TASK › LOOP › THREAD`；Agent Definition 只能作为横向引用，不得插入实例层级。
 
 ## 标准词速查
 
 | 界面写法 | 禁止写成 |
 |---|---|
-| 任务 task | 单、需求、需求单 |
-| 执行轮次 loop（口语「一次执行」） | 任务、重试 |
-| 会话 thread | **对话**、session、对话记录 |
+| Agent 定义 agent definition | agent 实例、runner |
+| 任务实例 task instance | task definition、单、需求、需求单 |
+| 执行轮次实例 loop instance（口语「一次执行」） | 任务、重试 |
+| 会话实例 thread instance | **对话**、session、对话记录 |
 | 任务池 task pool | **任务流**、TASK STREAM |
 | 运行 run | 对用户露出仅限观测页 |
 | 认领 claim（人/agent 同词） | 接单、抢单 |
 | 指派 assign | 认领（两者不同） |
 | 交付 deliver / 验收 accept·return | 提交/通过/驳回 |
+| 交付验收（task 内动作区） | 验收台、独立 reviewer 实例 |
 | 发起 create | 派发（dispatch 仅指「发起并指派给某 agent」） |
 
 ## 页头版式（§4.1，四行固定）
@@ -44,6 +47,8 @@ MODULE NN / <模块名>            ← 纯模块名，不带实体后缀
 | breadcrumb 内 | 大写实体词 | `TASK #159 › LOOP #187 › THREAD` |
 | 卡片/行内 meta | 小写实体词 | `task #156 · web`、`loop #187` |
 | thread 链接（统一一种） | `会话 {8位id} →` | `会话 d80a2e61 →` |
+| agent 定义横向链接 | `Agent 定义：{name} →` | `Agent 定义：fleet-cmd-01 →` |
+| agent 详情实例列表 | `TASK INSTANCES / 关联任务实例` | 不叫 Agent 的对话或资产 |
 | 计数标签 | 实体词全大写 | `1 LOOPS`、`N AGENTS` |
 
 ## 禁例清单（踩过的坑）
@@ -52,6 +57,7 @@ MODULE NN / <模块名>            ← 纯模块名，不带实体后缀
 - ❌ `查看对话 →` —— 非标准词 + 无 id
 - ❌ `fleet-cmd-01　#156 · web` —— 裸编号挨着 agent 名（读成 agent 编号）
 - ❌ `任务流 / TASK STREAM` —— 任务池的可视化误命名
+- ❌ `验收台` —— 交付验收是 task 内动作区，不是独立实例或页面
 - ❌ 详情页眉标 `· TASK` / `· AGENT` 后缀 —— 实体身份归 h1/breadcrumb
 - ❌ 同一实体三种链接文案并存 —— thread 链接全站只能有 `会话 {8位id} →` 一种
 

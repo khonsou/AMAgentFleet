@@ -9,6 +9,7 @@ import AgentDetailPage from './pages/AgentDetail'
 import TaskDetailPage from './pages/TaskDetail'
 import SettingsPage from './pages/Settings'
 import AuthCallbackPage from './pages/AuthCallback'
+import FleetOpsWidget from './components/console/FleetOpsWidget'
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/threads/:tid" element={<ThreadDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
+            <FleetOpsWidget />
           </AuthGate>
         } />
       </Routes>

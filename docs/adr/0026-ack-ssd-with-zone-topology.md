@@ -1,4 +1,4 @@
-# ADR-0019：ACK 状态盘沿用已验证的 SSD 拓扑
+# ADR-0026：ACK 状态盘沿用已验证的 SSD 拓扑
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -10,7 +10,7 @@ ACK 中现有 `glassesweb-ssd-retain` 使用 `cloud_ssd` 与 `zoneId: cn-shenzhe
 ## 决定
 
 1. Fleet 状态盘使用 `cloud_ssd` 并显式指定 `zoneId: cn-shenzhen-a`，使用独立的 `am-agent-fleet-ssd-retain`、立即绑定与 Retain。
-2. 保持 20Gi 单副本；本 ADR 取代 ADR-0018 的 `cloud_efficiency` 类别，并沿用 ADR-0016 的立即绑定策略。
+2. 保持 20Gi 单副本；本 ADR 取代 ADR-0025 的 `cloud_efficiency` 类别，并沿用 ADR-0023 的立即绑定策略。
 
 ## 后果
 

@@ -1,4 +1,4 @@
-# ADR-0014：Console 公网入口使用 DAO OAuth
+# ADR-0021：Console 公网入口使用 DAO OAuth
 
 - **状态**：已接受
 - **日期**：2026-10-19

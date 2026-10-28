@@ -1,4 +1,4 @@
-# ADR-0018：ACK 状态盘固定到兼容可用区
+# ADR-0025：ACK 状态盘固定到兼容可用区
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -10,7 +10,7 @@ ACK 节点为 `ecs.n1.xlarge`，支持高效云盘。无 `zoneId` 的 StorageCla
 ## 决定
 
 1. 状态卷使用 `cloud_efficiency`，StorageClass `am-agent-fleet-efficiency-retain` 显式指定 `zoneId: cn-shenzhen-a`、`Immediate` 和 `Retain`。
-2. 保持 20Gi 单副本 PVC；本 ADR 取代 ADR-0017 的 `cloud_ssd` 选择，保留 ADR-0016 的立即绑定策略。
+2. 保持 20Gi 单副本 PVC；本 ADR 取代 ADR-0024 的 `cloud_ssd` 选择，保留 ADR-0023 的立即绑定策略。
 
 ## 后果
 

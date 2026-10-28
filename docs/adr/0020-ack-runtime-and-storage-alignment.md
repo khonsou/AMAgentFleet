@@ -1,4 +1,4 @@
-# ADR-0013：对齐 ACK 运行底座与节点存储类型
+# ADR-0020：对齐 ACK 运行底座与节点存储类型
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -17,7 +17,7 @@ ACK 部署清单引用了镜像中不存在的 `config.fleet.yaml`，且 v1 配�
 
 - Gateway 启动配置与 DeerFlow fork 版本一致；节点可在选定工作节点后再创建同可用区 ESSD。
 - StorageClass 是集群级资源；PVC 删除后云盘保留，备份和清理仍由运维负责。
-- 本 ADR 取代 ADR-0012 中使用 `glassesweb-ssd-retain` 的 ACK 存储选择。
+- 本 ADR 取代 ADR-0019 中使用 `glassesweb-ssd-retain` 的 ACK 存储选择。
 
 ## 已考虑的备选
 

@@ -218,7 +218,9 @@ spec:
     allowedCallers: ["zhangsan", "finance-team"]
   triggers:
     cron:
-      - "37 8 * * 1-5"              # 每工作日 08:37（错峰分钟）
+      - cron: "37 8 * * 1-5"        # 每工作日 08:37（错峰分钟）
+        prompt: 检查今日应收异常并输出摘要
+        # orchestrator: fleet-cmd-01  # 可选；缺省 = 所属 Agent 直接执行（ADR-0016）
     im: true
     web: true
     agentCallable: true             # 允许被其他 agent 唤醒
@@ -275,7 +277,7 @@ thread#102 [财务 agent]  ──► 执行 ──► 返回【摘要 ≤500字�
 ### 7.4 上下文工程纪律（平台级强制）
 
 1. **一 agent 一窄职责**：注册强制填 `owner` 与职责描述。
-2. **一任务一 thread**：cron/IM/agent 触发每次开新 thread，不复用长会话；人的 web 对话允许同 thread 延续（超 50 轮建议归档重开）。
+2. **一个 agent loop 一 thread**：cron/IM/agent 触发的每个 agent loop 起跑时绑定新 thread；同一 task 可有多个竞争 loop，退回修正复用该 loop 的同一 thread；人的 web 对话允许同 thread 延续（超 50 轮建议归档重开）。
 3. **Skills 按需加载**：只注入 YAML 声明的 skill；skill 内部触发条件不命中不注入正文。
 4. **上下文卫生**：DeerFlow 自带 manual context compaction，平台侧再加自动压缩中间件——超阈值历史自动摘要折叠、工具结果落地 OSS 只留引用；checkpoint 按 TTL 清理 + 归档。
 5. **预算即护栏**：`maxTokensPerRun` 熔断 + 协作链总预算。
@@ -318,7 +320,7 @@ Agent 运行时 (ACP 模式: 凭证不落地在 agent 侧):
 |------|------|------|
 | Web 对话 | Console → Chat API（SSE 流式） | 每 agent 一个对话页（fleet 子页）；同 thread 延续 |
 | IM | 钉钉/企微 webhook → Adapter → Dispatcher | DeerFlow 的 IM 频道框架可参考（原生支持飞书）；回复经 IM MCP 回流 |
-| 定时 | Scheduler 读 YAML cron → Dispatcher | 错峰分钟已在 YAML 约定 |
+| 定时 | Scheduler 读 YAML cron → Task/Loop → Dispatcher | 默认所属 Agent 执行；显式 `orchestrator` 才交编排者（ADR-0016） |
 | Agent 唤醒 | runner 调 `agent_message` → 目标 agent 的 Inbox → Dispatcher | 见 §7.3 |
 
 ### 7.7+ 任务池与验收模型（2026-10-09 修订，ADR-0010）
@@ -333,10 +335,11 @@ task（open → review → done，只前进不回退）
 ```
 
 - **领取竞争非独占**：同一 task 最多 3 个并行 **agent** loop（human loop 不计上限——不烧平台 token；不同 agent/人同台解题，验收并排比较）；
-  验收不采纳即自然终止。领取途径仅三种：人指派 / 人自领 / cron 任务由舰队指挥官认领——无暗路径。
+  验收不采纳即自然终止。领取途径仅三种：人指派 / 人自领 / cron 默认由所属 Agent 认领（显式配置可交编排者，ADR-0016）——无暗路径。
 - **交付自动**：loop 的 run 成功即捕获 deliverable（摘要 + 文件链接 + thread 引用）。
 - **强制验收**：任一 loop 交付 task 即入 review，必须经验收动作（采纳/保持开放/关闭）才终结；
-  验收人 = task 创建者；采纳记审计。打回 = 对该 loop 评论 → 同 thread 水合续跑 → 交 v2，不影响 task 与其他 loop。
+  任何已识别的人或 Agent 均可采纳/退回（含 FAP/A2A + PAT 第三方 Agent，ADR-0015）；
+  采纳记审计。打回 = 对该 loop 评论 → 同 thread 水合续跑 → 交 v2，不影响 task 与其他 loop。
 - **人机同构**：人领取后在 Console 对话交付，产出结构与 agent loop 一致。
 - 数据模型：`fleet_task_loops`（loop 表）、`fleet_task_comments`；`fleet_tasks` 状态收敛 open|review|done。
 
@@ -346,6 +349,23 @@ task（open → review → done，只前进不回退）
 - **Agent 子页（对话页）**：流式对话窗 + thread 列表（可回放轨迹）+ 授权状态。
 - **审计页**：按 agent/员工/时间过滤的调用流水。
 - FastAPI 后端 + React 单页；第一天就公网 + OIDC。
+
+### 7.9 共享池并发与复用语义（2026-10-15 增补，ADR-0012/0013/0014；验收权限由 ADR-0015 更新）
+
+多用户并发、know-how 共享、task output 复用的完整设计（QA-13~24 决议）见
+[docs/design/shared-pool-concurrency.md](docs/design/shared-pool-concurrency.md)。
+要点：认领事务化 + 认领者唯一 + 控制面单例门闩（ADR-0012）；任何已识别的
+人或 Agent 同权采纳/退回（ADR-0015）；know-how 谱系 lineage + 记忆维持
+per-agent 共享 + PAT 绑定员工（ADR-0013）；任务池升级为已验收答案库，
+task_search 只读检索 + 引用型交付 + 无失效概念（ADR-0014）。
+ADR-0010"3 个并行 loop"措辞澄清为"终身累计 ≤3 个 agent loop"
+（QA-13，以 ADR-0012 为准）。
+
+### 7.10 系统 Fleet 操作 Agent 与统一鉴权（2026-10-28，ADR-0017/0018）
+
+全局浮窗固定连接系统内置 `fleet-ops-01`，其 Registry 配置和系统 PAT 不允许经日常管理入口修改、停止、删除、吊销或降权；版本化部署与人工确认轮换是仅有的维护路径。浮窗不自动回退到 `lead_agent`。
+
+本地执行代理与第三方 Agent 统一使用 PAT／FAP 鉴权，Agent 名称不再是授权依据。原始系统 PAT 只存服务端 Vault 密文，由控制面执行代理解密并注入 Authorization；Runner 只提交 operation ID 和参数，不能接触 token。operation ID 白名单、写操作明确确认、human-only 与 secrets 隔离继续生效。
 
 ---
 
@@ -430,6 +450,7 @@ DeerFlow 最小验证四项全过（部署 / 拉起 / PG 持久化 / kill 后断
 6. ~~模型例外的口子~~ → **agent 可自由配置模型**（已入 §1-10，政策放宽见 ADR-0009）。
 7. ~~触发器优先级~~ → **接受 cron 先行**；附加要求：每个 agent 有网页同时看到配置与对话（已入 §1-11，列为 P2 验收项）。
 8. ~~DeerFlow 跟踪策略~~ → **fork GitHub 仓库**（已入 §1-12，P2 前置任务）。
+9. ~~并发/共享/复用语义（QA-13~24）~~ → **已决议（2026-10-15）**：认领上限维持终身累计 ≤3（ADR-0010 措辞以 ADR-0012 澄清为准）、认领者唯一、控制面单例门闩、agent lineage 谱系、记忆维持 per-agent 共享、答案库无失效概念、PAT 绑定员工。原“验收权=发起者/admin”已由 ADR-0015 取代为任何已识别的人或 Agent 同权。详见 [ADR-0012](docs/adr/0012-control-plane-atomicity-singleton.md)/[0013](docs/adr/0013-knowhow-lineage-memory.md)/[0014](docs/adr/0014-answer-library-task-search.md)/[0015](docs/adr/0015-universal-human-agent-acceptance.md) 与 [docs/design/shared-pool-concurrency.md](docs/design/shared-pool-concurrency.md)。
 
 ---
 

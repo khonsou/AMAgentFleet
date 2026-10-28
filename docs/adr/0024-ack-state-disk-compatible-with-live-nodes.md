@@ -1,4 +1,4 @@
-# ADR-0017：ACK 状态盘使用节点已验证的 SSD 类别
+# ADR-0024：ACK 状态盘使用节点已验证的 SSD 类别
 
 - **状态**：已接受
 - **日期**：2026-10-19
@@ -10,7 +10,7 @@ ACK 的 ESSD 挂载被 ECS 拒绝，`cloud_efficiency` 则被当前 CSI 调度�
 ## 决定
 
 1. 状态 PVC 使用 `cloud_ssd` 和 `am-agent-fleet-ssd-retain` StorageClass，采用 `Immediate` 绑定与 `Retain` 回收策略。
-2. 保持 20Gi 单副本卷及现有挂载位置；本 ADR 取代 ADR-0015 的云盘类别，并沿用 ADR-0016 的立即绑定策略。
+2. 保持 20Gi 单副本卷及现有挂载位置；本 ADR 取代 ADR-0022 的云盘类别，并沿用 ADR-0023 的立即绑定策略。
 
 ## 后果
 

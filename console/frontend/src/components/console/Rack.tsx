@@ -58,10 +58,6 @@ export default function Rack() {
         ))}
       </div>
       <div className="ml-auto flex items-center gap-4">
-        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium tracking-wider text-ink-2">
-          <Led color="green" blink />
-          AUTO
-        </span>
         <Clock />
       </div>
     </nav>

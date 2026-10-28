@@ -6,8 +6,9 @@ WORKDIR /app
 COPY deploy/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# 平台代码（fleet_tools.py 同时被网关容器经 bind mount 复用，见 docker-compose.yml）
+# 平台代码（fleet_tools.py 与操作协议同时被网关容器经 bind mount 复用）
 COPY fleet_tools.py /app/fleet_tools.py
+COPY fleet-ops-protocol.json /app/fleet-ops-protocol.json
 COPY agents /app/agents
 COPY control-plane /app/control-plane
 COPY console/backend /app/console/backend

@@ -40,7 +40,7 @@ ACK 测试资源起始值：gateway request `150m CPU / 384Mi`、limit `4 CPU / 
 
 | 组件 | 来源 | 说明 |
 |------|------|------|
-| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v2` | 包含 Fleet skill evolution 支持；配置文件与 tag 同步，见 ADR-0013 |
+| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v2` | 包含 Fleet skill evolution 支持；配置文件与 tag 同步，见 ADR-0020 |
 | control-plane / Console / fleet_tools | 本仓库 | 平台自有代码 |
 | PostgreSQL | `postgres:16-alpine` 官方镜像 | ECS 自建（容器），换 RDS 见 §5.3 |
 
@@ -99,6 +99,7 @@ docker compose logs -f control-plane
   伪造 XFF 无法冒充内部流量。平台内部直连（console-backend `_cp`、
   dispatcher）无 XFF + 可信对端 = 内部豁免；**经代理的客户端流量一律要 PAT**。
 - `deerflow-cfg` 共享卷：CP 渲染 `extensions_config.json`（MCP 注册表），网关读取
+- `fleet-ops-vault` 卷：系统 Fleet 操作 PAT 的本地开发／单机部署加密密钥，权限 0600；生产应备份并限制访问，KMS 实现接入 `CredentialVault` 适配边界。原始 PAT 不在卷、环境变量或日志中出现
 - `deer-flow-home` 卷：网关运行数据（agent 配置/checkpoint/记忆），**备份对象**
 
 ## 4. 部署验证（checklist，全部通过才算完成）
