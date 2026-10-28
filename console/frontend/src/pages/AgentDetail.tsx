@@ -21,8 +21,8 @@ function fmtTokens(n?: number | null) {
 
 const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
 
-/** Agent 详情页（QA-7）：左侧配置区（YAML 编辑 + 部署），
- *  右侧对话区（任务派发 + 运行历史），一页同时可见。 */
+/** Agent 定义详情页：左侧 YAML / 生命周期，右侧关联任务实例。
+ *  实例列表是横向筛选，不与 Agent 定义组成实例 breadcrumb。 */
 export default function AgentDetailPage() {
   const { name } = useParams<{ name: string }>()
   const [detail, setDetail] = useState<AgentDetail | null>(null)
@@ -113,7 +113,7 @@ export default function AgentDetailPage() {
         setNotice(`已拉起（恢复 cron ${r.resumed_crons.length} 个，可继续派发任务）`)
       } else {
         await api.agentDestroy(name)
-        navigate('/')
+        navigate('/registry')
         return
       }
       await load()
@@ -125,6 +125,7 @@ export default function AgentDetailPage() {
   }
 
   const r = detail?.registry
+  const systemAgent = name === 'fleet-ops-01'
   const stopped = r != null && r.status !== 'registered' && r.status !== 'running'
   const statusLed = r?.status === 'running' ? 'green' : r?.status === 'registered' ? 'cyan' : 'off'
 
@@ -132,7 +133,7 @@ export default function AgentDetailPage() {
     <div className="mx-auto max-w-7xl px-7 pb-20 pt-7">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link to="/" className="link-console font-mono text-xs">← FLEET BOARD</Link>
+          <Link to="/registry" className="link-console font-mono text-xs">← AGENT REGISTRY</Link>
           <div className="silk mt-2">MODULE&nbsp;02&nbsp;/&nbsp;REGISTRY</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">
             {r?.display_name || name}
@@ -142,8 +143,9 @@ export default function AgentDetailPage() {
         <div className="flex flex-wrap items-center gap-2.5 text-sm">
           <StatusPill color="off">v{r?.config_version ?? '—'}</StatusPill>
           <StatusPill color={statusLed} blink={r?.status === 'running'}>{r?.status ?? '—'}</StatusPill>
+          {systemAgent && <StatusPill color="cyan">系统内置 · 配置只读</StatusPill>}
           <span className="font-mono text-xs text-ink-3">owner: {r?.owner || '—'}</span>
-          {(r?.status === 'registered' || r?.status === 'running') ? (
+          {!systemAgent && ((r?.status === 'registered' || r?.status === 'running') ? (
             <Button
               variant="outline" size="sm" disabled={lifecycling}
               onClick={() => lifecycle('stop')}
@@ -159,13 +161,15 @@ export default function AgentDetailPage() {
             >
               {lifecycling ? '处理中…' : '拉起'}
             </Button>
+          ))}
+          {!systemAgent && (
+            <Button
+              variant="destructive" size="sm" disabled={lifecycling}
+              onClick={() => lifecycle('destroy')}
+            >
+              销毁
+            </Button>
           )}
-          <Button
-            variant="destructive" size="sm" disabled={lifecycling}
-            onClick={() => lifecycle('destroy')}
-          >
-            销毁
-          </Button>
         </div>
       </div>
 
@@ -177,24 +181,27 @@ export default function AgentDetailPage() {
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* 配置区 */}
+        {/* 定义区：YAML、配置版本和生命周期 */}
         <Panel>
           <PanelHead>
-            <span className="silk">CONFIG&nbsp;/&nbsp;agents/ YAML · 一等公民</span>
-            <Button
-              size="sm"
-              variant="signal"
-              onClick={saveYaml}
-              disabled={saving || !yamlDirty}
-              className="h-7 px-2.5 text-[11px] disabled:opacity-40"
-            >
-              {saving ? '保存中…' : '保存并部署'}
-            </Button>
+            <span className="silk">AGENT DEFINITION&nbsp;/&nbsp;Agent 定义 · YAML{systemAgent ? ' · 系统内置只读' : ''}</span>
+            {!systemAgent && (
+              <Button
+                size="sm"
+                variant="signal"
+                onClick={saveYaml}
+                disabled={saving || !yamlDirty}
+                className="h-7 px-2.5 text-[11px] disabled:opacity-40"
+              >
+                {saving ? '保存中…' : '保存并部署'}
+              </Button>
+            )}
           </PanelHead>
           <PanelBody>
             <Textarea
               value={yamlText}
               onChange={(e) => { setYamlText(e.target.value); setYamlDirty(true) }}
+              readOnly={systemAgent}
               spellCheck={false}
               className="lcd min-h-[520px] resize-y rounded-[2px] border-hairline text-xs leading-relaxed text-ink focus-visible:ring-signal/40"
             />
@@ -205,10 +212,10 @@ export default function AgentDetailPage() {
           </PanelBody>
         </Panel>
 
-        {/* 对话区 */}
+        {/* 关联实例区：按 Agent 定义筛选任务，不进入定义层级 */}
         <Panel className="flex flex-col">
           <PanelHead>
-            <span className="silk">TASKS&nbsp;/&nbsp;认领任务</span>
+            <span className="silk">TASK INSTANCES&nbsp;/&nbsp;关联任务实例</span>
             <span className="silk">{tasks.length}&nbsp;TASKS</span>
           </PanelHead>
           <PanelBody className="flex flex-1 flex-col">
@@ -225,7 +232,7 @@ export default function AgentDetailPage() {
                         </span>
                         <StatusPill color={st.led} blink={st.blink}>{st.label}</StatusPill>
                       </div>
-                      <div className="mt-1 font-mono text-[10.5px] text-ink-3">任务 #{t.id} · {t.source}</div>
+                      <div className="mt-1 font-mono text-[10.5px] text-ink-3">task #{t.id} · {t.source}</div>
                       {t.result_preview && (
                         <div className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-ink-2">
                           {t.result_preview}
@@ -235,22 +242,19 @@ export default function AgentDetailPage() {
                         <div className="mt-1 truncate text-xs text-led-red">{t.error}</div>
                       )}
                       <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] text-ink-3">
-                        <span className="tabular-nums">token: {fmtTokens(t.tokens)}{t.thread_id ? ` · 会话 ${t.thread_id.slice(0, 8)}` : ''}</span>
+                        <span className="tabular-nums">token: {fmtTokens(t.tokens)}</span>
                         <span>{fmtTime(t.created_at)}</span>
                       </div>
                       <div className="mt-1.5 flex items-center justify-between font-mono text-[10.5px] text-ink-3">
-                        {t.thread_id ? (
-                          <Link to={`/threads/${t.thread_id}`} onClick={(e) => e.stopPropagation()}
-                            className="link-console">thread {t.thread_id.slice(0, 8)} →</Link>
-                        ) : <span>{t.status === 'queued' ? '排队中' : '未开始'}</span>}
-                        <span>task #{t.id} 详情/操作 →</span>
+                        <span>进入任务查看执行轮次与会话</span>
+                        <span>task #{t.id} 实例详情/操作 →</span>
                       </div>
                     </InsetRow>
                   </Link>
                 )
               })}
               {tasks.length === 0 && (
-                <div className="py-12 text-center font-mono text-sm text-ink-3">暂无任务。在下方输入指令派发。</div>
+                <div className="py-12 text-center font-mono text-sm text-ink-3">暂无关联任务实例。在下方输入指令发起。</div>
               )}
               <div ref={bottomRef} />
             </div>
@@ -260,7 +264,7 @@ export default function AgentDetailPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && dispatch()}
                 rows={3}
-                placeholder={(stopped ? 'Agent 已停止：先点上方"拉起"再发起任务。' : '输入指令发起新任务。') + ' Ctrl/⌘+Enter 指派'}
+                placeholder={(stopped ? 'Agent 已停止：先点上方"拉起"再发起任务实例。' : '输入指令发起任务实例。') + ' Ctrl/⌘+Enter 指派'}
                 className={INPUT_CLS + ' min-h-[72px] resize-y'}
                 disabled={dispatching || stopped}
               />

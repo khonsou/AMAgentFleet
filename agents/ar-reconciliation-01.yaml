@@ -27,6 +27,7 @@ triggers:
     - cron: "37 8 * * 1-5"
       timezone: Asia/Shanghai
       prompt: 检查今日应收异常并输出一句话摘要。
+      # 缺省由所属 Agent 直接执行；如需指挥官编排，显式设置 orchestrator: fleet-cmd-01
   web: true
   im: false
   agentCallable: true

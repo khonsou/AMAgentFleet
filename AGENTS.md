@@ -80,12 +80,29 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
 ## 常用命令
 
 ```bash
-# Console 全栈（PG → 网关:8001 → Console 后端:8002 → 前端；Ctrl+C 全回收）
+# Console 全栈（PG → 网关:8001 → Console 后端:8002 → Control Plane:8003 → 前端）
+# console/frontend 下同一命令也是全栈入口；Ctrl+C 只回收本次启动的服务
 cd console && npm run dev
 
 # Control Plane（Registry/Dispatcher/Inbox/Scheduler，:8003；前提：PG + 网关已起）
 cd control-plane && ../console/backend/.venv/bin/python -m uvicorn app.main:app --port 8003
 ```
+
+### Console / 预览启动排障（2026-10-27 实测）
+
+- 预览项目根目录固定为 `console/frontend/`；`npm run dev` 必须把 CLI host/port
+  透传到 Vite，不能只启动前端，否则页面会出现 500 / Failed to fetch。
+- 先看 `console/logs/dev.log`：没有本次启动记录，说明预览启动器未进入项目脚本，
+  应从最新预览卡片重新启动；有记录再看 gateway / console-backend / control-plane
+  对应日志。不要仅凭构建成功判断完整环境可运行。
+- 本地健康检查必须绕过代理；Console 的 httpx 本机客户端固定 `trust_env=False`。
+  `uv` 使用绝对路径发现，bash 用 `/bin/bash`，避免预览 PATH 与交互 shell 不一致。
+- 停止信号直接交给 Vite PID；各后端只按本次写下的 PID 文件回收。禁止模糊
+  `pkill -f` 杀进程；禁止验完后遗留手工服务。若端口仍被占，先用
+  `lsof -nP -iTCP:<port> -sTCP:LISTEN` 确认归属再停止精确 PID。
+- Python 服务没有热更新：改完 `control-plane/` 或 `console/backend/` 必须重启对应
+  8003 / 8002；Vite 页面变新不代表后端已变新。验收至少覆盖首页 API 200、无
+  Failed to fetch、最终 Output 和 Task → Loop → Thread 实际点击。
 
 网关强制配置（spike 0002/0001 结论）：`database.backend='postgres'`、
 `run_events.backend='db'`、`agents_api.enabled=true`、`scheduler.enabled=true`。

@@ -9,7 +9,7 @@
 
 - 全栈在跑：PG :5432 / 网关 :8001 / Console 后端 :8002 / control-plane :8003
   （`scripts/dev.sh` 或等价手工进程）。
-- 基线 agent 不动：`fleet-cmd-01`（cron 认领者，`FLEET_COMMANDER_AGENT`）、
+- 基线 agent 不动：`fleet-cmd-01`（显式编排测试用）、
   `fleet-collect-01`、`fleet-analyze-01` 保持 registered。
 - 记录基线：`GET /api/agents` 快照、`audit_events` 最大 id（便于算增量）。
 - 约束：所有测试 agent 命名 `scale-<nn>`；测试后必须清理（见「清理」节）。
@@ -30,20 +30,23 @@
 ## 用例 B：cron 准时（触发精度 + 恰好一次 + 重启续投）
 
 机制口径（scheduler.py）：croniter 算「上一个应触发点」> `fleet_cron_fires.last_fired`
-即投递；30s 扫描一轮；首次见到只记基线不补投；幂等键 `cron:<agent>:<i>:<occurrence>`；
-投递为开放池任务并由舰队指挥官认领（`source='cron'`，audit `cron.fired`）。
+即投递；90s 扫描一轮；首次见到只记基线不补投；幂等键 `cron:<agent>:<i>:<occurrence>`；
+创建池任务后默认由 YAML 所属 Agent 认领，显式 `orchestrator` 才交编排者（ADR-0016）。
 
 | 步骤 | 操作 | 预期判定 |
 |------|------|----------|
-| B1 | 给 scale-07 注册带 `triggers.cron: [{cron: "*/2 * * * *", prompt: "[验收] cron 报时：回复当前分钟数"}]` 的 YAML | 首次 sync 只记基线、不补投（池里无历史任务） |
-| B2 | 观察 ≥ 3 个触发周期（约 7–8 分钟） | 每周期恰好 1 个 `source='cron'` 任务；任务实际入队时刻 − 应触发点 ≤ 30s 扫描粒度 + 执行排队；指挥官认领并交付；audit 每周期 1 条 `cron.fired` |
+| B1 | 给 scale-07 注册带 `triggers.cron: [{cron: "*/5 * * * *", prompt: "[验收] cron 报时：回复当前分钟数"}]` 的 YAML | 首次 sync 只记基线、不补投（池里无历史任务） |
+| B2 | 观察 ≥ 3 个触发周期（约 16–18 分钟） | 每周期恰好 1 个 `source='cron'` 任务；任务实际入队时刻 − 应触发点 ≤ 90s 扫描粒度 + 执行排队；所属 Agent 认领并交付；audit 每周期 1 条 `cron.fired` |
 | B3 | 周期 2 与 3 之间重启 control-plane | 不双触发（幂等键 + last_fired 落库）、不漏触发（重启后凭 last_fired 续投） |
-| B4 | 节奏对账 | 相邻触发任务 `created_at` 间隔 = 周期 ±45s（扫描粒度+排队余量）；指挥官认领、交付非空。**不用交付内容对时**——沙箱 agent 无可靠时钟来源（实测：三个 agent 均如实回复「无法读取分钟数」，纪律正确但判据不可验证） |
+| B4 | 节奏对账 | 相邻触发任务 `created_at` 间隔 = 周期 ±105s（扫描粒度+排队余量）；所属 Agent 认领、交付非空。**不用交付内容对时**——沙箱 agent 无可靠时钟来源（实测：三个 agent 均如实回复「无法读取分钟数」，纪律正确但判据不可验证） |
 | B5 | 清理：改 YAML 摘除 cron 并重新部署 | sync 后不再产生新任务 |
 
-已知边界（不判失败，记录在案）：cron 最小有效粒度受 30s 扫描限制，小于 1 分钟的
+已知边界（不判失败，记录在案）：cron 最小有效粒度受 90s 扫描限制，小于 2 分钟的
 cron 表达式不建议验收使用；摘除后 `fleet_cron_fires` 行保留，若同名同序号 cron
 再次挂载会按旧基线立即补投一次——测试后应删除该行（清理节含 SQL）。
+
+> 2026-10-28：扫描周期由 30s 调整为 90s，且 cron 默认直派所属 Agent（ADR-0016）；
+> 本文既有执行记录基于调整前配置，新配置需按本用例重新验收。
 
 ## 用例 C：休眠 / 唤醒全链路
 

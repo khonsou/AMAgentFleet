@@ -52,9 +52,9 @@ export default function ThreadsPage() {
       <header className="mb-6 flex items-end justify-between">
         <div>
           <div className="silk">MODULE <b>03</b> / THREADS</div>
-          <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">运行观测</h1>
+          <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">Thread 实例观测</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            thread 执行日志（备用查询）：每个 agent 的一次会话/任务 = 一条 thread。agent 配置请到 Registry 管理。
+            Thread 实例执行日志（备用查询）：工作会话从 Task → Loop 进入；Agent 配置请到 Registry 管理。
           </p>
         </div>
         <div className="silk">5S&nbsp;REFRESH</div>
@@ -68,7 +68,7 @@ export default function ThreadsPage() {
 
       <Panel>
         <PanelHead>
-          <span className="silk">会话日志&nbsp;/&nbsp;THREAD&nbsp;LOG</span>
+          <span className="silk">会话实例日志&nbsp;/&nbsp;THREAD&nbsp;LOG</span>
           <span className="silk">{rows.length}&nbsp;THREADS</span>
         </PanelHead>
         <div className="overflow-x-auto">
@@ -89,21 +89,19 @@ export default function ThreadsPage() {
               {rows.map((r) => (
                 <tr key={r.thread_id} className="border-b border-hairline-soft/60 transition-colors hover:bg-raised/40">
                   <td className="max-w-md px-4 py-3 pl-5">
-                    <Link to={`/threads/${r.thread_id}`} className="block">
-                      <div className="truncate font-medium text-ink">
-                        {r.display_name || r.first_message?.slice(0, 60) || r.thread_id.slice(0, 8)}
-                      </div>
-                      <div className="mt-0.5 font-mono text-xs text-ink-3">
-                        {r.thread_id.slice(0, 8)} ·{' '}
-                        {r.assistant_id && r.assistant_id !== 'lead_agent' ? (
-                          <Link to={`/agents/${r.assistant_id}`} className="link-console">
-                            {r.assistant_id}
-                          </Link>
-                        ) : (
-                          <span title="spike 遗留的未注册会话，非 Registry agent">未注册会话</span>
-                        )}
-                      </div>
+                    <Link to={`/threads/${r.thread_id}`} className="block truncate font-medium text-ink">
+                      {r.display_name || r.first_message?.slice(0, 60) || r.thread_id.slice(0, 8)}
                     </Link>
+                    <div className="mt-0.5 font-mono text-xs text-ink-3">
+                      {r.thread_id.slice(0, 8)} ·{' '}
+                      {r.assistant_id && r.assistant_id !== 'lead_agent' ? (
+                        <Link to={`/agents/${r.assistant_id}`} className="link-console">
+                          Agent 定义：{r.assistant_id} →
+                        </Link>
+                      ) : (
+                        <span title="spike 遗留的未注册会话，非 Registry agent">未注册会话</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {r.last_run_status

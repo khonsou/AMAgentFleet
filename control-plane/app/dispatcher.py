@@ -121,7 +121,7 @@ async def _run_loop(loop_id: int) -> None:
     }
 
     try:
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60) as client:
+        async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60, trust_env=False) as client:
             r = await client.post("/api/runs/wait", json=body)
         if r.status_code != 200:
             await _reset_loop(loop_id, f"gateway {r.status_code}: {r.text[:300]}")

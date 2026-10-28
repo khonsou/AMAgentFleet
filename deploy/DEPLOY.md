@@ -69,6 +69,7 @@ docker compose logs -f control-plane
   伪造 XFF 无法冒充内部流量。平台内部直连（console-backend `_cp`、
   dispatcher）无 XFF + 可信对端 = 内部豁免；**经代理的客户端流量一律要 PAT**。
 - `deerflow-cfg` 共享卷：CP 渲染 `extensions_config.json`（MCP 注册表），网关读取
+- `fleet-ops-vault` 卷：系统 Fleet 操作 PAT 的本地开发／单机部署加密密钥，权限 0600；生产应备份并限制访问，KMS 实现接入 `CredentialVault` 适配边界。原始 PAT 不在卷、环境变量或日志中出现
 - `deer-flow-home` 卷：网关运行数据（agent 配置/checkpoint/记忆），**备份对象**
 
 ## 4. 部署验证（checklist，全部通过才算完成）

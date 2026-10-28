@@ -91,8 +91,18 @@ def _bearer(request: Request) -> str | None:
 
 # ---------------------------------------------------------------- 幂等（H4 上半）
 
+def _request_fingerprint(method: str, path: str, query: str, body: bytes) -> str:
+    """只保存不可逆摘要，避免请求正文中的业务信息或秘密进入幂等表。"""
+    import hashlib
+    digest = hashlib.sha256()
+    for part in (method.encode(), path.encode(), query.encode(), body):
+        digest.update(len(part).to_bytes(8, "big"))
+        digest.update(part)
+    return digest.hexdigest()
+
+
 async def idempotency_middleware(request: Request, call_next):
-    """写操作携带 Idempotency-Key 时：同键同 actor 回放首次响应（24h 内）。"""
+    """同键同 actor 且同请求时回放；不同正文、路径或查询参数返回 409。"""
     if request.method not in _WRITE_METHODS:
         return await call_next(request)
     key = request.headers.get("Idempotency-Key")
@@ -101,10 +111,12 @@ async def idempotency_middleware(request: Request, call_next):
     if len(key) > IDEMPOTENCY_MAX_KEY_LEN:
         return JSONResponse({"detail": "Idempotency-Key 过长"}, status_code=400)
     actor = _actor_identity(request)
+    fingerprint = _request_fingerprint(
+        request.method, request.url.path, request.url.query, await request.body())
 
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT actor, status_code, response_json, created_at FROM fap_idempotency_keys WHERE key=$1",
+            "SELECT actor, status_code, response_json, request_digest, created_at FROM fap_idempotency_keys WHERE key=$1",
             key,
         )
         if row is not None:
@@ -116,6 +128,9 @@ async def idempotency_middleware(request: Request, call_next):
             from datetime import datetime, timedelta, timezone
             fresh = row["created_at"] > datetime.now(timezone.utc) - timedelta(hours=IDEMPOTENCY_WINDOW_HOURS)
             if fresh:
+                # 迁移前的记录没有正文摘要，只能按旧语义回放；新记录全部严格校验。
+                if row["request_digest"] and row["request_digest"] != fingerprint:
+                    return JSONResponse({"detail": "Idempotency-Key 已用于不同请求"}, status_code=409)
                 stored = row["response_json"]
                 if isinstance(stored, str):  # asyncpg 对 jsonb 默认返回原始字符串
                     stored = json.loads(stored)
@@ -135,13 +150,13 @@ async def idempotency_middleware(request: Request, call_next):
             payload = json.loads(body.decode("utf-8") or "{}")
             async with (await pool()).acquire() as conn:
                 await conn.execute(
-                    """INSERT INTO fap_idempotency_keys (key, actor, method, path, status_code, response_json)
-                       VALUES ($1,$2,$3,$4,$5, $6::jsonb)
+                    """INSERT INTO fap_idempotency_keys (key, actor, method, path, request_digest, status_code, response_json)
+                       VALUES ($1,$2,$3,$4,$5,$6, $7::jsonb)
                        ON CONFLICT (key, actor) DO UPDATE SET
-                         method=EXCLUDED.method, path=EXCLUDED.path,
+                         method=EXCLUDED.method, path=EXCLUDED.path, request_digest=EXCLUDED.request_digest,
                          status_code=EXCLUDED.status_code, response_json=EXCLUDED.response_json,
                          created_at=now()""",
-                    key, actor, request.method, request.url.path, response.status_code,
+                    key, actor, request.method, request.url.path, fingerprint, response.status_code,
                     json.dumps(payload),
                 )
                 # 顺手清窗口外的旧键

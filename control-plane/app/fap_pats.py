@@ -28,11 +28,16 @@ _B62 = string.digits + string.ascii_letters
 _ALLOWED_SCOPES = {"read", "write"}
 
 # 管理端点仅限平台内部调用（Console 后端 _cp 路径：可信 proxy 直连、无 XFF）。
-# 用 _is_internal 口径：经同源代理的远程客户端流量必带 XFF，不会被误判为内部。
+# 系统执行代理带 PAT 时也必须是本机直连；经同源代理的第三方流量必带 XFF，拒绝。
 def _assert_loopback(request: Request) -> None:
-    from .fap_middleware import _is_internal
-    if not _is_internal(request):
-        raise HTTPException(403, "PAT 管理端点仅限 Console 本机调用")
+    from .fap_middleware import _is_internal, _is_trusted_proxy, _peer
+    if _is_internal(request):
+        return
+    pat = getattr(request.state, "fap_pat", None)
+    if (pat and pat.get("user_id") == "fap:system:fleet-ops-01"
+            and _is_trusted_proxy(_peer(request)) and "x-forwarded-for" not in request.headers):
+        return
+    raise HTTPException(403, "PAT 管理端点仅限 Console 本机调用")
 
 
 def _new_token() -> str:
@@ -62,8 +67,10 @@ def _validate_scopes(scopes: list[str]) -> list[str]:
 
 @router.post("/api/pats", status_code=201)
 async def pat_create(request: Request, body: PatCreateBody) -> dict:
-    """签发 PAT：token 仅此一次回显。"""
+    """签发 PAT：token 仅此一次回显。系统身份只能由专用轮换路径维护。"""
     _assert_loopback(request)
+    if body.issuer.startswith("system:"):
+        raise HTTPException(403, "系统 PAT 身份不能通过普通签发接口冒用")
     scopes = _validate_scopes(body.scopes)
     token = _new_token()
     async with (await pool()).acquire() as conn:
@@ -95,13 +102,14 @@ async def pat_list(request: Request) -> list[dict]:
     out = []
     for r in rows:
         scopes = r["scopes"]
-        if isinstance(scopes, str):  # json 列 asyncpg 返回原始字符串（jsonb 才自动解析）
+        if isinstance(scopes, str):  #  json 列 asyncpg 返回原始字符串（jsonb 才自动解析）
             try:
                 scopes = _json.loads(scopes)
             except ValueError:
                 scopes = []
         out.append(
             {"id": r["id"], "name": r["name"], "scopes": scopes,
+             "system": r["user_id"] == "fap:system:fleet-ops-01",
              "prefix": PAT_PREFIX, "expires_at": r["expires_at"], "revoked_at": r["revoked_at"],
              "last_used_at": r["last_used_at"], "created_at": r["created_at"]}
         )
@@ -111,12 +119,15 @@ async def pat_list(request: Request) -> list[dict]:
 @router.delete("/api/pats/{pat_id}")
 async def pat_revoke(request: Request, pat_id: str, author: str = "console") -> dict:
     _assert_loopback(request)
+    if pat_id == "fap-system-fleet-ops-01":
+        raise HTTPException(403, "系统 PAT 不可吊销；请在 Settings 人工轮换")
     if not re.fullmatch(r"fap-[0-9a-f]{16}", pat_id):
         raise HTTPException(404, "PAT 不存在")
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow(
             """UPDATE personal_access_tokens SET revoked_at=now()
-               WHERE id=$1 AND user_id LIKE 'fap:%' AND revoked_at IS NULL
+               WHERE id=$1 AND user_id LIKE 'fap:%' AND user_id != 'fap:system:fleet-ops-01'
+                 AND revoked_at IS NULL
                RETURNING name""", pat_id)
     if row is None:
         raise HTTPException(404, "PAT 不存在或已吊销")

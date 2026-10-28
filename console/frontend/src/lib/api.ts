@@ -80,17 +80,20 @@ export const api = {
   artifactUrl: (tid: string, path: string) =>
     `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
   messages: (tid: string) => req<unknown>(`/threads/${tid}/messages`),
-  send: (tid: string, content: string) =>
+  send: (tid: string, content: string, assistantId?: string) =>
     req<unknown>(`/threads/${tid}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, ...(assistantId ? { assistant_id: assistantId } : {}) }),
     }),
-  create: (instruction?: string) =>
+  create: (instruction?: string, assistantId?: string) =>
     req<{ thread_id: string }>('/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(instruction?.trim() ? { instruction } : {}),
+      body: JSON.stringify({
+        ...(instruction?.trim() ? { instruction } : {}),
+        ...(assistantId ? { assistant_id: assistantId } : {}),
+      }),
     }),
   destroy: (tid: string) => req<{ deleted: string }>(`/threads/${tid}`, { method: 'DELETE' }),
 
@@ -170,6 +173,9 @@ export const api = {
   templates: () => req<Template[]>('/templates'),
 
   // ---- FAP PAT 管理（ADR-0011 H6，Console 设置页） ----
+  opsCredential: () => req<OpsCredentialStatus>('/ops/credential'),
+  opsCredentialRotate: () =>
+    req<OpsCredentialStatus>('/ops/credential/rotate', { method: 'POST' }),
   pats: () => req<Pat[]>('/pats'),
   patCreate: (name: string, scope: 'read' | 'write', expiresInDays?: number) =>
     req<Pat & { token: string }>('/pats', {
@@ -187,10 +193,23 @@ export interface Template {
   description: string
 }
 
+export interface OpsCredentialStatus {
+  agent: string
+  system: true
+  configured: boolean
+  pat_id: string
+  scopes: string[]
+  version: number
+  created_at: string
+  rotated_at: string
+  last_used_at: string | null
+}
+
 export interface Pat {
   id: string
   name: string
   scopes: string[]
+  system?: boolean
   prefix: string
   expires_at: string | null
   revoked_at: string | null
@@ -260,6 +279,9 @@ export interface AgentTask {
   source: string
   status: string
   thread_id: string | null
+  latest_loop_id?: number | null
+  latest_thread_id?: string | null
+  latest_loop_status?: string | null
   parent_task_id: number | null
   depth: number
   pool_status?: string

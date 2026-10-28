@@ -30,6 +30,15 @@ class RegistryError(Exception):
         self.message = message
 
 
+SYSTEM_AGENT_NAME = "fleet-ops-01"
+
+
+def assert_mutable(name: str) -> None:
+    """日常管理面不得改变系统 Agent；版本化部署直接调用 apply_agent。"""
+    if name == SYSTEM_AGENT_NAME:
+        raise RegistryError(403, f"系统内置 Agent '{name}' 只读，禁止通过日常管理接口修改或生命周期操作")
+
+
 def _agents_dir() -> str:
     os.makedirs(AGENTS_DIR, exist_ok=True)
     return AGENTS_DIR
@@ -94,7 +103,7 @@ async def sync_to_gateway(name: str, doc: dict[str, Any]) -> None:
     工程解：部署动作可重放）。
     """
     pkg = _gateway_package(doc)
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
         r = await client.post("/api/agents/import", json=pkg)
         if r.status_code == 409:
             r = await client.put(f"/api/agents/{name}", json=pkg["agent"])
@@ -103,7 +112,7 @@ async def sync_to_gateway(name: str, doc: dict[str, Any]) -> None:
 
 
 async def remove_from_gateway(name: str) -> None:
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
         r = await client.delete(f"/api/agents/{name}")
         if r.status_code not in (204, 404):
             raise RegistryError(502, f"gateway delete failed: {r.status_code} {r.text[:300]}")

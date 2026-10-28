@@ -187,12 +187,16 @@ export default function ThreadDetailPage() {
           )}
           <h1 className="mt-1.5 max-w-[640px] truncate text-[21px] font-semibold tracking-tight"
             title={firstHuman?.content || ''}>
-            {firstHuman?.content.trim() || 'Agent 会话详情'}
+            {firstHuman?.content.trim() || 'Agent 会话实例详情'}
           </h1>
-          <span className="mt-1.5 block font-mono text-xs text-ink-3">
-            thread {tid?.slice(0, 13)}…
-            {t?.agent_name ? ` · ${t.agent_name}` : ''}
-          </span>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-xs text-ink-3">
+            <span>thread {tid?.slice(0, 13)}…</span>
+            {t?.agent_name && (
+              <Link to={`/agents/${t.agent_name}`} className="link-console">
+                Agent 定义：{t.agent_name} →
+              </Link>
+            )}
+          </div>
         </div>
         {runMeta && <StatusPill color={runMeta.led} blink={runMeta.blink}>{runMeta.label}</StatusPill>}
       </div>

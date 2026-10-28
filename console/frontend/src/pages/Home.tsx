@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { api, type AgentTask, type RegistryAgent, type TaskDetail, type Loop } from '@/lib/api'
 import LoopOutput from '@/components/console/LoopOutput'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,7 @@ const TAG_LED: Record<Tag, 'amber' | 'green' | 'cyan' | 'off'> = {
 }
 
 /** 任务标签 = 你需要对它做什么（四态，池语义） */
-export function tagOf(t: AgentTask): Tag {
+function tagOf(t: AgentTask): Tag {
   if (t.pool_status === 'done') return '已验收'
   if (t.pool_status === 'review') return '待确认'
   return t.agent_name === 'unassigned' ? '待分配' : '执行中'
@@ -107,41 +107,56 @@ function loopStatus(nodes: Node[]): string {
 function TaskNode({ node, depth }: { node: Node; depth: number }) {
   const t = node.task
   const st = taskStatusMeta(t.status)
+  const navigate = useNavigate()
+  const hasAgentDefinition = !['unassigned', 'human'].includes(t.agent_name)
+  const instanceRole = node.children.length > 0 ? '指挥官实例' : depth > 0 ? 'Subagent 实例' : 'Agent 实例'
   return (
     <div>
-      <Link to={`/tasks/${t.id}`} className="block">
-        <InsetRow className="transition-colors hover:border-ink-3">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <Led color={st.led} blink={st.blink} />
-            {t.agent_name === 'unassigned' && t.pool_status === 'open' ? (
-              <StatusPill color="amber" className="text-led-amber">待领取</StatusPill>
-            ) : t.agent_name === 'human' ? (
-              <span className="font-mono text-xs text-ink-2">🧑 人工</span>
-            ) : t.agent_name === 'unassigned' ? (
-              <span className="font-mono text-[10px] text-ink-3">未认领</span>
-            ) : (
-              <Link to={`/agents/${t.agent_name}`} onClick={(e) => e.stopPropagation()}
-                className="link-console font-mono text-xs text-ink">{t.agent_name}</Link>
-            )}
-            <span className="font-mono text-[11px] text-ink-3">task #{t.id} · {t.source}</span>
-            <StatusPill color={st.led} blink={st.blink}>{st.label}</StatusPill>
-            <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-3">
-              {fmtTokens(t.tokens)} tok · {fmtTime(t.created_at)}
-            </span>
-          </div>
-          {t.result_preview && (
-            <div className="mt-1.5 line-clamp-2 whitespace-pre-wrap text-xs leading-relaxed text-ink-2">{t.result_preview}</div>
+      <InsetRow
+        className="cursor-pointer transition-colors hover:border-ink-3"
+        onClick={() => navigate(`/tasks/${t.id}`)}
+      >
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <Led color={st.led} blink={st.blink} />
+          <Link to={`/tasks/${t.id}`} onClick={(e) => e.stopPropagation()}
+            className="link-console max-w-[620px] truncate text-[13px] font-medium text-ink"
+            title={t.input || `task #${t.id}`}>
+            task #{t.id} · {t.input?.trim() || '任务实例详情'}
+          </Link>
+          <span className="font-mono text-[11px] text-ink-3">{t.source}</span>
+          {t.agent_name === 'unassigned' && t.pool_status === 'open' && (
+            <StatusPill color="amber" className="text-led-amber">待领取</StatusPill>
           )}
-          {t.error && <div className="mt-1 truncate text-xs text-led-red">{t.error}</div>}
-          <div className="mt-1.5 flex items-center justify-between font-mono text-[10.5px] text-ink-3">
-            {t.thread_id ? (
-              <Link to={`/threads/${t.thread_id}`} onClick={(e) => e.stopPropagation()}
-                className="link-console">会话 {t.thread_id.slice(0, 8)} →</Link>
-            ) : <span>{t.status === 'queued' ? '未开始' : ''}</span>}
-            <span>task #{t.id} 详情 →</span>
+          <StatusPill color={st.led} blink={st.blink}>{st.label}</StatusPill>
+          <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-3">
+            {fmtTokens(t.tokens)} tok · {fmtTime(t.created_at)}
+          </span>
+        </div>
+        {t.result_preview && (
+          <div className="mt-3 rounded-[2px] border border-hairline-soft bg-inset/60 px-3 py-2.5">
+            <div className="silk mb-1.5">{t.pool_status === 'done' ? 'FINAL OUTPUT / 最终输出' : 'CURRENT OUTPUT / 当前输出'}</div>
+            <div className="line-clamp-3 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{t.result_preview}</div>
           </div>
-        </InsetRow>
-      </Link>
+        )}
+        {t.error && <div className="mt-1 truncate text-xs text-led-red">{t.error}</div>}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hairline-soft pt-2.5 font-mono text-[11px]">
+          {t.latest_loop_id ? (
+            <Link to={`/tasks/${t.id}#loop-${t.latest_loop_id}`} onClick={(e) => e.stopPropagation()}
+              className="link-console text-ink-3">loop #{t.latest_loop_id}</Link>
+          ) : <span className="text-ink-3">尚未产生执行轮次</span>}
+          {t.latest_thread_id && t.latest_loop_id ? (
+            <>
+              <span className="text-ink-2">{t.agent_name === 'human' ? '人工实例' : instanceRole}</span>
+              <Link to={`/threads/${t.latest_thread_id}`} onClick={(e) => e.stopPropagation()}
+                className="link-console font-medium text-ink">会话 {t.latest_thread_id.slice(0, 8)} →</Link>
+            </>
+          ) : t.latest_loop_id ? <span className="text-ink-3">等待 Thread 启动</span> : null}
+          {hasAgentDefinition && (
+            <Link to={`/agents/${t.agent_name}`} onClick={(e) => e.stopPropagation()}
+              className="link-console ml-auto text-[10.5px] font-normal text-ink-3">Agent 定义：{t.agent_name} →</Link>
+          )}
+        </div>
+      </InsetRow>
       {node.children.length > 0 && (
         <div className="task-rail">
           {node.children.map((c) => <TaskNode key={c.task.id} node={c} depth={depth + 1} />)}
@@ -175,7 +190,8 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
     <div className="mt-2.5 rounded-[2px] border border-led-amber/30 bg-led-amber/5 px-3.5 py-3">
       <div className="mb-2.5 flex items-center gap-2">
         <Led color="amber" />
-        <span className="silk" style={{ color: 'hsl(var(--led-amber))' }}>验收台 · {delivered.length} 份交付可比较</span>
+        <span className="silk" style={{ color: 'hsl(var(--led-amber))' }}>交付验收 · {delivered.length} 份交付</span>
+        <span className="ml-auto font-mono text-[10.5px] text-ink-3">任何已识别的人或 Agent 均可验收</span>
       </div>
       <div className="space-y-2">
         {delivered.map((l: Loop) => {
@@ -183,15 +199,15 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
           return (
             <InsetRow key={l.id}>
               <div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] text-ink-3">
-                <span className="text-ink">{l.claimant}</span>
-                <span>({l.claimant_type === 'human' ? '人' : 'agent'})</span>
+                <span>loop #{l.id}</span>
+                <span className="text-ink-2">{l.claimant_type === 'human' ? '人工实例' : 'Agent 实例'}</span>
+                {l.thread_id && (
+                  <Link to={`/threads/${l.thread_id}`} className="link-console font-medium text-ink">会话 {l.thread_id.slice(0, 8)} →</Link>
+                )}
                 <StatusPill color={lm.led}>{lm.label} v{l.version}</StatusPill>
-                <span className="ml-auto tabular-nums">{fmtTokens(l.tokens)} tok</span>
+                <span className="ml-auto tabular-nums">执行者：{l.claimant} · {fmtTokens(l.tokens)} tok</span>
               </div>
               {l.latest_output?.trim() || l.deliverable ? <LoopOutput l={l} /> : null}
-              {l.thread_id && (
-                <Link to={`/threads/${l.thread_id}`} className="link-console mt-1.5 inline-block font-mono text-[11px]">会话 {l.thread_id.slice(0, 8)} →</Link>
-              )}
               {detail.task.pool_status === 'review' && (
                 <div className="mt-2.5 flex items-center gap-2">
                   <Button size="sm" variant="signal" disabled={busy}
@@ -242,13 +258,13 @@ export default function Home() {
   const [launching, setLaunching] = useState(false)
 
   const load = () => {
-    api.allTasks(200).then(setTasks).catch((e) => setErr(String(e)))
+    api.allTasks(200).then((list) => { setTasks(list); setErr('') }).catch((e) => setErr(String(e)))
     api.agents().then(setAgents).catch(() => setAgents([]))
   }
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 4000)
+    const t = setInterval(load, 15000)
     return () => clearInterval(t)
   }, [])
 
@@ -276,12 +292,12 @@ export default function Home() {
   const treeHasTag = (n: Node): boolean =>
     selectedTags.has(tagOf(n.task)) || n.children.some(treeHasTag)
   const forest = allForest.filter(treeHasTag)
-  const runningLoops = tasks.filter((t) => tagOf(t) === '执行中').length
+  const runningTasks = tasks.filter((t) => tagOf(t) === '执行中').length
   const totalTokens = tasks.reduce((s, t) => s + (t.tokens ?? 0), 0)
 
   const readouts = [
-    { label: 'RUNNING TASKS', value: runningLoops, display: String(runningLoops), hot: true },
-    { label: 'TASKS TOTAL', value: tasks.length, display: String(tasks.length) },
+    { label: 'RUNNING TASKS', value: runningTasks, display: String(runningTasks), hot: true },
+    { label: 'TASK INSTANCES', value: tasks.length, display: String(tasks.length) },
     { label: 'AGENTS REG', value: agents.length, display: String(agents.length) },
     { label: 'TOKENS CUM', value: totalTokens, display: fmtTokens(totalTokens) },
   ]
@@ -293,25 +309,25 @@ export default function Home() {
       <header className="mb-6 flex items-end justify-between">
         <div>
           <div className="silk">MODULE <b>01</b> / FLEET BOARD</div>
-          <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">任务看板</h1>
+          <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">任务实例看板</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            任务池：父任务在顶部，子任务（agent 可拆单协作）在下方流动。点击任意节点看完整详情。
+            任务实例池：父任务在顶部，子任务（agent 可拆单协作）在下方流动。点击任意节点查看执行轮次与会话。
           </p>
         </div>
-        <div className="silk">4S&nbsp;REFRESH</div>
+        <div className="silk">15S&nbsp;REFRESH</div>
       </header>
 
-      {/* 发起新任务 */}
+      {/* 发起新任务实例 */}
       <Panel className="mb-5">
         <PanelHead>
-          <span className="silk">NEW&nbsp;TASK&nbsp;/&nbsp;发起任务</span>
+          <span className="silk">NEW&nbsp;TASK INSTANCE&nbsp;/&nbsp;发起任务实例</span>
           <span className="silk">CTRL+ENTER&nbsp;↵</span>
         </PanelHead>
         <PanelBody>
           <Textarea value={instruction} onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && launch()}
             rows={3}
-            placeholder="输入任务指令发起任务；认领的 agent 可再拆分子任务协作。支持多行，Ctrl/⌘+Enter 提交。"
+            placeholder="输入任务指令发起任务实例；认领的 agent 可再拆分子任务协作。支持多行，Ctrl/⌘+Enter 提交。"
             className={INPUT_CLS + ' min-h-[72px] resize-y'} disabled={launching} />
           <div className="mt-2.5 flex items-center gap-2.5">
             <select value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
@@ -379,11 +395,11 @@ export default function Home() {
             <Panel key={node.task.id}>
               <PanelHead>
                 <div className="flex flex-wrap items-center gap-3.5">
-                  <span className="max-w-[520px] truncate text-[13px] font-medium tracking-tight text-ink"
+                  <Link to={`/tasks/${node.task.id}`}
+                    className="link-console max-w-[620px] truncate text-[13px] font-medium tracking-tight text-ink"
                     title={node.task.input || ''}>
-                    {node.task.input?.trim() || '（无任务说明）'}
-                  </span>
-                  <span className="font-mono text-[11px] text-ink-3">task #{node.task.id}</span>
+                    {node.task.input?.trim() || `task #${node.task.id} · 任务实例详情`}
+                  </Link>
                   {node.task.pool_status === 'review' && <StatusPill color="amber" className="text-led-amber">待验收</StatusPill>}
                   {node.task.pool_status === 'done' && <StatusPill color="green">已验收</StatusPill>}
                   <StatusPill color={agg.led} blink={agg.blink}>{agg.label}</StatusPill>
@@ -399,8 +415,8 @@ export default function Home() {
                 ) : node.task.agent_name === 'unassigned' ? (
                   <span className="font-mono text-[11px] text-ink-3">未认领</span>
                 ) : (
-                  <Link to={`/agents/${node.task.agent_name}`} className="link-console font-mono text-[11px]">
-                    指挥官 {node.task.agent_name} →
+                  <Link to={`/tasks/${node.task.id}`} className="link-console font-mono text-[11px] text-ink-3">
+                    task #{node.task.id} 实例详情 →
                   </Link>
                 )}
               </PanelHead>

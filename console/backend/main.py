@@ -60,7 +60,7 @@ async def health():
     async with p.acquire() as conn:
         await conn.fetchval("SELECT 1")
     try:
-        async with httpx.AsyncClient(timeout=3) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=3) as client:
             gw = (await client.get(f"{GATEWAY}/health")).json()
     except Exception:
         gw = {"status": "unreachable"}
@@ -164,7 +164,7 @@ async def thread_detail(tid: str):
 
 @app.get("/api/console/threads/{tid}/messages")
 async def thread_messages(tid: str):
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
         resp = await client.get(f"{GATEWAY}/api/threads/{tid}/messages")
     if resp.status_code != 200:
         raise HTTPException(resp.status_code, resp.text[:500])
@@ -174,6 +174,7 @@ async def thread_messages(tid: str):
 class MessageIn(BaseModel):
     content: str
     recursion_limit: int = 300
+    assistant_id: str | None = None
 
 
 class CreateThreadIn(BaseModel):
@@ -182,11 +183,24 @@ class CreateThreadIn(BaseModel):
     recursion_limit: int = 300
 
 
+def _run_payload(resp: httpx.Response) -> dict:
+    """Gateway 对 Run 失败也可能返回 HTTP 200；必须把业务失败透传为可见错误。"""
+    if resp.status_code != 200:
+        raise HTTPException(resp.status_code, resp.text[:500])
+    payload = resp.json()
+    if payload.get("status") == "error":
+        detail = str(payload.get("error") or "Agent 未返回错误详情")[:800]
+        raise HTTPException(502, f"Agent 执行失败：{detail}")
+    return payload
+
+
 @app.post("/api/console/threads")
 async def create_thread(body: CreateThreadIn):
     """拉起一个新 agent 会话；带 instruction 时直接跑第一轮（阻塞至完成）。"""
-    async with httpx.AsyncClient(timeout=600) as client:
-        resp = await client.post(f"{GATEWAY}/api/threads", json={})
+    async with httpx.AsyncClient(trust_env=False, timeout=600) as client:
+        resp = await client.post(
+            f"{GATEWAY}/api/threads", json={"assistant_id": body.assistant_id}
+        )
         if resp.status_code != 200:
             raise HTTPException(resp.status_code, resp.text[:500])
         tid = resp.json()["thread_id"]
@@ -200,15 +214,14 @@ async def create_thread(body: CreateThreadIn):
                 },
             }
             run = await client.post(f"{GATEWAY}/api/runs/wait", json=payload)
-            if run.status_code != 200:
-                raise HTTPException(run.status_code, run.text[:500])
+            _run_payload(run)
     return {"thread_id": tid}
 
 
 @app.delete("/api/console/threads/{tid}")
 async def delete_thread(tid: str):
     """销毁：删除线程及其全部持久化状态（checkpoint / run / 消息）。"""
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
         resp = await client.delete(f"{GATEWAY}/api/threads/{tid}")
     if resp.status_code not in (200, 204):
         raise HTTPException(resp.status_code, resp.text[:500])
@@ -220,15 +233,18 @@ async def send_message(tid: str, msg: MessageIn):
     """续跑：向同一线程投递新消息（runs/wait 阻塞至完成）。
 
     即 ADR-0001「唤醒 = 重新投递 + 水合断点」的人工触发路径。
-    assistant_id 取该线程实际所属的 agent（threads_meta 记录），
-    避免 spike 期写死 lead_agent 导致自定义 agent 会话续跑时配置丢失。
+    assistant_id 取该线程实际所属的 agent（threads_meta 记录）。调用方可携带
+    预期身份：旧空绑定会话按预期身份修复，已有绑定若冲突则拒绝，不得静默换 Agent。
     """
     p = await pool()
     async with p.acquire() as conn:
-        assistant_id = await conn.fetchval(
+        stored_assistant_id = await conn.fetchval(
             "SELECT assistant_id FROM threads_meta WHERE thread_id=$1", tid
         )
-    assistant_id = assistant_id or "lead_agent"
+    if (msg.assistant_id and stored_assistant_id
+            and stored_assistant_id != msg.assistant_id):
+        raise HTTPException(409, "thread assistant_id conflicts with requested assistant_id")
+    assistant_id = msg.assistant_id or stored_assistant_id or "lead_agent"
     payload = {
         "assistant_id": assistant_id,
         "input": {"messages": [{"role": "user", "content": msg.content}]},
@@ -237,11 +253,9 @@ async def send_message(tid: str, msg: MessageIn):
             "recursion_limit": msg.recursion_limit,
         },
     }
-    async with httpx.AsyncClient(timeout=600) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=600) as client:
         resp = await client.post(f"{GATEWAY}/api/runs/wait", json=payload)
-    if resp.status_code != 200:
-        raise HTTPException(resp.status_code, resp.text[:500])
-    return resp.json()
+    return _run_payload(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +264,7 @@ async def send_message(tid: str, msg: MessageIn):
 # ---------------------------------------------------------------------------
 
 async def _cp(path: str, method: str = "GET", json_body=None, timeout: float = 60):
-    async with httpx.AsyncClient(base_url=CONTROL_PLANE, timeout=timeout) as client:
+    async with httpx.AsyncClient(trust_env=False, base_url=CONTROL_PLANE, timeout=timeout) as client:
         resp = await client.request(method, f"/api{path}", json=json_body)
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, resp.text[:500])
@@ -394,7 +408,7 @@ async def cp_loop_requeue(lid: int):
 @app.get("/api/console/threads/{tid}/artifacts/{path:path}")
 async def cp_thread_artifact(tid: str, path: str):
     """产物下载代理（agent 交付物链接走 Console，生产中网关不出 VPC）。"""
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=60) as client:
+    async with httpx.AsyncClient(trust_env=False, base_url=GATEWAY, timeout=60) as client:
         resp = await client.get(
             f"/api/threads/{tid}/artifacts/{path}",
             follow_redirects=True,
@@ -416,6 +430,16 @@ async def cp_review_context(tid: str):
 # FAP PAT 管理代理（ADR-0011 H6：Console 设置页签发/吊销/列表）
 # control-plane 侧已限 loopback，此处为本机转发。
 # ---------------------------------------------------------------------------
+
+@app.get("/api/console/ops/credential")
+async def cp_ops_credential():
+    return await _cp("/ops/credential")
+
+
+@app.post("/api/console/ops/credential/rotate")
+async def cp_ops_credential_rotate():
+    return await _cp("/ops/credential/rotate", "POST", {})
+
 
 @app.get("/api/console/pats")
 async def cp_pats():
@@ -460,7 +484,7 @@ async def fap_proxy(path: str, request: Request) -> Response:
     url = f"/api/{path}"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    async with httpx.AsyncClient(base_url=CONTROL_PLANE, timeout=120) as client:
+    async with httpx.AsyncClient(trust_env=False, base_url=CONTROL_PLANE, timeout=120) as client:
         resp = await client.request(
             request.method, url, content=body or None, headers=headers
         )

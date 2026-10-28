@@ -100,7 +100,7 @@ export default function RegistryPage() {
           <div className="silk">MODULE <b>02</b> / REGISTRY</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">Agent 定义</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            注册 / 配置 / 停止拉起。发起任务见「任务看板」，会话日志见「运行观测」。
+            注册 / 配置 / 停止拉起 Agent 定义。发起任务实例见「任务实例看板」，工作会话见「Thread 实例观测」。
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -211,7 +211,7 @@ export default function RegistryPage() {
       {/* 运行观测已移至独立页 /threads，避免与 Registry 混淆 */}
       <div className="text-right">
         <Link to="/threads" className="link-console font-mono text-xs">
-          运行观测（thread 执行日志，备用查询）→
+          Thread 实例观测（工作会话日志，备用查询）→
         </Link>
       </div>
     </div>

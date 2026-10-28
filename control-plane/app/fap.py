@@ -33,6 +33,7 @@ _BASE_CAPABILITIES = [
     "agents_registry",
     "scheduled_tasks",
     "feedback",
+    "fleet_operations",  # ADR-0017：全量操作协议与默认操作 Agent
 ]
 
 _FEATURE_CAPABILITIES = {
@@ -66,6 +67,7 @@ async def meta(request: Request) -> JSONResponse:
             "server_version": app.version,
             "capabilities": current_capabilities(),
             "doc": "/api/agent-doc",
+            "operations_protocol": "/api/ops/protocol",
         }
     )
 

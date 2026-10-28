@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Pat } from '@/lib/api'
+import { api, type OpsCredentialStatus, type Pat } from '@/lib/api'
 import { AUTH_ENABLED, getOauthSession, oauthLogout } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,14 +18,21 @@ const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-sm text-ink place
  *  PAT 是第三方 agent 访问控制面 API 的唯一凭证，scope 仅 read/write。 */
 export default function SettingsPage() {
   const [pats, setPats] = useState<Pat[]>([])
+  const [opsCredential, setOpsCredential] = useState<OpsCredentialStatus | null>(null)
   const [err, setErr] = useState('')
   const [name, setName] = useState('')
   const [scopeSel, setScopeSel] = useState<'read' | 'write'>('read')
   const [issuing, setIssuing] = useState(false)
+  const [rotating, setRotating] = useState(false)
   const [freshToken, setFreshToken] = useState<string | null>(null)
 
   const load = () => {
-    api.pats().then(setPats).catch((e) => setErr(String(e)))
+    Promise.all([api.pats(), api.opsCredential()])
+      .then(([patRows, credential]) => {
+        setPats(patRows)
+        setOpsCredential(credential)
+      })
+      .catch((e) => setErr(String(e)))
   }
 
   useEffect(() => {
@@ -60,6 +67,21 @@ export default function SettingsPage() {
     }
   }
 
+  const rotateOpsCredential = async () => {
+    if (!window.confirm('确认轮换 Fleet 操作助手的系统 PAT？旧 token 将立即失效，新 token 不会显示。')) return
+    setRotating(true)
+    setErr('')
+    try {
+      const status = await api.opsCredentialRotate()
+      setOpsCredential(status)
+      load()
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setRotating(false)
+    }
+  }
+
   const copyToken = () => {
     if (!freshToken) return
     navigator.clipboard.writeText(freshToken).catch(() => {})
@@ -86,6 +108,31 @@ export default function SettingsPage() {
           {err}
         </div>
       )}
+
+      <div className="mb-5">
+        <Panel>
+          <PanelHead>
+            <span className="silk">FLEET OPS / 系统内置凭证</span>
+            <StatusPill color={opsCredential?.configured ? 'green' : 'off'}>
+              {opsCredential?.configured ? '已配置' : '检查中'}
+            </StatusPill>
+          </PanelHead>
+          <PanelBody>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-ink">Fleet 操作助手 · fleet-ops-01</div>
+                <div className="mt-1.5 font-mono text-[11.5px] leading-relaxed text-ink-3">
+                  固定权限 read+write · 不可吊销、删除或降权 · 原始 token 仅由控制面使用
+                  {opsCredential && <><br />凭证版本 v{opsCredential.version} · 最近轮换 {fmtTime(opsCredential.rotated_at)}</>}
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={rotateOpsCredential} disabled={rotating}>
+                {rotating ? '轮换中…' : '人工轮换系统 PAT'}
+              </Button>
+            </div>
+          </PanelBody>
+        </Panel>
+      </div>
 
       <Panel>
         <PanelHead>
@@ -149,7 +196,9 @@ export default function SettingsPage() {
                 <tbody>
                   {pats.map((p) => (
                     <tr key={p.id} className="border-b border-hairline-soft/60 last:border-0">
-                      <td className="px-4 py-2.5 font-mono text-xs">{p.name}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs">
+                        {p.name}{p.system && <span className="ml-2 text-led-cyan">系统内置</span>}
+                      </td>
                       <td className="px-4 py-2.5 font-mono text-xs">{p.scopes.join('+')}</td>
                       <td className="px-4 py-2.5 text-ink-2">{fmtTime(p.created_at)}</td>
                       <td className="px-4 py-2.5 text-ink-2">{fmtTime(p.last_used_at)}</td>
@@ -159,9 +208,10 @@ export default function SettingsPage() {
                         </StatusPill>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        {!p.revoked_at && (
+                        {!p.revoked_at && !p.system && (
                           <Button size="sm" variant="outline" onClick={() => revoke(p.id, p.name)}>吊销</Button>
                         )}
+                        {p.system && <span className="font-mono text-[11px] text-ink-3">仅可轮换</span>}
                       </td>
                     </tr>
                   ))}

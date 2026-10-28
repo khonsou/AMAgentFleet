@@ -1,10 +1,10 @@
 """任务池（ADR-0010）：task = 验收单元，loop = 执行单元。
 
-- task：open → review → done，只前进；验收人 = 创建者。
+- task：open → review → done，只前进；任何已识别的人或 Agent 均可验收（ADR-0015）。
 - loop：一次领取 = 一个 loop = 一条 thread；竞争非独占，同 task ≤3 个并行；
   状态 claimed → running → delivered ⇄ returned（打回只打 loop，同 thread 续跑）→ accepted/archived。
 - 领取三途径（无暗路径）：人页面指派（create task 带 assignee）、人自领（claim human）、
-  cron 由舰队指挥官认领（scheduler 后续项，当前 cron 仍直连网关执行）。
+  cron 默认由 YAML 所属 Agent 认领；显式 orchestrator 时由指定编排者认领（ADR-0016）。
 - 兼容层：agents/{name}/dispatch 内部转为"建 task + 指派 loop"，旧行为不破。
 """
 
@@ -73,7 +73,7 @@ async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created
     """领取 = 建 loop（竞争非独占，≤3）。agent 领取直接入队执行；human 领取等人交付。"""
     async with (await pool()).acquire() as conn:
         if claimant_type == "agent":
-            # 全认领路径统一门禁（inbox flush / cron 指挥官认领 / FAP claim / 指派）：
+            # 全认领路径统一门禁（inbox flush / cron 认领 / FAP claim / 指派）：
             # 休眠/已销毁 agent 不可被唤醒执行，与 dispatch/inbox 端点同口径。
             status = await conn.fetchval(
                 "SELECT status FROM fleet_agents WHERE name=$1", claimant)
@@ -176,6 +176,48 @@ async def accept_loop(task_id: int, loop_id: int, *, author: str) -> None:
         await conn.execute(
             "UPDATE fleet_tasks SET status='success', finished_at=now() WHERE id=$1", task_id)
     await audit("task.accepted", actor=author, detail={"task_id": task_id, "loop_id": loop_id})
+
+
+async def accept_pending_review(*, author: str) -> dict[str, Any]:
+    """一次调用验收当前全部 review Task，避免 Agent 逐条循环及失控收尾。
+
+    每个 Task 采纳最新 delivered Loop；没有交付 Loop 的项明确列入 skipped。
+    整批在同一事务中完成，返回已验收明细及剩余 review 数。
+    """
+    accepted: list[dict[str, int]] = []
+    skipped: list[dict[str, Any]] = []
+    async with (await pool()).acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                """SELECT t.id AS task_id,
+                          (SELECT l.id FROM fleet_task_loops l
+                           WHERE l.task_id=t.id AND l.status='delivered'
+                           ORDER BY l.id DESC LIMIT 1) AS loop_id
+                   FROM fleet_tasks t WHERE t.pool_status='review'
+                   ORDER BY t.id FOR UPDATE""")
+            for row in rows:
+                task_id, loop_id = row["task_id"], row["loop_id"]
+                if loop_id is None:
+                    skipped.append({"task_id": task_id, "reason": "no_delivered_loop"})
+                    continue
+                await conn.execute(
+                    """UPDATE fleet_task_loops SET status='archived', updated_at=now()
+                       WHERE task_id=$1 AND id != $2 AND status != 'accepted'""",
+                    task_id, loop_id)
+                await conn.execute(
+                    "UPDATE fleet_task_loops SET status='accepted', updated_at=now() WHERE id=$1",
+                    loop_id)
+                await conn.execute(
+                    """UPDATE fleet_tasks SET pool_status='done', status='success',
+                       accepted_loop_id=$2, finished_at=now(), updated_at=now() WHERE id=$1""",
+                    task_id, loop_id)
+                accepted.append({"task_id": task_id, "loop_id": loop_id})
+            remaining = await conn.fetchval(
+                "SELECT count(*) FROM fleet_tasks WHERE pool_status='review'")
+    for item in accepted:
+        await audit("task.accepted", actor=author, detail=item)
+    return {"accepted": accepted, "skipped": skipped,
+            "accepted_count": len(accepted), "remaining_review": remaining}
 
 
 async def _task_of(loop_id: int) -> int:

@@ -207,7 +207,7 @@ async def _egress_union() -> list[str]:
 async def render_and_reload(actor: str = "system") -> dict[str, Any]:
     rows = await list_servers()
     stats = _render(rows, egress_union=await _egress_union())
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
         r = await client.post("/api/mcp/cache/reset")
         reset = r.status_code == 200
     await audit("mcp.rendered", actor=actor, detail={**stats, "cache_reset": reset,

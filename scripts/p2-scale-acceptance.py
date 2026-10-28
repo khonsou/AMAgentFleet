@@ -190,7 +190,7 @@ def restart_control_plane() -> None:
 
 
 def case_b() -> None:
-    print("== 用例 B：cron 准时（全新 agent / 节奏对账 / 重启续投，约 15 分钟）==")
+    print("== 用例 B：cron 准时（全新 agent / 节奏对账 / 重启续投，约 25 分钟）==")
     NAME = "scale-07b"
     MARK = "cron 报时 v2"
 
@@ -205,16 +205,16 @@ def case_b() -> None:
     # B1 首见不补投：全新 agent 第一轮扫描只记基线不投递
     doc = agent_yaml(NAME, "规模测试07b",
                      "你是 cron 应答员：收到 [验收] 任务只回复 pong，不要调用任何工具。",
-                     cron=[{"cron": "*/2 * * * *", "prompt": f"[验收] {MARK}：回复 pong"}])
+                     cron=[{"cron": "*/5 * * * *", "prompt": f"[验收] {MARK}：回复 pong"}])
     s, _ = call(CP, "/api/agents", {"yaml": doc})
     check("B1 注册带 cron agent", s in (200, 201), f"http={s}")
-    time.sleep(35)
+    time.sleep(95)
     n0 = len(marker_tasks(MARK))
     check("B1 首见不补投", n0 == 0, f"marker 任务数={n0}")
 
     # B2 观察窗内恰好 3 次新触发
     fired: list[int] = []
-    deadline = time.time() + 60 * 8
+    deadline = time.time() + 60 * 18
     while time.time() < deadline and len(fired) < 3:
         for t in marker_tasks(MARK):
             if t["id"] not in fired:
@@ -223,7 +223,7 @@ def case_b() -> None:
     fired.sort()
     check("B2 观察窗内恰好 3 次触发", len(fired) == 3, f"fired={fired}")
 
-    # B3 节奏对账：相邻触发间隔 120s±45s；指挥官认领；交付非空
+    # B3 节奏对账：相邻触发间隔 300s±105s；所属 Agent 认领；交付非空
     from datetime import datetime
     times = []
     for tid in fired:
@@ -233,22 +233,22 @@ def case_b() -> None:
         times.append(datetime.fromisoformat(t["created_at"].replace("Z", "+00:00")))
         claimed = loops[0]["claimant"] if loops else None
         loop = wait_loop(tid, timeout=300) or {}
-        ok = claimed == "fleet-cmd-01" and bool((loop.get("deliverable") or "").strip())
-        check(f"B3 cron 任务 {tid} 指挥官认领+交付非空", ok,
+        ok = claimed == NAME and bool((loop.get("deliverable") or "").strip())
+        check(f"B3 cron 任务 {tid} 所属 Agent 认领+交付非空", ok,
               f"claimant={claimed} loop={loop.get('status')}")
     if len(times) == 3:
         gaps = [(times[i + 1] - times[i]).total_seconds() for i in range(2)]
-        ok = all(75 <= g <= 165 for g in gaps)
-        check("B3 触发节奏 120s±45s", ok, f"间隔={gaps}")
+        ok = all(195 <= g <= 405 for g in gaps)
+        check("B3 触发节奏 300s±105s", ok, f"间隔={gaps}")
 
-    # B4 重启续投：重启 control-plane 后 4 分钟内恰好 1 次新触发（不漏不双）
+    # B4 重启续投：重启 control-plane 后 7 分钟内恰好 1 次新触发（不漏不双）
     print("  … B4 重启 control-plane 观察续投 …", flush=True)
     restart_control_plane()
     time.sleep(5)
     s, _ = call(CP, "/api/health")
     check("B4 重启后健康", s == 200, f"http={s}")
     before = set(fired)
-    deadline = time.time() + 60 * 4
+    deadline = time.time() + 60 * 7
     while time.time() < deadline:
         new = [t["id"] for t in marker_tasks(MARK) if t["id"] not in before]
         if new:
@@ -259,11 +259,11 @@ def case_b() -> None:
     check("B4 重启后恰好续投 1 次", total == len(before) + 1,
           f"重启前 {len(before)} → 总 {total}")
 
-    # B5 摘 cron：PUT 摘除后 150s 无新触发
+    # B5 摘 cron：PUT 摘除后 200s 无新触发
     doc = agent_yaml(NAME, "规模测试07b", "你是 cron 应答员。")
     s, _ = call(CP, f"/api/agents/{NAME}", {"yaml": doc}, method="PUT")
     n_before = len(marker_tasks(MARK))
-    time.sleep(150)
+    time.sleep(200)
     n_after = len(marker_tasks(MARK))
     check("B5 摘除 cron 后无新触发", s == 200 and n_after == n_before,
           f"http={s} {n_before}→{n_after}")
