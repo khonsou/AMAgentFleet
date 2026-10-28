@@ -101,8 +101,21 @@ def _request_fingerprint(method: str, path: str, query: str, body: bytes) -> str
     return digest.hexdigest()
 
 
+async def _release_idempotency_placeholder(key, actor, created_at) -> None:
+    """释放本次执行拥有的占位；created_at 防止误删后续已重建的占位。"""
+    try:
+        async with (await pool()).acquire() as conn:
+            await conn.execute(
+                """DELETE FROM fap_idempotency_keys
+                   WHERE key=$1 AND actor=$2 AND created_at=$3 AND status_code IS NULL""",
+                key, actor, created_at,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("idempotency placeholder release failed")
+
+
 async def idempotency_middleware(request: Request, call_next):
-    """同键同 actor 且同请求时回放；不同正文、路径或查询参数返回 409。"""
+    """先原子占位再执行；完成响应可回放，进行中或冲突请求返回 409。"""
     if request.method not in _WRITE_METHODS:
         return await call_next(request)
     key = request.headers.get("Idempotency-Key")
@@ -114,66 +127,100 @@ async def idempotency_middleware(request: Request, call_next):
     fingerprint = _request_fingerprint(
         request.method, request.url.path, request.url.query, await request.body())
 
+    # 占位事务只覆盖预留/回放判断，不包业务执行，避免长写请求占满连接池。
     async with (await pool()).acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT actor, status_code, response_json, request_digest, created_at FROM fap_idempotency_keys WHERE key=$1",
-            key,
-        )
-        if row is not None:
-            if row["actor"] != actor:
-                return JSONResponse(
-                    {"detail": "Idempotency-Key 已被其他 actor 使用"},
-                    status_code=409,
+        async with conn.transaction():
+            reservation = await conn.fetchrow(
+                """INSERT INTO fap_idempotency_keys
+                       (key, actor, method, path, request_digest)
+                   VALUES ($1,$2,$3,$4,$5)
+                   ON CONFLICT DO NOTHING RETURNING created_at""",
+                key, actor, request.method, request.url.path, fingerprint,
+            )
+            if reservation is None:
+                row = await conn.fetchrow(
+                    """SELECT actor, status_code, response_json, request_digest, created_at
+                       FROM fap_idempotency_keys WHERE key=$1 FOR UPDATE""",
+                    key,
                 )
-            from datetime import datetime, timedelta, timezone
-            fresh = row["created_at"] > datetime.now(timezone.utc) - timedelta(hours=IDEMPOTENCY_WINDOW_HOURS)
-            if fresh:
-                # 迁移前的记录没有正文摘要，只能按旧语义回放；新记录全部严格校验。
-                if row["request_digest"] and row["request_digest"] != fingerprint:
-                    return JSONResponse({"detail": "Idempotency-Key 已用于不同请求"}, status_code=409)
-                stored = row["response_json"]
-                if isinstance(stored, str):  # asyncpg 对 jsonb 默认返回原始字符串
-                    stored = json.loads(stored)
-                resp = JSONResponse(stored, status_code=row["status_code"])
-                resp.headers["X-Idempotent-Replay"] = "true"
-                return resp
-            await conn.execute("DELETE FROM fap_idempotency_keys WHERE key=$1", key)
+                if row is None:  # 防御：占位冲突后对应行不应消失。
+                    raise RuntimeError("idempotency reservation disappeared")
+                if row["actor"] != actor:
+                    return JSONResponse(
+                        {"detail": "Idempotency-Key 已被其他 actor 使用"},
+                        status_code=409,
+                    )
+                from datetime import datetime, timedelta, timezone
+                fresh = row["created_at"] > datetime.now(timezone.utc) - timedelta(
+                    hours=IDEMPOTENCY_WINDOW_HOURS)
+                if fresh:
+                    # 迁移前的记录没有正文摘要，只能按旧语义回放；新记录全部严格校验。
+                    if row["request_digest"] and row["request_digest"] != fingerprint:
+                        return JSONResponse(
+                            {"detail": "Idempotency-Key 已用于不同请求"}, status_code=409)
+                    if row["status_code"] is None:
+                        return JSONResponse(
+                            {"detail": "相同 Idempotency-Key 的请求正在执行，请稍后重试"},
+                            status_code=409, headers={"Retry-After": "1"})
+                    stored = row["response_json"]
+                    if isinstance(stored, str):  # asyncpg 对 jsonb 默认返回原始字符串
+                        stored = json.loads(stored)
+                    resp = JSONResponse(stored, status_code=row["status_code"])
+                    resp.headers["X-Idempotent-Replay"] = "true"
+                    return resp
+                # 过期键在同一锁事务内重建占位；并发重试只能有一个获得所有权。
+                reservation = await conn.fetchrow(
+                    """UPDATE fap_idempotency_keys
+                       SET method=$3, path=$4, request_digest=$5,
+                           status_code=NULL, response_json=NULL, created_at=now()
+                       WHERE key=$1 AND actor=$2 RETURNING created_at""",
+                    key, actor, request.method, request.url.path, fingerprint,
+                )
 
-    response = await call_next(request)
+    placeholder_created_at = reservation["created_at"]
+    try:
+        response = await call_next(request)
+    except Exception:  # noqa: BLE001
+        await _release_idempotency_placeholder(key, actor, placeholder_created_at)
+        raise
 
-    # 仅缓存 2xx/4xx（5xx 不缓存，允许重试真正执行）
-    if response.status_code < 500:
-        try:
+    # 仅缓存 2xx/4xx；5xx 和异常释放占位，允许同键重试真正执行。
+    if response.status_code >= 500:
+        await _release_idempotency_placeholder(key, actor, placeholder_created_at)
+        return response
+
+    try:
+        if hasattr(response, "body_iterator"):
             body = b""
             async for chunk in response.body_iterator:
                 body += chunk
-            payload = json.loads(body.decode("utf-8") or "{}")
-            async with (await pool()).acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO fap_idempotency_keys (key, actor, method, path, request_digest, status_code, response_json)
-                       VALUES ($1,$2,$3,$4,$5,$6, $7::jsonb)
-                       ON CONFLICT (key, actor) DO UPDATE SET
-                         method=EXCLUDED.method, path=EXCLUDED.path, request_digest=EXCLUDED.request_digest,
-                         status_code=EXCLUDED.status_code, response_json=EXCLUDED.response_json,
-                         created_at=now()""",
-                    key, actor, request.method, request.url.path, fingerprint, response.status_code,
-                    json.dumps(payload),
-                )
-                # 顺手清窗口外的旧键
-                await conn.execute(
-                    "DELETE FROM fap_idempotency_keys WHERE created_at < now() - ($1 || ' hours')::interval",
-                    str(IDEMPOTENCY_WINDOW_HOURS),
-                )
-            # 回放 body 后的响应需要重建
-            from fastapi.responses import JSONResponse as _JR
-            rebuilt = _JR(payload, status_code=response.status_code)
-            for h, v in response.headers.items():
-                if h.lower() not in ("content-length", "content-type"):
-                    rebuilt.headers[h] = v
-            return rebuilt
-        except Exception:  # noqa: BLE001
-            logger.exception("idempotency store failed; response passes through unstored")
-    return response
+        else:  # 直接调用中间件的测试/内部调用可能返回普通 JSONResponse。
+            body = response.body
+        payload = json.loads(body.decode("utf-8") or "{}")
+        async with (await pool()).acquire() as conn:
+            updated = await conn.execute(
+                """UPDATE fap_idempotency_keys
+                   SET status_code=$4, response_json=$5::jsonb
+                   WHERE key=$1 AND actor=$2 AND created_at=$3 AND status_code IS NULL""",
+                key, actor, placeholder_created_at, response.status_code, json.dumps(payload),
+            )
+            if updated != "UPDATE 1":
+                raise RuntimeError("idempotency placeholder changed before response store")
+            # 顺手清窗口外的旧键
+            await conn.execute(
+                "DELETE FROM fap_idempotency_keys WHERE created_at < now() - ($1 || ' hours')::interval",
+                str(IDEMPOTENCY_WINDOW_HOURS),
+            )
+        # 回放 body 后的响应需要重建
+        rebuilt = JSONResponse(payload, status_code=response.status_code)
+        for h, v in response.headers.items():
+            if h.lower() not in ("content-length", "content-type"):
+                rebuilt.headers[h] = v
+        return rebuilt
+    except Exception:  # noqa: BLE001
+        logger.exception("idempotency store failed; response passes through unstored")
+        await _release_idempotency_placeholder(key, actor, placeholder_created_at)
+        return response
 
 
 # ---------------------------------------------------------------- 审计透传（H5）

@@ -30,6 +30,30 @@ class PoolError(Exception):
 
 # ---------------------------------------------------------------- task 创建
 
+async def _create_task_with_conn(
+    conn: asyncpg.Connection,
+    input_text: str,
+    *,
+    source: str,
+    assignee: str | None,
+    parent_task_id: int | None,
+    idempotency_key: str | None,
+) -> tuple[dict[str, Any], bool]:
+    """在调用方事务内创建或按幂等键取回 Task，返回（Task，是否新建）。"""
+    row = await conn.fetchrow(
+        """INSERT INTO fleet_tasks (agent_name, input, source, parent_task_id, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (idempotency_key) DO NOTHING
+           RETURNING *""",
+        assignee or "unassigned", input_text, source, parent_task_id, idempotency_key,
+    )
+    if row is not None:
+        return dict(row), True
+    row = await conn.fetchrow(
+        "SELECT * FROM fleet_tasks WHERE idempotency_key=$1", idempotency_key)
+    return dict(row), False
+
+
 async def create_task(
     input_text: str,
     *,
@@ -39,25 +63,29 @@ async def create_task(
     parent_task_id: int | None = None,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """建 task（open）。assignee 给 agent 名 = 人指派途径：同时建 loop 并入队。"""
+    """建 Task 并可指派 Agent；幂等重放会补认领或重新入队，不再直接早退。"""
+    loop = None
     async with (await pool()).acquire() as conn:
-        row = await conn.fetchrow(
-            """INSERT INTO fleet_tasks (agent_name, input, source, parent_task_id, idempotency_key)
-               VALUES ($1,$2,$3,$4,$5)
-               ON CONFLICT (idempotency_key) DO NOTHING
-               RETURNING *""",
-            assignee or "unassigned", input_text, source, parent_task_id, idempotency_key,
-        )
-    if row is None:
-        async with (await pool()).acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM fleet_tasks WHERE idempotency_key=$1", idempotency_key)
-        return dict(row)
-    task = dict(row)
-    await audit("task.created", agent_name=assignee, actor=created_by,
-                args={"input": input_text[:200]}, detail={"task_id": task["id"]})
-    if assignee:
-        await claim_loop(task["id"], "agent", assignee, created_by=created_by)
+        async with conn.transaction():
+            task, task_created = await _create_task_with_conn(
+                conn, input_text, source=source, assignee=assignee,
+                parent_task_id=parent_task_id, idempotency_key=idempotency_key,
+            )
+            loop_created = False
+            if assignee and (task_created or task["pool_status"] != "done"):
+                loop, loop_created = await _claim_loop_with_conn(
+                    conn, task["id"], "agent", assignee,
+                    created_by=created_by, idempotent=True,
+                )
+    if task_created:
+        await audit("task.created", agent_name=assignee, actor=created_by,
+                    args={"input": input_text[:200]}, detail={"task_id": task["id"]})
+    if loop_created:
+        await audit("loop.claimed", agent_name=assignee, actor=created_by,
+                    detail={"loop_id": loop["id"], "task_id": task["id"],
+                            "claimant": f"agent:{assignee}"})
+    if loop and loop["status"] in ("claimed", "returned"):
+        await enqueue_loop_run(loop["id"])
     return task
 
 
@@ -69,38 +97,62 @@ async def _count_loops(conn: asyncpg.Connection, task_id: int) -> int:
         "SELECT count(*) FROM fleet_task_loops WHERE task_id=$1 AND claimant_type='agent'", task_id)
 
 
+async def _claim_loop_with_conn(
+    conn: asyncpg.Connection,
+    task_id: int,
+    claimant_type: str,
+    claimant: str,
+    *,
+    created_by: str,
+    idempotent: bool = False,
+) -> tuple[dict[str, Any], bool]:
+    """在调用方事务内认领 Loop，返回（Loop，是否新建）。"""
+    if claimant_type == "agent":
+        # 全认领路径统一门禁（inbox flush / cron 认领 / FAP claim / 指派）：
+        # 休眠/已销毁 agent 不可被唤醒执行，与 dispatch/inbox 端点同口径。
+        status = await conn.fetchval(
+            "SELECT status FROM fleet_agents WHERE name=$1", claimant)
+        if status is None:
+            raise PoolError(404, f"agent not registered: {claimant}")
+        if status not in ("registered", "running"):
+            raise PoolError(409, f"agent '{claimant}' is {status}; start it before dispatching")
+    task = await conn.fetchrow("SELECT id, pool_status FROM fleet_tasks WHERE id=$1 FOR UPDATE", task_id)
+    if task is None:
+        raise PoolError(404, f"task {task_id} not found")
+    if task["pool_status"] == "done":
+        raise PoolError(409, f"task {task_id} already done")
+    existing = await conn.fetchrow(
+        """SELECT * FROM fleet_task_loops
+           WHERE task_id=$1 AND claimant_type=$2 AND claimant=$3""",
+        task_id, claimant_type, claimant,
+    )
+    if existing is not None:
+        if idempotent:
+            return dict(existing), False
+        raise PoolError(409, f"{claimant_type} '{claimant}' 已认领过 task {task_id}")
+    n = await _count_loops(conn, task_id)
+    if claimant_type == "agent" and n >= MAX_LOOPS_PER_TASK:
+        raise PoolError(409, f"task {task_id} 已达 {MAX_LOOPS_PER_TASK} 个 loop 上限")
+    row = await conn.fetchrow(
+        """INSERT INTO fleet_task_loops (task_id, claimant_type, claimant, created_by)
+           VALUES ($1,$2,$3,$4) RETURNING *""",
+        task_id, claimant_type, claimant, created_by,
+    )
+    # 认领即占用：agent → 其名；human → 'human'。任何认领后 task 不再 'unassigned'
+    # （池过滤/展示统一依赖此语义——人 agent 一视同仁，ADR-0010）
+    await conn.execute(
+        "UPDATE fleet_tasks SET agent_name=$2 WHERE id=$1 AND agent_name='unassigned'",
+        task_id, claimant if claimant_type == "agent" else "human",
+    )
+    return dict(row), True
+
+
 async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created_by: str) -> dict[str, Any]:
     """领取 = 建 loop（竞争非独占，≤3）。agent 领取直接入队执行；human 领取等人交付。"""
     async with (await pool()).acquire() as conn:
-        if claimant_type == "agent":
-            # 全认领路径统一门禁（inbox flush / cron 认领 / FAP claim / 指派）：
-            # 休眠/已销毁 agent 不可被唤醒执行，与 dispatch/inbox 端点同口径。
-            status = await conn.fetchval(
-                "SELECT status FROM fleet_agents WHERE name=$1", claimant)
-            if status is None:
-                raise PoolError(404, f"agent not registered: {claimant}")
-            if status not in ("registered", "running"):
-                raise PoolError(409, f"agent '{claimant}' is {status}; start it before dispatching")
-        task = await conn.fetchrow("SELECT id, pool_status FROM fleet_tasks WHERE id=$1 FOR UPDATE", task_id)
-        if task is None:
-            raise PoolError(404, f"task {task_id} not found")
-        if task["pool_status"] == "done":
-            raise PoolError(409, f"task {task_id} already done")
-        n = await _count_loops(conn, task_id)
-        if n >= MAX_LOOPS_PER_TASK:
-            raise PoolError(409, f"task {task_id} 已达 {MAX_LOOPS_PER_TASK} 个 loop 上限")
-        row = await conn.fetchrow(
-            """INSERT INTO fleet_task_loops (task_id, claimant_type, claimant, created_by)
-               VALUES ($1,$2,$3,$4) RETURNING *""",
-            task_id, claimant_type, claimant, created_by,
-        )
-        # 认领即占用：agent → 其名；human → 'human'。任何认领后 task 不再 'unassigned'
-        # （池过滤/展示统一依赖此语义——人 agent 一视同仁，ADR-0010）
-        await conn.execute(
-            "UPDATE fleet_tasks SET agent_name=$2 WHERE id=$1 AND agent_name='unassigned'",
-            task_id, claimant if claimant_type == "agent" else "human",
-        )
-    loop = dict(row)
+        async with conn.transaction():
+            loop, _ = await _claim_loop_with_conn(
+                conn, task_id, claimant_type, claimant, created_by=created_by)
     await audit("loop.claimed", agent_name=claimant if claimant_type == "agent" else None,
                 actor=created_by, detail={"loop_id": loop["id"], "task_id": task_id,
                                           "claimant": f"{claimant_type}:{claimant}"})
@@ -113,21 +165,31 @@ async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created
 
 async def deliver_loop(loop_id: int, content: str, *, tokens: int | None = None,
                        thread_id: str | None = None, by_system: bool = True) -> None:
+    """仅允许有效执行态交付；归档或已验收 Loop 的迟到结果直接拒绝。"""
     async with (await pool()).acquire() as conn:
-        await conn.execute(
-            """UPDATE fleet_task_loops SET status='delivered', deliverable=$2, tokens=COALESCE($3,tokens),
-                      thread_id=COALESCE($4,thread_id), delivered_at=now(), updated_at=now()
-               WHERE id=$1""",
-            loop_id, content[:4000], tokens, thread_id,
-        )
-        task_id = await conn.fetchval("SELECT task_id FROM fleet_task_loops WHERE id=$1", loop_id)
-        # status（执行口径）与 pool_status（验收口径）联动：交付即执行成功，
-        # 验收状态由 pool_status 表达（人机同一条路，统一 2026-10-10 修 #8）。
-        await conn.execute(
-            """UPDATE fleet_tasks SET status='success', pool_status='review', updated_at=now()
-               WHERE id=$1 AND pool_status='open'""",
-            task_id,
-        )
+        async with conn.transaction():
+            updated = await conn.fetchrow(
+                """UPDATE fleet_task_loops SET status='delivered', deliverable=$2,
+                          tokens=COALESCE($3,tokens), thread_id=COALESCE($4,thread_id),
+                          resume_comment=NULL, delivered_at=now(), updated_at=now()
+                   WHERE id=$1 AND status IN ('claimed','running','returned')
+                   RETURNING task_id""",
+                loop_id, content[:4000], tokens, thread_id,
+            )
+            if updated is None:
+                current = await conn.fetchrow(
+                    "SELECT task_id, status FROM fleet_task_loops WHERE id=$1", loop_id)
+                if current is None:
+                    raise PoolError(404, f"loop {loop_id} not found")
+                raise PoolError(409, f"loop {loop_id} 当前状态 {current['status']} 不可交付")
+            task_id = updated["task_id"]
+            # status（执行口径）与 pool_status（验收口径）联动：交付即执行成功，
+            # 验收状态由 pool_status 表达（人机同一条路，统一 2026-10-10 修 #8）。
+            await conn.execute(
+                """UPDATE fleet_tasks SET status='success', pool_status='review', updated_at=now()
+                   WHERE id=$1 AND pool_status='open'""",
+                task_id,
+            )
     await audit("loop.delivered", actor="system" if by_system else "human",
                 detail={"loop_id": loop_id, "task_id": task_id})
 
@@ -139,21 +201,28 @@ async def human_deliver(loop_id: int, content: str, *, author: str) -> None:
 
 
 async def return_loop(loop_id: int, comment: str, *, author: str) -> None:
-    """打回 loop（不动 task）：写评论 + 状态 returned → 同 thread 续跑。"""
+    """仅 delivered Loop 可打回；意见随 returned 状态原子落库，续跑成功后清除。"""
     async with (await pool()).acquire() as conn:
-        loop = await conn.fetchrow(
-            "UPDATE fleet_task_loops SET status='returned', version=version+1, updated_at=now() WHERE id=$1 RETURNING task_id",
-            loop_id,
-        )
-        if loop is None:
-            raise PoolError(404, f"loop {loop_id} not found")
+        async with conn.transaction():
+            loop = await conn.fetchrow(
+                """UPDATE fleet_task_loops
+                   SET status='returned', version=version+1, resume_comment=$2, updated_at=now()
+                   WHERE id=$1 AND status='delivered' RETURNING task_id""",
+                loop_id, comment,
+            )
+            if loop is None:
+                current = await conn.fetchrow(
+                    "SELECT status FROM fleet_task_loops WHERE id=$1", loop_id)
+                if current is None:
+                    raise PoolError(404, f"loop {loop_id} not found")
+                raise PoolError(409, f"loop {loop_id} 当前状态 {current['status']} 不可打回")
     await add_comment(loop["task_id"], author=author, content=comment, loop_id=loop_id)
     await audit("loop.returned", actor=author, detail={"loop_id": loop_id})
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM fleet_task_loops WHERE id=$1", loop_id)
     # agent 的 loop 自动同 thread 续跑；human 的 loop 等人修正后重新交付（deliver 接口）
     if row["claimant_type"] == "agent":
-        await enqueue_loop_run(loop_id, resume_comment=comment)
+        await enqueue_loop_run(loop_id)
 
 
 async def accept_loop(task_id: int, loop_id: int, *, author: str) -> None:

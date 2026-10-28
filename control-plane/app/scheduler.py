@@ -18,6 +18,7 @@ from croniter import croniter
 from zoneinfo import ZoneInfo
 
 from .db import GATEWAY, audit, pool
+from .dispatcher import enqueue_loop_run
 from .registry import RegistryError, load_all_yaml
 
 logger = logging.getLogger("fleet.scheduler")
@@ -63,7 +64,7 @@ async def _retire_gateway_crons() -> int:
 
 
 async def sync(actor: str = "scheduler") -> dict:
-    """扫描一轮：到点的 cron 建池任务，默认由所属 Agent 认领（ADR-0016）。"""
+    """扫描一轮：Task、Loop 与 last_fired 同事务提交，提交后才入队。"""
     from . import pool as poolmod
 
     retired = await _retire_gateway_crons()
@@ -74,46 +75,69 @@ async def sync(actor: str = "scheduler") -> dict:
     for name, doc in docs.items():
         for i, spec in enumerate(_cron_specs(doc)):
             prev = croniter(spec["cron"], now).get_prev(datetime)
-            async with (await pool()).acquire() as conn:
-                last = await conn.fetchval(
-                    "SELECT last_fired_at FROM fleet_cron_fires WHERE agent_name=$1 AND cron_idx=$2",
-                    name, i)
-            if last is None:
-                # 首次见到该 cron：以最近一个已过的触发点为基线，不补投错过的历史
-                async with (await pool()).acquire() as conn:
-                    await conn.execute(
-                        """INSERT INTO fleet_cron_fires (agent_name, cron_idx, last_fired_at)
-                           VALUES ($1,$2,$3)
-                           ON CONFLICT (agent_name, cron_idx) DO UPDATE SET last_fired_at=EXCLUDED.last_fired_at""",
-                        name, i, prev,
-                    )
-                continue
-            if last >= prev:
-                continue
-            # 单条配置 > 显式全局编排者 > YAML 所属 Agent；Task/Loop 路径不变。
             claimant = spec["orchestrator"] or DEFAULT_ORCHESTRATOR or name
             prompt = spec["prompt"] or f"[fleet cron] {name} 定时任务 {i}"
-            task = await poolmod.create_task(
-                prompt, source="cron", created_by="scheduler",
-                idempotency_key=f"cron:{name}:{i}:{prev.isoformat()}",
-            )
-            claimed_by = None
-            try:
-                await poolmod.claim_loop(task["id"], "agent", claimant, created_by="scheduler")
-                claimed_by = claimant
-            except poolmod.PoolError as e:
-                logger.warning("cron task %s claim failed (agent=%s): %s", task["id"], claimant, e.message)
             async with (await pool()).acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO fleet_cron_fires (agent_name, cron_idx, last_fired_at)
-                       VALUES ($1,$2,$3)
-                       ON CONFLICT (agent_name, cron_idx) DO UPDATE SET last_fired_at=EXCLUDED.last_fired_at""",
-                    name, i, prev,
-                )
+                try:
+                    async with conn.transaction():
+                        # 即使误开多个调度实例，同一条 cron 的同一轮也串行处理；
+                        # 常驻单例门闩由 ADR-0012 后续批次补齐。
+                        await conn.fetchval(
+                            "SELECT pg_advisory_xact_lock(hashtext($1))",
+                            f"fleet:cron:{name}:{i}",
+                        )
+                        last = await conn.fetchval(
+                            "SELECT last_fired_at FROM fleet_cron_fires WHERE agent_name=$1 AND cron_idx=$2",
+                            name, i)
+                        if last is None:
+                            # 首次见到该 cron：以最近一个已过的触发点为基线，不补投历史。
+                            await conn.execute(
+                                """INSERT INTO fleet_cron_fires (agent_name, cron_idx, last_fired_at)
+                                   VALUES ($1,$2,$3)
+                                   ON CONFLICT (agent_name, cron_idx) DO UPDATE SET last_fired_at=EXCLUDED.last_fired_at""",
+                                name, i, prev,
+                            )
+                            continue
+                        if last >= prev:
+                            continue
+                        task, task_created = await poolmod._create_task_with_conn(
+                            conn, prompt, source="cron", assignee=None,
+                            parent_task_id=None,
+                            idempotency_key=f"cron:{name}:{i}:{prev.isoformat()}",
+                        )
+                        loop = None
+                        loop_created = False
+                        if task_created or task["pool_status"] != "done":
+                            loop, loop_created = await poolmod._claim_loop_with_conn(
+                                conn, task["id"], "agent", claimant,
+                                created_by="scheduler", idempotent=True,
+                            )
+                        await conn.execute(
+                            """INSERT INTO fleet_cron_fires (agent_name, cron_idx, last_fired_at)
+                               VALUES ($1,$2,$3)
+                               ON CONFLICT (agent_name, cron_idx) DO UPDATE SET last_fired_at=EXCLUDED.last_fired_at""",
+                            name, i, prev,
+                        )
+                except poolmod.PoolError as exc:
+                    # 任一步失败都回滚：下次扫描重试，不留下无 Loop 的 Task 或触发标记。
+                    logger.warning(
+                        "cron dispatch rolled back (agent=%s, cron=%s, claimant=%s): %s",
+                        name, i, claimant, exc.message)
+                    continue
+            if task_created:
+                await audit("task.created", actor="scheduler",
+                            args={"input": prompt[:200]}, detail={"task_id": task["id"]})
+            if loop_created:
+                await audit("loop.claimed", agent_name=claimant, actor="scheduler",
+                            detail={"loop_id": loop["id"], "task_id": task["id"],
+                                    "claimant": f"agent:{claimant}"})
+            if loop and loop["status"] in ("claimed", "returned"):
+                await enqueue_loop_run(loop["id"])
             fired.append(task["id"])
             await audit("cron.fired", agent_name=name, actor=actor,
                         detail={"task_id": task["id"], "cron": spec["cron"],
-                                "occurrence": prev.isoformat(), "claimed_by": claimed_by})
+                                "occurrence": prev.isoformat(),
+                                "claimed_by": claimant if loop else None})
     return {"fired": fired, "retired_gateway_crons": retired}
 
 

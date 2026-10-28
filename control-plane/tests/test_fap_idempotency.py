@@ -31,7 +31,12 @@ class FakePool:
     async def __aexit__(self, *_args):
         return None
 
-    async def fetchrow(self, *_args):
+    def transaction(self):
+        return self
+
+    async def fetchrow(self, query, *_args):
+        if query.lstrip().startswith("INSERT INTO fap_idempotency_keys"):
+            return None
         return self.row
 
 

@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from .db import audit, pool
+from .dispatcher import enqueue_loop_run
 from . import pool as poolmod
 
 logger = logging.getLogger("fleet.inbox")
@@ -47,29 +48,38 @@ async def flush_all() -> int:
 
 
 async def flush_agent(agent_name: str) -> int:
+    """消息状态、Task 与 Loop 原子提交；任何失败都由事务回滚为 pending。"""
     async with (await pool()).acquire() as conn:
-        rows = await conn.fetch(
-            """UPDATE fleet_inbox SET status='dispatched', dispatched_at=now()
-               WHERE agent_name=$1 AND status='pending' RETURNING id, payload""",
-            agent_name,
-        )
-    if not rows:
-        return 0
-    combined = "\n".join(f"[消息 {r['id']}] {r['payload']}" for r in rows)
-    try:
-        task = await poolmod.create_task(
-            combined, source="inbox", assignee=agent_name, created_by="dispatcher",
-            idempotency_key=f"inbox:{agent_name}:" + "-".join(str(r["id"]) for r in rows),
-        )
-    except poolmod.PoolError:
-        # 领取被拒（如 flush 间隙 agent 被休眠）：消息回退 pending，start 后重投
-        async with (await pool()).acquire() as conn:
-            await conn.execute(
-                """UPDATE fleet_inbox SET status='pending', dispatched_at=NULL
-                   WHERE agent_name=$1 AND id = ANY($2::int[])""",
-                agent_name, [r["id"] for r in rows],
+        async with conn.transaction():
+            rows = await conn.fetch(
+                """UPDATE fleet_inbox SET status='dispatched', dispatched_at=now()
+                   WHERE agent_name=$1 AND status='pending' RETURNING id, payload""",
+                agent_name,
             )
-        raise
+            if not rows:
+                return 0
+            combined = "\n".join(f"[消息 {r['id']}] {r['payload']}" for r in rows)
+            task, task_created = await poolmod._create_task_with_conn(
+                conn, combined, source="inbox", assignee=agent_name,
+                parent_task_id=None,
+                idempotency_key=f"inbox:{agent_name}:" + "-".join(str(r["id"]) for r in rows),
+            )
+            loop = None
+            loop_created = False
+            if task_created or task["pool_status"] != "done":
+                loop, loop_created = await poolmod._claim_loop_with_conn(
+                    conn, task["id"], "agent", agent_name,
+                    created_by="dispatcher", idempotent=True,
+                )
+    if task_created:
+        await audit("task.created", agent_name=agent_name, actor="dispatcher",
+                    args={"input": combined[:200]}, detail={"task_id": task["id"]})
+    if loop_created:
+        await audit("loop.claimed", agent_name=agent_name, actor="dispatcher",
+                    detail={"loop_id": loop["id"], "task_id": task["id"],
+                            "claimant": f"agent:{agent_name}"})
+    if loop and loop["status"] in ("claimed", "returned"):
+        await enqueue_loop_run(loop["id"])
     await audit("inbox.dispatched", agent_name=agent_name, actor="dispatcher",
                 detail={"inbox_ids": [r["id"] for r in rows], "task_id": task["id"],
                         "merged": len(rows)})
