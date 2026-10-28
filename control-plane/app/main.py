@@ -62,6 +62,7 @@ async def startup() -> None:
     # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
     await _ensure_system_agent_with_retry()
     await ops_credentials.ensure_system_credential()
+    await ops_credentials.check_system_credential_readable()
     # dispatcher consumer 懒启动（首次领取时拉起，见 dispatcher.enqueue_loop_run）
     _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())
     _state["inbox"] = asyncio.create_task(inbox.flush_loop())

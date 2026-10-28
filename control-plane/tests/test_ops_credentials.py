@@ -172,5 +172,35 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raised.exception.status_code, 403)
 
 
+class VaultMismatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unreadable_ciphertext_returns_actionable_503(self):
+        conn = type("Conn", (), {"fetchval": AsyncMock(return_value="stored-ciphertext")})()
+
+        async def fake_pool():
+            return FakePool(conn)
+
+        with patch("app.ops_credentials.ensure_system_credential", new=AsyncMock()), \
+                patch("app.ops_credentials.pool", fake_pool), \
+                patch("app.ops_credentials._vault") as vault:
+            vault.return_value.decrypt.side_effect = ops_credentials.InvalidToken()
+            with self.assertRaises(HTTPException) as raised:
+                await ops_credentials._system_token()
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("轮换", raised.exception.detail)
+
+    async def test_startup_check_warns_without_blocking(self):
+        conn = type("Conn", (), {"fetchval": AsyncMock(return_value="stored-ciphertext")})()
+
+        async def fake_pool():
+            return FakePool(conn)
+
+        with patch("app.ops_credentials.pool", fake_pool), \
+                patch("app.ops_credentials._vault") as vault, \
+                patch("app.ops_credentials.log") as log:
+            vault.return_value.decrypt.side_effect = ops_credentials.InvalidToken()
+            await ops_credentials.check_system_credential_readable()
+        log.warning.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

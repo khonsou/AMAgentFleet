@@ -6,6 +6,7 @@ Runner 只调用内部执行端点，不接触 Authorization。
 
 from __future__ import annotations
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,8 @@ from .db import GATEWAY, audit, pool
 from .fap_pats import _assert_loopback, _digest, _new_token
 from .fleet_ops import load_operations_protocol
 from .registry import SYSTEM_AGENT_NAME
+
+log = logging.getLogger("fleet.control-plane")
 
 router = APIRouter(tags=["fleet-ops-credentials"])
 
@@ -166,7 +169,32 @@ async def _system_token() -> str:
         )
     if not ciphertext:
         raise HTTPException(503, "系统 Fleet 操作凭证不可用")
-    return _vault().decrypt(ciphertext)
+    try:
+        return _vault().decrypt(ciphertext)
+    except InvalidToken:
+        raise HTTPException(
+            503,
+            "系统 Fleet 操作凭证无法解密：Vault 密钥与 PG 中的密文不匹配，"
+            "请在 Console 重新轮换系统凭证",
+        ) from None
+
+
+async def check_system_credential_readable() -> None:
+    """启动自检：密钥与密文不匹配时只告警，不阻断控制面（轮换需人工确认）。"""
+    async with (await pool()).acquire() as conn:
+        ciphertext = await conn.fetchval(
+            "SELECT ciphertext FROM fleet_system_credentials WHERE name=$1",
+            SYSTEM_OPS_CREDENTIAL_NAME,
+        )
+    if not ciphertext:
+        return
+    try:
+        _vault().decrypt(ciphertext)
+    except InvalidToken:
+        log.warning(
+            "system credential ciphertext cannot be decrypted with the current vault key; "
+            "Fleet ops calls will return 503 until the credential is rotated"
+        )
 
 
 class OpsExecuteBody(BaseModel):
