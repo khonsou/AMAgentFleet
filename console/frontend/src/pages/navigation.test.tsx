@@ -12,6 +12,7 @@ import ThreadsPage from './Threads'
 const apiMock = vi.hoisted(() => ({
   allTasks: vi.fn(),
   agents: vi.fn(),
+  models: vi.fn(),
   createTask: vi.fn(),
   agentDispatch: vi.fn(),
   taskDetail: vi.fn(),
@@ -120,6 +121,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   apiMock.allTasks.mockResolvedValue([])
   apiMock.agents.mockResolvedValue([])
+  apiMock.models.mockResolvedValue([])
   apiMock.createTask.mockResolvedValue({ task_id: 99 })
   apiMock.agentDispatch.mockResolvedValue({ task_id: 99 })
   apiMock.taskDetail.mockResolvedValue(makeTaskDetail())
@@ -188,7 +190,7 @@ describe('定义与实例导航', () => {
     await user.type(screen.getByPlaceholderText(/输入任务指令/), '创建一个开放任务')
     await user.click(screen.getByRole('button', { name: '放入任务池' }))
 
-    await waitFor(() => expect(apiMock.createTask).toHaveBeenCalledWith('创建一个开放任务'))
+    await waitFor(() => expect(apiMock.createTask).toHaveBeenCalledWith('创建一个开放任务', undefined, undefined, 'auto'))
     expect(apiMock.agentDispatch).not.toHaveBeenCalled()
   })
 
@@ -197,12 +199,12 @@ describe('定义与实例导航', () => {
     apiMock.agents.mockResolvedValue([makeAgent()])
     renderPage('/', '/', <Home />)
 
-    const selector = await screen.findByRole('combobox')
+    const selector = await screen.findByRole('combobox', { name: '执行 Agent' })
     await user.selectOptions(selector, 'worker')
     await user.type(screen.getByPlaceholderText(/输入任务指令/), '执行指定任务')
     await user.click(screen.getByRole('button', { name: '指派并发起' }))
 
-    await waitFor(() => expect(apiMock.agentDispatch).toHaveBeenCalledWith('worker', '执行指定任务'))
+    await waitFor(() => expect(apiMock.agentDispatch).toHaveBeenCalledWith('worker', '执行指定任务', undefined, 'auto'))
     expect(apiMock.createTask).not.toHaveBeenCalled()
   })
 

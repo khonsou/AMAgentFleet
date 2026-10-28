@@ -38,15 +38,38 @@ async def create_task(
     created_by: str = "human",
     parent_task_id: int | None = None,
     idempotency_key: str | None = None,
+    model_profile: str | None = None,
+    subagent_model_policy: str = "auto",
 ) -> dict[str, Any]:
-    """建 task（open）。assignee 给 agent 名 = 人指派途径：同时建 loop 并入队。"""
+    """建 task（open）。固定继承策略沿任务树传播，不能被后代静默覆盖。"""
+    if subagent_model_policy not in ("auto", "inherit"):
+        raise PoolError(422, "subagent_model_policy 仅支持 auto / inherit")
+    if subagent_model_policy == "inherit" and not model_profile and not parent_task_id:
+        raise PoolError(422, "固定继承模型时必须显式指定 model_profile")
     async with (await pool()).acquire() as conn:
+        if parent_task_id:
+            parent = await conn.fetchrow(
+                "SELECT model_profile, subagent_model_policy FROM fleet_tasks WHERE id=$1",
+                parent_task_id)
+            if parent is None:
+                raise PoolError(404, f"parent task {parent_task_id} not found")
+            if parent["subagent_model_policy"] == "inherit":
+                inherited = parent["model_profile"]
+                if model_profile and model_profile != inherited:
+                    raise PoolError(403, f"父 Task 固定继承模型 {inherited}，禁止覆盖为 {model_profile}")
+                model_profile = inherited
+                subagent_model_policy = "inherit"
+        if subagent_model_policy == "inherit" and not model_profile:
+            raise PoolError(422, "父 Task 未锁定模型，不能使用固定继承策略")
         row = await conn.fetchrow(
-            """INSERT INTO fleet_tasks (agent_name, input, source, parent_task_id, idempotency_key)
-               VALUES ($1,$2,$3,$4,$5)
+            """INSERT INTO fleet_tasks
+               (agent_name, input, source, parent_task_id, idempotency_key,
+                model_profile, subagent_model_policy)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)
                ON CONFLICT (idempotency_key) DO NOTHING
                RETURNING *""",
             assignee or "unassigned", input_text, source, parent_task_id, idempotency_key,
+            model_profile, subagent_model_policy,
         )
     if row is None:
         async with (await pool()).acquire() as conn:
@@ -55,7 +78,9 @@ async def create_task(
         return dict(row)
     task = dict(row)
     await audit("task.created", agent_name=assignee, actor=created_by,
-                args={"input": input_text[:200]}, detail={"task_id": task["id"]})
+                args={"input": input_text[:200]},
+                detail={"task_id": task["id"], "model_profile": model_profile,
+                        "subagent_model_policy": subagent_model_policy})
     if assignee:
         await claim_loop(task["id"], "agent", assignee, created_by=created_by)
     return task
@@ -69,33 +94,52 @@ async def _count_loops(conn: asyncpg.Connection, task_id: int) -> int:
         "SELECT count(*) FROM fleet_task_loops WHERE task_id=$1 AND claimant_type='agent'", task_id)
 
 
-async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created_by: str) -> dict[str, Any]:
-    """领取 = 建 loop（竞争非独占，≤3）。agent 领取直接入队执行；human 领取等人交付。"""
+async def claim_loop(
+    task_id: int,
+    claimant_type: str,
+    claimant: str,
+    *,
+    created_by: str,
+    model_profile: str | None = None,
+) -> dict[str, Any]:
+    """领取 = 建 loop（竞争非独占，≤3）；agent Loop 在入队前锁定模型快照。"""
+    from . import models
+
     async with (await pool()).acquire() as conn:
         if claimant_type == "agent":
-            # 全认领路径统一门禁（inbox flush / cron 认领 / FAP claim / 指派）：
-            # 休眠/已销毁 agent 不可被唤醒执行，与 dispatch/inbox 端点同口径。
             status = await conn.fetchval(
                 "SELECT status FROM fleet_agents WHERE name=$1", claimant)
             if status is None:
                 raise PoolError(404, f"agent not registered: {claimant}")
             if status not in ("registered", "running"):
                 raise PoolError(409, f"agent '{claimant}' is {status}; start it before dispatching")
-        task = await conn.fetchrow("SELECT id, pool_status FROM fleet_tasks WHERE id=$1 FOR UPDATE", task_id)
+        task = await conn.fetchrow("SELECT * FROM fleet_tasks WHERE id=$1 FOR UPDATE", task_id)
         if task is None:
             raise PoolError(404, f"task {task_id} not found")
         if task["pool_status"] == "done":
             raise PoolError(409, f"task {task_id} already done")
+        task_profile = task["model_profile"] if "model_profile" in task.keys() else None
+        if model_profile and task_profile and model_profile != task_profile:
+            raise PoolError(409, f"Task 已指定模型 {task_profile}，认领时不能覆盖为 {model_profile}")
         n = await _count_loops(conn, task_id)
         if n >= MAX_LOOPS_PER_TASK:
             raise PoolError(409, f"task {task_id} 已达 {MAX_LOOPS_PER_TASK} 个 loop 上限")
+        snapshot = None
+        selected_by = None
+        if claimant_type == "agent":
+            try:
+                model_profile, snapshot, selected_by = await models.resolve_profile(
+                    claimant, model_profile or task_profile, selected_by=created_by)
+            except models.ModelError as exc:
+                raise PoolError(exc.status, exc.message) from exc
         row = await conn.fetchrow(
-            """INSERT INTO fleet_task_loops (task_id, claimant_type, claimant, created_by)
-               VALUES ($1,$2,$3,$4) RETURNING *""",
+            """INSERT INTO fleet_task_loops
+               (task_id, claimant_type, claimant, created_by,
+                model_profile, model_snapshot, model_selected_by)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING *""",
             task_id, claimant_type, claimant, created_by,
+            model_profile, json.dumps(snapshot) if snapshot else None, selected_by,
         )
-        # 认领即占用：agent → 其名；human → 'human'。任何认领后 task 不再 'unassigned'
-        # （池过滤/展示统一依赖此语义——人 agent 一视同仁，ADR-0010）
         await conn.execute(
             "UPDATE fleet_tasks SET agent_name=$2 WHERE id=$1 AND agent_name='unassigned'",
             task_id, claimant if claimant_type == "agent" else "human",
@@ -103,7 +147,9 @@ async def claim_loop(task_id: int, claimant_type: str, claimant: str, *, created
     loop = dict(row)
     await audit("loop.claimed", agent_name=claimant if claimant_type == "agent" else None,
                 actor=created_by, detail={"loop_id": loop["id"], "task_id": task_id,
-                                          "claimant": f"{claimant_type}:{claimant}"})
+                                          "claimant": f"{claimant_type}:{claimant}",
+                                          "model_profile": model_profile,
+                                          "model_selected_by": selected_by})
     if claimant_type == "agent":
         await enqueue_loop_run(loop["id"])
     return loop

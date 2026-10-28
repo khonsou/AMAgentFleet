@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelBody, PanelHead } from '@/components/console/Panel'
 import { StatusPill } from '@/components/console/Status'
+import ModelSettings from '@/components/console/ModelSettings'
 
 function fmtTime(iso: string | null) {
   if (!iso) return '—'
@@ -94,7 +95,7 @@ export default function SettingsPage() {
           <div className="silk">MODULE <b>04</b> / SETTINGS</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">设置</h1>
           <p className="mt-1 text-[12.5px] text-ink-2">
-            第三方 agent 接入（FAP）：签发 / 吊销 PAT。token 只显示一次，平台只存摘要。
+            模型 Profile 与独立 API Key 由人工管理；第三方 agent 接入（FAP）使用 PAT，token 只显示一次。
           </p>
           <p className="mt-1.5 font-mono text-[12px] text-ink-2">
             API 接入地址（与本页同源）：<code className="text-led-green">{window.location.origin}</code>
@@ -108,6 +109,8 @@ export default function SettingsPage() {
           {err}
         </div>
       )}
+
+      <ModelSettings />
 
       <div className="mb-5">
         <Panel>

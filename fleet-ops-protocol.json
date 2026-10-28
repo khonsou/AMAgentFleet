@@ -32,20 +32,22 @@
     {"id":"agents.destroy","method":"DELETE","path":"/api/agents/{name}","surface":"control-plane","write":true,"description":"Destroy Agent definition and runtime registration","query":{"actor":"fleet-ops-01"}},
     {"id":"agents.start","method":"POST","path":"/api/agents/{name}/start","surface":"control-plane","write":true,"description":"Start or wake a registered Agent","query":{"actor":"fleet-ops-01"}},
     {"id":"agents.stop","method":"POST","path":"/api/agents/{name}/stop","surface":"control-plane","write":true,"description":"Hibernate an Agent and reject new wakeups","query":{"actor":"fleet-ops-01"}},
-    {"id":"agents.dispatch","method":"POST","path":"/api/agents/{name}/dispatch","surface":"control-plane","write":true,"description":"Legacy direct assignment; prefer tasks.create","body":{"input":"<task instruction>","source":"agent","actor":"fleet-ops-01"}},
+    {"id":"agents.dispatch","method":"POST","path":"/api/agents/{name}/dispatch","surface":"control-plane","write":true,"description":"Legacy direct assignment; prefer tasks.create","body":{"input":"<task instruction>","source":"agent","actor":"fleet-ops-01","model_profile":"<optional registered profile>","subagent_model_policy":"auto"}},
     {"id":"inbox.list","method":"GET","path":"/api/agents/{name}/inbox","surface":"control-plane","description":"List pending and processed Agent inbox messages","query":{"limit":50}},
     {"id":"inbox.post","method":"POST","path":"/api/agents/{name}/inbox","surface":"control-plane","write":true,"description":"Send an asynchronous wakeup message to an Agent","body":{"payload":"<message>","source":"agent"}},
 
+    {"id":"models.list","method":"GET","path":"/api/models","surface":"control-plane","description":"List registered model Profiles without credentials"},
+
     {"id":"tasks.list","method":"GET","path":"/api/tasks","surface":"control-plane","description":"List Task instances and latest Loop references","query":{"agent":"<optional claimant>","status":"<optional execution status>","limit":100}},
     {"id":"tasks.get","method":"GET","path":"/api/tasks/{task_id}","surface":"control-plane","description":"Read Task, all Loops, outputs, artifacts and comments"},
-    {"id":"tasks.create","method":"POST","path":"/api/tasks","surface":"control-plane","write":true,"description":"Create a Task, optionally assigned to an Agent","body":{"input":"<self-contained instruction>","assignee":"<optional agent name>","created_by":"fleet-ops-01","source":"agent","parent_task_id":null}},
+    {"id":"tasks.create","method":"POST","path":"/api/tasks","surface":"control-plane","write":true,"description":"Create a Task, optionally assigned to an Agent and model Profile","body":{"input":"<self-contained instruction>","assignee":"<optional agent name>","created_by":"fleet-ops-01","source":"agent","parent_task_id":null,"model_profile":"<optional registered profile>","subagent_model_policy":"auto"}},
     {"id":"tasks.review_queue","method":"GET","path":"/api/review-queue","surface":"control-plane","description":"List Tasks awaiting delivery acceptance"},
     {"id":"tasks.comment","method":"POST","path":"/api/tasks/{task_id}/comments","surface":"control-plane","write":true,"description":"Comment on a Task or one of its Loops","body":{"author":"fleet-ops-01","content":"<comment>","loop_id":null}},
     {"id":"tasks.accept","method":"POST","path":"/api/tasks/{task_id}/accept","surface":"control-plane","write":true,"description":"Accept one Loop delivery, finish the Task and archive other Loops","body":{"loop_id":0,"author":"fleet-ops-01"}},
     {"id":"tasks.accept_reviewed","method":"POST","path":"/api/tasks/accept-reviewed","surface":"control-plane","write":true,"description":"Accept all currently reviewed Tasks in one call; returns accepted, skipped and remaining details","body":{"author":"fleet-ops-01"}},
     {"id":"tasks.close","method":"POST","path":"/api/tasks/{task_id}/close","surface":"control-plane","write":true,"description":"Close and void a Task without accepting a delivery","query":{"author":"fleet-ops-01"}},
 
-    {"id":"loops.claim","method":"POST","path":"/api/tasks/{task_id}/loops","surface":"control-plane","write":true,"description":"Claim a Task as an Agent or human and create a Loop","body":{"claimant_type":"agent","claimant":"<agent name or human>","created_by":"fleet-ops-01"}},
+    {"id":"loops.claim","method":"POST","path":"/api/tasks/{task_id}/loops","surface":"control-plane","write":true,"description":"Claim a Task as an Agent or human and create a Loop","body":{"claimant_type":"agent","claimant":"<agent name or human>","created_by":"fleet-ops-01","model_profile":"<optional registered profile>"}},
     {"id":"loops.deliver","method":"POST","path":"/api/loops/{loop_id}/deliver","surface":"control-plane","write":true,"description":"Deliver a human or external Loop result for acceptance","body":{"content":"<delivery>","author":"fleet-ops-01"}},
     {"id":"loops.return","method":"POST","path":"/api/loops/{loop_id}/return","surface":"control-plane","write":true,"description":"Return a delivered Loop with comments and resume its Thread","body":{"comment":"<required corrections>","author":"fleet-ops-01"}},
     {"id":"loops.requeue","method":"POST","path":"/api/loops/{loop_id}/requeue","surface":"control-plane","write":true,"description":"Requeue a stale or returned agent Loop"},
@@ -62,7 +64,7 @@
     {"id":"threads.state","method":"GET","path":"/api/threads/{thread_id}/state","surface":"gateway","description":"Read the Gateway Thread checkpoint state"},
     {"id":"threads.token_usage","method":"GET","path":"/api/threads/{thread_id}/token-usage","surface":"gateway","description":"Read Gateway token usage for a Thread"},
 
-    {"id":"runs.wait","method":"POST","path":"/api/runs/wait","surface":"gateway","write":true,"description":"Execute an Agent Run and wait for completion","timeout_seconds":600,"body":{"assistant_id":"<agent name>","input":{"messages":[{"role":"user","content":"<instruction>"}]},"config":{"configurable":{"thread_id":"<thread id>"}}}},
+    {"id":"runs.wait","method":"POST","path":"/api/runs/wait","surface":"gateway","write":true,"description":"Execute an Agent Run and wait for completion","timeout_seconds":600,"body":{"assistant_id":"<agent name>","input":{"messages":[{"role":"user","content":"<instruction>"}]},"context":{"model_name":"<optional registered profile>"},"config":{"configurable":{"thread_id":"<thread id>"}}}},
     {"id":"runs.stream","method":"POST","path":"/api/runs/stream","surface":"gateway","write":true,"description":"Execute an Agent Run with an SSE response","body":{"assistant_id":"<agent name>","input":{"messages":[{"role":"user","content":"<instruction>"}]},"config":{"configurable":{"thread_id":"<thread id>"}}}},
     {"id":"runs.get","method":"GET","path":"/api/threads/{thread_id}/runs/{run_id}","surface":"gateway","description":"Read a Run record"},
     {"id":"runs.messages","method":"GET","path":"/api/runs/{run_id}/messages","surface":"gateway","description":"Read paginated Run messages","query":{"limit":50,"before_seq":null,"after_seq":null}},
@@ -83,6 +85,10 @@
     {"id":"mcp.render","method":"POST","path":"/api/mcp-servers/render","surface":"control-plane","write":true,"description":"Render MCP configuration and reset the Gateway cache","query":{"actor":"fleet-ops-01"}},
     {"id":"templates.list","method":"GET","path":"/api/templates","surface":"control-plane","description":"List Agent definition templates"},
     {"id":"templates.render","method":"POST","path":"/api/templates/render","surface":"control-plane","write":true,"description":"Render an Agent YAML template without deploying it","query":{"actor":"fleet-ops-01"},"body":{"templateId":"website-reader","name":"<agent-name>","displayName":"","owner":"","costCenter":"","egressDomain":""}},
+
+    {"id":"models.managed_list","method":"GET","path":"/api/console/managed-models","surface":"console","confirmation":"human_only","description":"List config and managed model Profiles without API keys"},
+    {"id":"models.managed_save","method":"PUT","path":"/api/console/managed-models","surface":"console","confirmation":"human_only","description":"Create or rotate a managed model Profile and its encrypted API key","secret_fields":["api_key"],"body":{"config":{"name":"<profile>","display_name":"","model":"<provider model>","base_url":"<configured OpenAI-compatible endpoint>","api_key":"<write-only secret>"},"expected_revision":null}},
+    {"id":"models.managed_test","method":"POST","path":"/api/console/managed-models/test","surface":"console","confirmation":"human_only","description":"Test a managed model connection without saving or exposing its API key","secret_fields":["api_key"]},
 
     {"id":"pats.list","method":"GET","path":"/api/pats","surface":"control-plane","description":"List PAT metadata without token values"},
     {"id":"pats.issue","method":"POST","path":"/api/pats","surface":"control-plane","confirmation":"human_only","description":"Issue a PAT in Settings; its one-time token must not enter the Thread","body":{"name":"<credential name>","scopes":["read"],"expires_in_days":null}},

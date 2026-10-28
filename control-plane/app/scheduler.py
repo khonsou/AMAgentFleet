@@ -32,13 +32,17 @@ def _cron_specs(doc: dict) -> list[dict]:
     out = []
     for i, item in enumerate(triggers.get("cron") or []):
         if isinstance(item, str):
-            out.append({"cron": item, "timezone": "Asia/Shanghai", "prompt": "", "orchestrator": None})
+            out.append({"cron": item, "timezone": "Asia/Shanghai", "prompt": "",
+                        "orchestrator": None, "model_profile": None,
+                        "subagent_model_policy": "auto"})
         elif isinstance(item, dict):
             out.append({
                 "cron": item["cron"],
                 "timezone": item.get("timezone", "Asia/Shanghai"),
                 "prompt": item.get("prompt", ""),
                 "orchestrator": item.get("orchestrator"),
+                "model_profile": item.get("model_profile"),
+                "subagent_model_policy": item.get("subagent_model_policy", "auto"),
             })
     return out
 
@@ -96,6 +100,8 @@ async def sync(actor: str = "scheduler") -> dict:
             task = await poolmod.create_task(
                 prompt, source="cron", created_by="scheduler",
                 idempotency_key=f"cron:{name}:{i}:{prev.isoformat()}",
+                model_profile=spec["model_profile"],
+                subagent_model_policy=spec["subagent_model_policy"],
             )
             claimed_by = None
             try:

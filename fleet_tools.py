@@ -45,10 +45,14 @@ class SpawnArgs(BaseModel):
     task: str = Field(description="交给子任务执行者的完整任务说明（含交付要求）")
     assignee: str | None = Field(default=None, description="指定领取的 agent 名；不填 = 开放抢单（≤3 loop）")
     acceptance_hint: str = Field(default="", description="给验收人的备注（可选）")
+    model_profile: str | None = Field(
+        default=None,
+        description="本次子 Agent 实例使用的已登记模型 Profile；不填按父 Task 策略和默认规则解析",
+    )
 
 
 async def _spawn(task: str, assignee: str | None = None, acceptance_hint: str = "",
-                 config: RunnableConfig = None) -> str:
+                 model_profile: str | None = None, config: RunnableConfig = None) -> str:
     caller = _caller(config)
     cfg = (config or {}).get("configurable", {}) if isinstance(config, dict) else {}
     body = {
@@ -57,6 +61,7 @@ async def _spawn(task: str, assignee: str | None = None, acceptance_hint: str = 
         "assignee": assignee,
         "created_by": caller,
         "caller_thread_id": cfg.get("thread_id"),
+        "model_profile": model_profile,
     }
     out = await _cp("/api/tasks", body)
     return f"子任务已入池（created_by={caller}）：{out}"

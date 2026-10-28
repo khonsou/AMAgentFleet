@@ -131,19 +131,25 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ yaml }),
     }),
-  agentDispatch: (name: string, input: string) =>
+  agentDispatch: (name: string, input: string, modelProfile?: string, subagentModelPolicy = 'auto') =>
     req<{ task_id: number }>(`/agents/${name}/dispatch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, source: 'web' }),
+      body: JSON.stringify({
+        input, source: 'web', model_profile: modelProfile || null,
+        subagent_model_policy: subagentModelPolicy,
+      }),
     }),
   agentTasks: (name: string) => req<AgentTask[]>(`/agents/${name}/tasks`),
   allTasks: (limit = 200) => req<AgentTask[]>(`/tasks?limit=${limit}`),
   taskDetail: (id: number) => req<TaskDetail>(`/tasks/${id}`),
-  createTask: (input: string, assignee?: string) =>
+  createTask: (input: string, assignee?: string, modelProfile?: string, subagentModelPolicy = 'auto') =>
     req<{ task_id: number }>('/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, assignee }),
+      body: JSON.stringify({
+        input, assignee, model_profile: modelProfile || null,
+        subagent_model_policy: subagentModelPolicy,
+      }),
     }),
   taskClaim: (id: number, claimantType: string, claimant: string) =>
     req<{ loop_id: number }>(`/tasks/${id}/loops`, {
@@ -197,6 +203,20 @@ export const api = {
 
   templates: () => req<Template[]>('/templates'),
 
+  // ---- 模型 Profile 与原生 Managed Models（ADR-0028） ----
+  models: () => req<ModelProfile[]>('/models'),
+  managedModels: () => req<{ models: ManagedModel[] }>('/managed-models'),
+  managedModelSave: (config: ManagedModelInput, expectedRevision: string | null) =>
+    req<ManagedModel>('/managed-models', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, expected_revision: expectedRevision }),
+    }),
+  managedModelTest: (config: ManagedModelInput, expectedRevision: string | null) =>
+    req<{ ok: boolean; message: string }>('/managed-models/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, expected_revision: expectedRevision }),
+    }),
+
   // ---- FAP PAT 管理（ADR-0011 H6，Console 设置页） ----
   opsCredential: () => req<OpsCredentialStatus>('/ops/credential'),
   opsCredentialRotate: () =>
@@ -209,6 +229,43 @@ export const api = {
     }),
   patRevoke: (id: string) =>
     req<{ status: string }>(`/pats/${id}`, { method: 'DELETE' }),
+}
+
+export interface ModelProfile {
+  name: string
+  model: string
+  display_name: string
+  description: string | null
+  supports_thinking: boolean
+  supports_reasoning_effort: boolean
+}
+
+export interface ManagedModel {
+  name: string
+  display_name: string
+  model: string
+  base_url?: string
+  enabled: boolean
+  supports_vision?: boolean
+  context_window?: number | null
+  max_tokens?: number | null
+  revision?: string | null
+  source: 'config' | 'managed'
+  has_api_key?: boolean
+  conflict?: boolean
+}
+
+export interface ManagedModelInput {
+  name: string
+  display_name: string
+  provider: 'openai-compatible'
+  model: string
+  base_url: string
+  api_key?: string
+  enabled: boolean
+  supports_vision: boolean
+  context_window: number | null
+  max_tokens: number | null
 }
 
 export interface Template {
@@ -281,6 +338,9 @@ export interface Loop {
   tokens: number | null
   version: number
   error: string | null
+  model_profile?: string | null
+  model_snapshot?: { profile: string; model: string; display_name: string; source: string } | null
+  model_selected_by?: string | null
   created_at: string
 }
 
@@ -311,6 +371,8 @@ export interface AgentTask {
   depth: number
   pool_status?: string
   accepted_loop_id?: number | null
+  model_profile?: string | null
+  subagent_model_policy?: 'auto' | 'inherit'
   input?: string
   tokens: number | null
   result_preview: string | null

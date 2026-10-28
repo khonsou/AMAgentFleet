@@ -463,6 +463,40 @@ async def cp_pat_revoke(pat_id: str):
 
 
 # ---------------------------------------------------------------------------
+# 模型 Profile 与 Managed Models（ADR-0028）
+# 选模目录经控制面暴露；密钥管理仅存在于已登录 Console → Gateway 的内部链路。
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/console/models")
+async def cp_models():
+    return await _cp("/models")
+
+
+async def _managed_models(method: str, path: str = "", body: dict | None = None):
+    async with httpx.AsyncClient(trust_env=False, base_url=GATEWAY, timeout=45) as client:
+        resp = await client.request(method, f"/api/managed-models{path}", json=body)
+    if resp.status_code >= 400:
+        raise HTTPException(resp.status_code, resp.text[:500])
+    return resp.json()
+
+
+@app.get("/api/console/managed-models")
+async def console_managed_models():
+    return await _managed_models("GET")
+
+
+@app.put("/api/console/managed-models")
+async def console_managed_model_save(body: dict):
+    return await _managed_models("PUT", body=body)
+
+
+@app.post("/api/console/managed-models/test")
+async def console_managed_model_test(body: dict):
+    return await _managed_models("POST", "/test", body)
+
+
+# ---------------------------------------------------------------------------
 # FAP 同源暴露：非 /api/console/* 的 /api/* 原样转发到 control-plane。
 # 第三方 agent 与人用同一入口（GUI 网址即 API 入口），只需网址 + PAT。
 # 注册在所有显式路由之后；显式 /api/console/* 优先，不会落入本转发。

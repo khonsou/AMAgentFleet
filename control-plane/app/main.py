@@ -15,7 +15,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from . import inbox, mcpservers, registry, scheduler, templates
+from . import inbox, mcpservers, models, registry, scheduler, templates
 from . import pool as poolmod
 from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials
 from .db import GATEWAY, audit, init_db, pool
@@ -211,6 +211,8 @@ class DispatchBody(BaseModel):
     parent_task_id: int | None = None
     idempotency_key: str | None = None
     actor: str = "admin"
+    model_profile: str | None = None
+    subagent_model_policy: str = Field(default="auto", pattern="^(auto|inherit)$")
 
 
 @app.post("/api/agents/{name}/dispatch", status_code=202)
@@ -222,10 +224,24 @@ async def dispatch(name: str, body: DispatchBody) -> dict[str, int]:
         raise HTTPException(404, f"agent not registered: {name}")
     if row["status"] not in ("registered", "running"):
         raise HTTPException(409, f"agent '{name}' is {row['status']}; start it before dispatching")
-    task = await poolmod.create_task(body.input, source=body.source, assignee=name,
-                                     created_by=body.actor, parent_task_id=body.parent_task_id,
-                                     idempotency_key=body.idempotency_key)
+    try:
+        task = await poolmod.create_task(
+            body.input, source=body.source, assignee=name,
+            created_by=body.actor, parent_task_id=body.parent_task_id,
+            idempotency_key=body.idempotency_key, model_profile=body.model_profile,
+            subagent_model_policy=body.subagent_model_policy)
+    except poolmod.PoolError as exc:
+        raise _pool_err(exc)
     return {"task_id": task["id"]}
+
+
+@app.get("/api/models")
+async def model_profiles() -> list[dict[str, Any]]:
+    """公开不含凭证的 Gateway Profile 目录，供 Console 与 Fleet Ops 选模。"""
+    try:
+        return await models.list_profiles()
+    except models.ModelError as exc:
+        raise HTTPException(exc.status, exc.message)
 
 
 @app.get("/api/tasks")
@@ -421,6 +437,8 @@ class TaskCreateBody(BaseModel):
     created_by: str = "human"
     parent_task_id: int | None = None  # 指挥官分解 sub-task
     caller_thread_id: str | None = None  # runner 工具反解父 task 用
+    model_profile: str | None = None
+    subagent_model_policy: str = Field(default="auto", pattern="^(auto|inherit)$")
 
 
 @app.post("/api/tasks", status_code=201)
@@ -439,8 +457,14 @@ async def task_create(body: TaskCreateBody) -> dict[str, Any]:
             parent = await conn.fetchval(
                 "SELECT task_id FROM fleet_task_loops WHERE thread_id=$1 ORDER BY id DESC LIMIT 1",
                 body.caller_thread_id)
-    t = await poolmod.create_task(body.input, source=body.source, assignee=body.assignee,
-                               created_by=body.created_by, parent_task_id=parent)
+    try:
+        t = await poolmod.create_task(
+            body.input, source=body.source, assignee=body.assignee,
+            created_by=body.created_by, parent_task_id=parent,
+            model_profile=body.model_profile,
+            subagent_model_policy=body.subagent_model_policy)
+    except poolmod.PoolError as exc:
+        raise _pool_err(exc)
     return {"task_id": t["id"], "pool_status": t["pool_status"]}
 
 
@@ -448,13 +472,16 @@ class ClaimBody(BaseModel):
     claimant_type: str = Field(pattern="^(agent|human)$")
     claimant: str = Field(min_length=1)
     created_by: str = "human"
+    model_profile: str | None = None
 
 
 @app.post("/api/tasks/{task_id}/loops", status_code=201)
 async def loop_claim(task_id: int, body: ClaimBody) -> dict[str, Any]:
     """途径②③：领取（竞争非独占，同 task ≤3）。agent 领取即入队执行。"""
     try:
-        loop = await poolmod.claim_loop(task_id, body.claimant_type, body.claimant, created_by=body.created_by)
+        loop = await poolmod.claim_loop(
+            task_id, body.claimant_type, body.claimant,
+            created_by=body.created_by, model_profile=body.model_profile)
     except poolmod.PoolError as exc:
         raise _pool_err(exc)
     return {"loop_id": loop["id"], "status": loop["status"]}
