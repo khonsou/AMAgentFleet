@@ -2,4 +2,6 @@ ARG BASE_IMAGE=am-agent-fleet-gateway-base:am-fleet-base-v2
 FROM ${BASE_IMAGE}
 
 COPY deploy/config.fleet.yaml /app/config.fleet.yaml
+COPY deploy/prepare_gateway_config.py /app/prepare_gateway_config.py
 COPY fleet_tools.py /app/fleet_tools.py
+COPY fleet-ops-protocol.json /app/fleet-ops-protocol.json

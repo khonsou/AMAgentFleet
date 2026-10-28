@@ -41,10 +41,10 @@ services:
       - -c
       - |
         set -e
-        python /app/prepare_gateway_config.py
+        cd backend
+        PYTHONPATH=/app:/app/backend uv run --no-sync python /app/prepare_gateway_config.py
         mkdir -p /etc/deerflow
         [ -f /etc/deerflow/extensions_config.json ] || echo '{}' > /etc/deerflow/extensions_config.json
-        cd backend
         PYTHONPATH=/app:/app/backend uv run --no-sync uvicorn app.gateway.app:app \
           --host 0.0.0.0 --port 8001 --timeout-graceful-shutdown 10
     environment:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 import httpx
@@ -18,6 +19,8 @@ from . import inbox, mcpservers, registry, scheduler, templates
 from . import pool as poolmod
 from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials
 from .db import GATEWAY, audit, init_db, pool
+
+log = logging.getLogger("fleet.control-plane")
 
 app = FastAPI(title="Agent Fleet Control Plane", version="0.2.0")
 _state: dict[str, asyncio.Task] = {}
@@ -37,11 +40,27 @@ fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
 
+async def _ensure_system_agent_with_retry(timeout: float = 120.0) -> None:
+    """同 pod 的网关可能晚于控制面就绪，启动阶段容忍短暂连接失败。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        try:
+            await registry.ensure_system_agent()
+            return
+        except (httpx.TransportError, registry.RegistryError) as exc:
+            retryable = isinstance(exc, httpx.TransportError) or getattr(exc, "status", 0) in (502, 503)
+            if not retryable or loop.time() >= deadline:
+                raise
+            log.warning("gateway not ready (%s); retrying system agent sync", exc)
+            await asyncio.sleep(2)
+
+
 @app.on_event("startup")
 async def startup() -> None:
     await init_db()
     # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
-    await registry.ensure_system_agent()
+    await _ensure_system_agent_with_retry()
     await ops_credentials.ensure_system_credential()
     # dispatcher consumer 懒启动（首次领取时拉起，见 dispatcher.enqueue_loop_run）
     _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())

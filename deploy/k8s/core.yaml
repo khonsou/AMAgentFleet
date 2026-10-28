@@ -67,11 +67,11 @@ spec:
           args:
             - |
               set -e
-              cp /app/config.fleet.yaml /app/backend/config.yaml
-              mkdir -p /fleet-data/deer-flow /fleet-data/deerflow-cfg
-              [ -f /fleet-data/deerflow-cfg/extensions_config.json ] || echo '{}' > /fleet-data/deerflow-cfg/extensions_config.json
               cd /app/backend
               export PYTHONPATH=/app:/app/backend
+              uv run --no-sync python /app/prepare_gateway_config.py
+              mkdir -p /fleet-data/deer-flow /fleet-data/deerflow-cfg
+              [ -f /fleet-data/deerflow-cfg/extensions_config.json ] || echo '{}' > /fleet-data/deerflow-cfg/extensions_config.json
               exec uv run --no-sync uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --timeout-graceful-shutdown 10
           ports:
             - name: gateway-http
@@ -95,6 +95,9 @@ spec:
               value: /fleet-data/deerflow-cfg/extensions_config.json
             - name: DEER_FLOW_AUTH_DISABLED
               value: "1"
+            # 与 control-plane 同 pod，走回环，避免依赖 Service endpoints 就绪
+            - name: FLEET_CONTROL_PLANE
+              value: http://127.0.0.1:8003
           resources:
             requests:
               cpu: 150m
@@ -134,7 +137,13 @@ spec:
                   name: am-agent-fleet-secrets
                   key: DATABASE_URL
             - name: FLEET_GATEWAY_URL
-              value: http://am-agent-fleet-gateway:8001
+              value: http://127.0.0.1:8001
+            - name: FLEET_CONTROL_PLANE_SELF_URL
+              value: http://127.0.0.1:8003
+            - name: FLEET_CONSOLE_URL
+              value: http://console-backend:8002
+            - name: FLEET_OPS_VAULT_KEY_PATH
+              value: /fleet-data/fleet-ops/ops-vault.key
             - name: FLEET_DEERFLOW_ROOT
               value: /fleet-data/deerflow-cfg
             - name: FLEET_MCP_SECRETS_DIR
