@@ -241,6 +241,10 @@ export default function ThreadDetailPage() {
                     <span className="ml-2 text-ink-3">{p}</span>
                   </span>
                   <a href={api.artifactUrl(tid, p)} download={name}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void api.downloadArtifact(tid, p).catch(() => window.alert('产物下载失败，请稍后重试'))
+                    }}
                     className="link-console shrink-0 font-mono text-[11px]">下载 ↓</a>
                 </div>
               )

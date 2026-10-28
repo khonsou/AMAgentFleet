@@ -1,0 +1,467 @@
+
+config_version: 55
+
+
+
+log_level: info
+
+logging:
+  enhance:
+    enabled: false
+    format: text
+
+
+
+token_usage:
+  enabled: true
+
+token_budget:
+  enabled: false                # Set to true to activate budget enforcement
+  max_tokens: 200000            # Total token limit (input + output) per run
+  max_input_tokens: null        # Optional separate input-only limit
+  max_output_tokens: null       # Optional separate output-only limit
+  warn_threshold: 0.8           # Warn at 80% of the budget
+  hard_stop_threshold: 1.0      # Force stop at 100% of the budget
+
+recursion_limit: 100
+
+max_recursion_limit: 1000
+
+
+
+models:
+  - name: deepseek-chat
+    display_name: DeepSeek Chat (官方)
+    use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
+    model: deepseek-chat
+    api_key: $DEEPSEEK_API_KEY
+    timeout: 600.0
+    max_retries: 2
+    max_tokens: 8192
+    context_window: 131072
+    request_admission:
+      requests_per_minute: 60
+      max_wait_seconds: 300
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+knowledge_base:
+  enabled: false
+  scope_selection_enabled: false
+
+
+tool_groups:
+  - name: web
+  - name: file:read
+  - name: file:write
+  - name: bash
+  - name: browser
+  - name: knowledge
+  - name: fleet
+
+
+tools:
+  - name: agent_spawn
+    group: fleet
+    use: fleet_tools:agent_spawn
+  - name: agent_message
+    group: fleet
+    use: fleet_tools:agent_message
+
+
+
+  - name: web_search
+    group: web
+    use: deerflow.community.ddg_search.tools:web_search_tool
+    max_results: 5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  - name: web_fetch
+    group: web
+    use: deerflow.community.jina_ai.tools:web_fetch_tool
+    timeout: 10
+
+
+
+
+
+
+
+  - name: image_search
+    group: web
+    use: deerflow.community.image_search.tools:image_search_tool
+    max_results: 5
+
+
+
+
+  - name: ls
+    group: file:read
+    use: deerflow.sandbox.tools:ls_tool
+
+  - name: read_file
+    group: file:read
+    use: deerflow.sandbox.tools:read_file_tool
+
+  - name: glob
+    group: file:read
+    use: deerflow.sandbox.tools:glob_tool
+    max_results: 200
+
+  - name: grep
+    group: file:read
+    use: deerflow.sandbox.tools:grep_tool
+    max_results: 100
+
+  - name: write_file
+    group: file:write
+    use: deerflow.sandbox.tools:write_file_tool
+
+  - name: str_replace
+    group: file:write
+    use: deerflow.sandbox.tools:str_replace_tool
+
+  - name: bash
+    group: bash
+    use: deerflow.sandbox.tools:bash_tool
+
+
+tool_search:
+  enabled: false
+  auto_promote_top_k: 3
+
+
+tool_output:
+  enabled: true
+  externalize_min_chars: 12000
+  preview_head_chars: 2000
+  preview_tail_chars: 1000
+  fallback_max_chars: 30000
+  fallback_head_chars: 8000
+  fallback_tail_chars: 3000
+  storage_subdir: ".tool-results"
+  exempt_tools:
+    - read_file
+    - read_file_tool
+  elide_superseded_writes: true
+  superseded_write_min_chars: 2000
+  keep_recent_writes: 1
+
+
+tool_artifacts:
+  enabled: true
+  max_entries: 100
+  detect_refs_in_text: true
+  inject_model_context: true
+  resolve_handles_in_args: true
+
+
+suggestions:
+  enabled: true
+  max_suggestions: 3
+
+
+
+input_polish:
+  enabled: true
+  max_chars: 4000
+  model_name: null
+
+
+
+loop_detection:
+  enabled: true
+  warn_threshold: 3
+  hard_limit: 5
+  window_size: 20
+  max_tracked_threads: 100
+  tool_freq_warn: 30
+  tool_freq_hard_limit: 50
+
+pii_redaction:
+  enabled: false
+
+
+
+
+read_before_write:
+  enabled: true
+  elide_blocked_payloads: true
+  elide_min_chars: 2000
+
+
+projects:
+  instructions_max_bytes: 8192
+  shelf_index_max_entries: 50
+  shelf_index_max_bytes: 4096
+  trash_retention_days: 30
+
+
+safety_finish_reason:
+  enabled: true
+
+uploads:
+  max_files: 10
+  max_file_size: 52428800    # 50 MiB
+  max_total_size: 104857600  # 100 MiB
+  auto_convert_documents: false
+  pdf_converter: auto
+
+sandbox:
+  use: deerflow.sandbox.local:LocalSandboxProvider
+  allow_host_bash: false
+
+  bash_output_max_chars: 20000
+  read_file_output_max_chars: 50000
+  ls_output_max_chars: 20000
+
+  bash_command_timeout: 600
+
+
+
+
+
+
+
+subagent_runtime:
+  max_running: 3
+  max_queued: 64
+  admission_policy: queue       # queue or reject when all slots are occupied
+  queue_timeout_seconds: 300
+
+
+subagent_batches:
+  enabled: false
+  poll_interval_seconds: 1
+  lease_seconds: 120
+  max_items_per_batch: 5000
+  default_max_live_items: 100
+  max_live_items_per_batch: 1000
+  default_max_running_items: 3
+  max_running_items_per_batch: 64
+  max_attempts: 3
+  max_result_chars: 100000
+  result_preview_max_chars: 2000
+
+verification:
+  receipts_enabled: true
+  receipts_render_mode: "delegation_only"
+  judge_enabled: false
+  judge_model_name: null
+
+
+
+
+skills:
+
+  container_path: /mnt/skills
+
+
+skill_scan:
+  enabled: true
+
+
+
+title:
+  enabled: true
+  max_words: 6
+  max_chars: 60
+  model_name: null # null = fast local fallback; set a model name to use LLM title generation
+
+
+task_continuity:
+  enabled: false
+  max_batches: 32
+  max_records_per_batch: 256
+  max_record_chars: 16000
+
+summarization:
+  enabled: true
+
+  model_name: null
+
+  trigger:
+    - type: tokens
+      value: 32000
+
+  keep:
+    type: messages
+    value: 10
+
+  trim_tokens_to_summarize: 15564
+
+  summary_prompt: null
+
+  skill_file_read_tool_names:
+    - read_file
+    - read
+    - view
+    - cat
+
+memory:
+  enabled: true
+  injection_enabled: true # Whether to inject memory into system prompt
+  shutdown_flush_timeout_seconds: 30.0
+  manager_class: deermem
+  mode: middleware
+  backend_config:
+    storage_path: ""            # empty = deer-flow base_dir (factory injects absolute runtime_home); a non-empty path is the root DIRECTORY (per-user memory under {storage_path}/users/{uid}/memory.json)
+    storage_class: file         # file (default) or a dotted MemoryStorage class path; invalid persistent backends fail fast
+    strict_user_scope: false    # set true in authenticated deployments after all callers propagate user_id
+    manifest_filename: memory.json # user-global JSON: version/revision/time + user/history only; no facts or fact index
+    file_lock_timeout_seconds: 10 # per-scope cross-process advisory lock timeout (single-machine local filesystem)
+    retrieval_adapter: fts5     # fts5 (default), empty to disable, or a dotted RetrievalPort factory(config)
+    debounce_seconds: 30 # Wait time before processing queued updates
+    queue_max_depth: 1000
+    model:                      # LLM for memory extraction; omit all fields = no extraction (non-LLM ops still work; an update raises)
+    max_facts: 100 # Maximum number of facts to store
+    fact_confidence_threshold: 0.7 # Minimum confidence for storing facts
+    fact_eviction_policy: confidence # confidence | hybrid-v1
+    fact_eviction_shadow_enabled: false
+    eviction_confidence_weight: 0.65
+    eviction_confirmation_weight: 0.25
+    eviction_access_weight: 0.10
+    eviction_confirmation_half_life_days: 90
+    eviction_access_half_life_days: 30
+    eviction_correction_reserved_fraction: 0.10
+    eviction_correction_reserved_max: 10
+    eviction_audit_max_entries: 200 # metadata-only events per user/agent scope; 0 disables
+    max_injection_tokens: 2000 # Maximum tokens for memory injection
+    token_counting: tiktoken
+    guaranteed_categories:
+      - correction
+    guaranteed_token_budget: 500
+    staleness_review_enabled: true
+    staleness_age_days: 90
+    staleness_min_candidates: 3
+    staleness_max_removals_per_cycle: 10
+    staleness_protected_categories:
+      - correction
+    staleness_max_lifetime_multiplier: 20.0   # creation cap = staleness_age_days x multiplier (90 x 20 = 1800d)
+    staleness_max_extension_days: 3650        # absolute ceiling on extended expected_valid_days (~10 years)
+    consolidation_enabled: false       # set true to opt into fact consolidation
+    consolidation_min_facts: 8         # min facts in one category to trigger review (3-30)
+    consolidation_max_groups_per_cycle: 3  # max groups merged per update cycle (1-10)
+    consolidation_max_sources: 8       # max source facts per consolidation group (2-20)
+
+blob_storage:
+  enabled: false               # master switch (inert until the producer follow-ups land)
+  backend: local_fs            # folder name under storage/backends/, or a dotted import path
+  backend_config: {}
+
+agents_api:
+  enabled: true
+
+skill_evolution:
+  enabled: true # AM Fleet: 允许 agent 经 skill_manage 沉淀持久化技能（默认模型审查 + 静态扫描双闸）
+  moderation_model_name: null # Model for LLM-based security scanning (null = use default model)
+  security_fail_closed: true # Moderation model unavailable: true blocks all writes; false allows non-executable content with a warning (executable is always blocked)
+
+
+database:
+  backend: postgres
+  postgres_url: $DATABASE_URL
+
+
+  pool_recycle: 300
+  command_timeout: 30
+  checkpoint_channel_mode: full
+  checkpoint_delta:
+    snapshot_frequency: 10
+  checkpoint_graph_cache:
+    accessor_graph_max: 64
+
+run_events:
+  backend: db
+  max_trace_content: 10240
+  track_token_usage: true
+
+agent_storage:
+  backend: file
+
+scheduler:
+  enabled: true
+  tool_enabled: false          # Offer schedule tools to authorized Gateway conversations
+  multi_instance: false       # Opt into lease-aware recovery across Gateway instances
+  poll_interval_seconds: 5
+  lease_seconds: 120
+  max_concurrent_runs: 3
+  max_concurrent_runs_per_user: 2
+  queue_timeout_seconds: 3600
+  min_once_delay_seconds: 60
+  recursion_limit: 1000
+
+mcp_tasks:
+  enabled: false
+  poll_interval_seconds: 5
+  lease_seconds: 120
+  max_concurrent_polls: 8
+  max_poll_backoff_seconds: 300
+  input_required_poll_interval_seconds: 60
+  tracking_degraded_after_errors: 3
+  max_result_bytes: 65536
+  result_preview_max_chars: 2000
+
+deployment:
+  multi_instance: false
+
+
+run_ownership:
+  lease_seconds: 30           # Seconds before a run lease expires if not renewed.
+  grace_seconds: 10           # Extra seconds past expiry before reclaiming an orphaned run.
+  heartbeat_enabled: false    # Set to true for GATEWAY_WORKERS > 1
+
+
+
+
+
+
+
+
+
+
+
+authorization:
+  enabled: false

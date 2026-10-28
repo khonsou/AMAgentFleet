@@ -9,7 +9,7 @@
  */
 
 const AUTH_ORIGIN: string = import.meta.env.VITE_AUTH_ORIGIN || 'https://auth.angrymiao.com'
-const CLIENT_ID: string = import.meta.env.VITE_OAUTH_CLIENT_ID || 'agent-fleet'
+const CLIENT_ID: string = import.meta.env.VITE_OAUTH_CLIENT_ID || 'am-agent-fleet'
 const SCOPE = 'profile phone'
 export const AUTH_ENABLED: boolean = import.meta.env.VITE_AUTH_ENABLED === '1'
 

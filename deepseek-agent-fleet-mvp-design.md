@@ -184,6 +184,8 @@
 | 观测 | 追踪 | **Langfuse 自托管**（DeerFlow 原生支持）+ OTel → SLS | — |
 | 蓝图 | 数据模型 | **照搬 ACP spec**：Project/Agent/Session/Inbox/Credential/ScheduledSession | — |
 
+ACK 仅增加测试部署路径（ADR-0012），不改变 ADR-0006 的生产默认 ECS + Compose；当前 ACK 部署为单副本验证形态。
+
 ---
 
 ## 6. Agent 定义与生命周期

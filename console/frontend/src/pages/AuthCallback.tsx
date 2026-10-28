@@ -2,34 +2,38 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { exchangeCode, takePendingAuth } from '@/lib/auth'
 
+const processedCallbacks = new Set<string>()
+
 /** DAO OAuth 回调页（/oauth/callback）：校验 state → exchange → 回跳原页面。 */
 export default function AuthCallbackPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const [err, setErr] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(() => {
+    const error = params.get('error')
+    if (error) return error === 'access_denied' ? '已取消登录' : '登录失败，请重试'
+    if (!params.get('code') || !params.get('state')) return '登录回调参数缺失，请重新登录'
+    return null
+  })
 
   useEffect(() => {
-    const error = params.get('error')
-    const code = params.get('code')
-    const state = params.get('state')
-    if (error) {
-      setErr(error === 'access_denied' ? '已取消登录' : '登录失败，请重试')
-      return
-    }
-    const pending = takePendingAuth()
-    if (!pending || !code || !state || state !== pending.state) {
-      // state 缺失/不匹配：立即终止，不交换 code（规格 §9）
-      setErr('登录状态校验失败，请重新登录')
-      return
-    }
-    exchangeCode(code, pending.code_verifier)
+    if (err !== null) return
+    const code = params.get('code')!
+    const state = params.get('state')!
+    const key = `${code}::${state}`
+    if (processedCallbacks.has(key)) return
+    processedCallbacks.add(key)
+
+    void Promise.resolve()
       .then(() => {
-        // 成功：清理地址栏 code/state，跳回同源 return_to
-        window.history.replaceState(null, '', pending.return_to)
-        navigate(pending.return_to, { replace: true })
+        const pending = takePendingAuth()
+        if (!pending) throw new Error('登录状态已过期，请重新登录')
+        if (state !== pending.state) throw new Error('登录状态校验失败，请重新登录')
+        return exchangeCode(code, pending.code_verifier).then(() =>
+          navigate(pending.return_to, { replace: true }),
+        )
       })
-      .catch((e: Error) => setErr(e.message))
-  }, [params, navigate])
+      .catch((e) => setErr(e instanceof Error ? e.message : '登录失败，请重新登录'))
+  }, [err, params, navigate])
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center">

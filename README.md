@@ -2,7 +2,7 @@
 
 面向财务、销售等业务场景的多 Agent 运行与管理平台。Agent 执行内核锁定 DeepSeek（OpenAI 兼容协议接入），平台负责 agent 的全生命周期：注册、版本化配置、拉起、休眠、唤醒续跑、销毁、授权与审计。
 
-> **上游与部署**：本项目基于 [DeerFlow](https://github.com/bytedance/deer-flow)（字节跳动开源，MIT）二次开发，执行底座（网关）来自 fork [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1`（上游 `89c9f08` 锁定，零改源码）。生产部署（阿里云 ECS + Compose）见 [deploy/DEPLOY.md](deploy/DEPLOY.md)——运维从该文件入手即可，无需开发环境。
+> **上游与部署**：本项目基于 [DeerFlow](https://github.com/bytedance/deer-flow)（字节跳动开源，MIT）二次开发，执行底座（网关）来自 fork [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v2`（包含 Fleet 的 `skill_evolution` 支持）。阿里云 ACK 测试部署与 ECS Compose 生产手顺见 [deploy/DEPLOY.md](deploy/DEPLOY.md)。
 
 ## 当前状态
 
@@ -16,7 +16,7 @@
 
 **P3b 已落地（2026-10-10）**：FAP v1 第三方 agent 接入面（[ADR-0011](docs/adr/0011-third-party-agent-access-protocol.md)，协议清单 [agent-api.md](docs/design/agent-api.md)）——`GET /api/meta` 免鉴权自发现 + `GET /api/agent-doc` 机器可读文档 + 全响应 `X-Protocol-Version`；写操作 `Idempotency-Key` 幂等（`fap_idempotency_keys` 表 24h 窗口，同键同 actor 回放、跨 actor 409）；per-PAT/IP 令牌桶限速（`429 + retry_after`，60/min 可配）；写操作 `source`/`actor` 自报字段透传 `audit_events.detail`；PAT 鉴权（复用 DeerFlow 原生 `personal_access_tokens` 同库表，scope 仅 read/write，控制面自校验；Console 新增 SETTINGS 页签发/吊销）。参考客户端 `examples/fap-quickstart.mjs`（零依赖 Node≥22，自发现→发起→领取→交付→轮询验收全链路实测通过，含幂等回放 demo）。**边界**：FAP 端点仅内网绑定，公网暴露待 P4 OIDC/PAT 全链路（ADR-0011 第 5 条）；loopback 无 PAT 放行仅限 Console 本机代理。
 
-**待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1`，基线 `89c9f08` 已按 blob 哈希验证）；阿里云首次部署实测（ECS 购买后按 DEPLOY.md §4）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
+**待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) 已锁 tag；当前部署基线为 `am-fleet-base-v2`）；阿里云首次部署实测（ECS 购买后按 DEPLOY.md §4）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
 
 ## Fleet Console（`console/`）
 
@@ -48,7 +48,7 @@
 | [docs/dev/p3b-fap-kickoff.md](docs/dev/p3b-fap-kickoff.md) | **P3b 开工说明（给 coder）**：FAP 接入面任务分解、现状资产地图、验收标准 |
 | [docs/dev/p2-scale-acceptance.md](docs/dev/p2-scale-acceptance.md) | **P2 规模化验收测试计划**：10 agent 注册、cron 准时、休眠/唤醒全链路 |
 | [AGENTS.md](AGENTS.md) | 仓库约定：目录结构、安全红线、开发规范（人类与 AI 编码助手共用） |
-| [deploy/DEPLOY.md](deploy/DEPLOY.md) | **生产部署手顺**（运维入口）：上游关系、compose、验收 checklist、2-ECS/RDS 变体、安全红线 |
+| [deploy/DEPLOY.md](deploy/DEPLOY.md) | **部署手顺**（运维入口）：ACK 测试发布、ECS Compose 生产部署、验收 checklist、安全红线 |
 | [RELEASE.md](RELEASE.md) | **发布说明**（运维入口）：仓库地图、按 tag 发版、底座升级、回滚、发布前检查清单 |
 
 ## ADR 一览
@@ -80,4 +80,4 @@
 
 ~~第一步（本周，1 人 3–5 天）~~：✅ [Spike 0001](docs/spikes/0001-deerflow-basic-lifecycle.md) 已完成（Go）；✅ Fleet Console v0 已可用（原 P4 内容提前，见上节）。
 
-**P2 阶段（主体已落地 2026-10-09）**：~~前置任务 fork DeerFlow 仓库锁版本（QA-8）~~ ✅（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) `am-fleet-base-v1`，生产 compose 按 tag 构建）；~~ADR-0008 开门验证~~ ✅（[Spike 0002](docs/spikes/0002-adrs0008-door-validation.md)）；Agent Registry（组织级包装层）+ Admin API + YAML 版本化 ✅；Dispatcher + 队列 + Inbox ✅（队列 PG 实现，Redis Stream 为部署期替换）；Scheduler(cron) ✅（薄层对账，不自建触发引擎）；Console agent 详情页"配置 + 对话"一页 ✅（QA-7）。~~P2 规模化验收~~ ✅（2026-10-10，[docs/dev/p2-scale-acceptance.md](docs/dev/p2-scale-acceptance.md)：10 agent 批量注册生命周期、cron 节奏 120.15s±、休眠/唤醒全链路，脚本 `scripts/p2-scale-acceptance.py` 可重放；途中修复休眠唤醒穿透与销毁 FK 两个 bug）。**剩余**：§12 第 1–4 条 QA（IM 选型、IdP、M2M 清单、首批 agent 清单，分别阻塞 P3/P4）。详见设计文档 §9。
+**P2 阶段（主体已落地 2026-10-09）**：~~前置任务 fork DeerFlow 仓库锁版本（QA-8）~~ ✅（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag 锁定；当前部署基线 `am-fleet-base-v2`）；~~ADR-0008 开门验证~~ ✅（[Spike 0002](docs/spikes/0002-adrs0008-door-validation.md)）；Agent Registry（组织级包装层）+ Admin API + YAML 版本化 ✅；Dispatcher + 队列 + Inbox ✅（队列 PG 实现，Redis Stream 为部署期替换）；Scheduler(cron) ✅（薄层对账，不自建触发引擎）；Console agent 详情页"配置 + 对话"一页 ✅（QA-7）。~~P2 规模化验收~~ ✅（2026-10-10，[docs/dev/p2-scale-acceptance.md](docs/dev/p2-scale-acceptance.md)：10 agent 批量注册生命周期、cron 节奏 120.15s±、休眠/唤醒全链路，脚本 `scripts/p2-scale-acceptance.py` 可重放；途中修复休眠唤醒穿透与销毁 FK 两个 bug）。**剩余**：§12 第 1–4 条 QA（IM 选型、IdP、M2M 清单、首批 agent 清单，分别阻塞 P3/P4）。详见设计文档 §9。

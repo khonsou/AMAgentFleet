@@ -1,0 +1,173 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: am-agent-fleet-gateway
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+spec:
+  selector:
+    app: am-agent-fleet-core
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: am-agent-fleet-control-plane
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+spec:
+  selector:
+    app: am-agent-fleet-core
+  ports:
+    - name: http
+      port: 8003
+      targetPort: 8003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: am-agent-fleet-core
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: am-agent-fleet-core
+  template:
+    metadata:
+      labels:
+        app: am-agent-fleet-core
+        app.kubernetes.io/part-of: am-agent-fleet
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: prepare-state
+          image: __BACKEND_IMAGE__
+          command:
+            - sh
+            - -c
+            - mkdir -p /fleet-data/deer-flow /fleet-data/deerflow-cfg /fleet-data/mcp-secrets && chgrp -R 1000 /fleet-data && chmod -R g+rwX /fleet-data
+          volumeMounts:
+            - name: fleet-state
+              mountPath: /fleet-data
+      containers:
+        - name: gateway
+          image: __GATEWAY_IMAGE__
+          imagePullPolicy: Always
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /app/config.fleet.yaml /app/backend/config.yaml
+              mkdir -p /fleet-data/deer-flow /fleet-data/deerflow-cfg
+              [ -f /fleet-data/deerflow-cfg/extensions_config.json ] || echo '{}' > /fleet-data/deerflow-cfg/extensions_config.json
+              cd /app/backend
+              export PYTHONPATH=/app:/app/backend
+              exec uv run --no-sync uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --timeout-graceful-shutdown 10
+          ports:
+            - name: gateway-http
+              containerPort: 8001
+          env:
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-secrets
+                  key: DEEPSEEK_API_KEY
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-secrets
+                  key: DATABASE_URL
+            - name: DEER_FLOW_PROJECT_ROOT
+              value: /app
+            - name: DEER_FLOW_HOME
+              value: /fleet-data/deer-flow
+            - name: DEER_FLOW_EXTENSIONS_CONFIG_PATH
+              value: /fleet-data/deerflow-cfg/extensions_config.json
+            - name: DEER_FLOW_AUTH_DISABLED
+              value: "1"
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              cpu: "4"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: gateway-http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: gateway-http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - name: fleet-state
+              mountPath: /fleet-data
+        - name: control-plane
+          image: __BACKEND_IMAGE__
+          imagePullPolicy: Always
+          workingDir: /app/control-plane
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
+          ports:
+            - name: cp-http
+              containerPort: 8003
+          env:
+            - name: FLEET_PG_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-secrets
+                  key: DATABASE_URL
+            - name: FLEET_GATEWAY_URL
+              value: http://am-agent-fleet-gateway:8001
+            - name: FLEET_DEERFLOW_ROOT
+              value: /fleet-data/deerflow-cfg
+            - name: FLEET_MCP_SECRETS_DIR
+              value: /fleet-data/mcp-secrets
+            - name: FAP_TRUSTED_PROXIES
+              value: 127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/templates
+              port: cp-http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/templates
+              port: cp-http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - name: fleet-state
+              mountPath: /fleet-data
+      imagePullSecrets:
+        - name: aliyun-reg-secret
+      volumes:
+        - name: fleet-state
+          persistentVolumeClaim:
+            claimName: am-agent-fleet-state

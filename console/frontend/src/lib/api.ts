@@ -3,10 +3,7 @@ import { getOauthSession, notifySessionExpired } from '@/lib/auth'
 const BASE = '/api/console'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers)
-  // 员工身份（DAO JWT）随请求附带；认证未启用时 session 恒为 null，零影响
-  const s = getOauthSession()
-  if (s) headers.set('Authorization', `Bearer ${s.accessToken}`)
+  const headers = authHeaders(init?.headers)
   const resp = await fetch(`${BASE}${path}`, { ...init, headers })
   if (resp.status === 401) notifySessionExpired() // 令牌过期 → 回登录门
   if (!resp.ok) {
@@ -14,6 +11,29 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${resp.status}: ${text.slice(0, 300)}`)
   }
   return resp.json()
+}
+
+function authHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init)
+  // 员工身份（DAO JWT）随请求附带；认证未启用时 session 恒为 null，零影响
+  const s = getOauthSession()
+  if (s) headers.set('Authorization', `Bearer ${s.accessToken}`)
+  return headers
+}
+
+async function download(url: string, filename: string): Promise<void> {
+  const resp = await fetch(url, { headers: authHeaders() })
+  if (resp.status === 401) {
+    notifySessionExpired()
+    return
+  }
+  if (!resp.ok) throw new Error(`产物下载失败（HTTP ${resp.status}）`)
+  const objectUrl = URL.createObjectURL(await resp.blob())
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
 export interface Overview {
@@ -79,6 +99,11 @@ export const api = {
   /** 产物下载地址（agent present_files 呈现的文件，经 Console 代理到网关） */
   artifactUrl: (tid: string, path: string) =>
     `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
+  downloadArtifact: (tid: string, path: string) =>
+    download(
+      `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
+      path.split('/').pop() || 'artifact',
+    ),
   messages: (tid: string) => req<unknown>(`/threads/${tid}/messages`),
   send: (tid: string, content: string) =>
     req<unknown>(`/threads/${tid}/messages`, {

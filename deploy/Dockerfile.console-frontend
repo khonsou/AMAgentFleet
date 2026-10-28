@@ -4,6 +4,12 @@ WORKDIR /fe
 COPY console/frontend/package.json console/frontend/package-lock.json ./
 RUN npm ci
 COPY console/frontend ./
+ARG VITE_AUTH_ENABLED=0
+ARG VITE_AUTH_ORIGIN=https://auth.angrymiao.com
+ARG VITE_OAUTH_CLIENT_ID=am-agent-fleet
+ENV VITE_AUTH_ENABLED=$VITE_AUTH_ENABLED \
+    VITE_AUTH_ORIGIN=$VITE_AUTH_ORIGIN \
+    VITE_OAUTH_CLIENT_ID=$VITE_OAUTH_CLIENT_ID
 RUN npm run build
 
 FROM nginx:alpine

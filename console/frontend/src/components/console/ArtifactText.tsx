@@ -16,6 +16,10 @@ export default function ArtifactText({ text, tid, files, className }: {
       {parts.map((part, i) =>
         files.includes(part) ? (
           <a key={i} href={api.artifactUrl(tid, part)} download={part.split('/').pop()}
+            onClick={(event) => {
+              event.preventDefault()
+              void api.downloadArtifact(tid, part).catch(() => window.alert('产物下载失败，请稍后重试'))
+            }}
             className="link-console font-mono text-[12.5px] underline decoration-led-green/60 underline-offset-2">
             {part}
           </a>

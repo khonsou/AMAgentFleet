@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=am-agent-fleet-gateway-base:am-fleet-base-v2
+FROM ${BASE_IMAGE}
+
+COPY deploy/config.fleet.yaml /app/config.fleet.yaml
+COPY fleet_tools.py /app/fleet_tools.py

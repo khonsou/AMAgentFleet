@@ -1,6 +1,36 @@
-# 生产部署手顺（阿里云 ECS + Docker Compose）
+# 部署手顺（阿里云 ACK 测试 / ECS Compose 生产）
 
 适用对象：运维团队。本文件是自足的——除两个 GitHub 仓库外不需要任何本机开发环境。
+
+## ACK 集群部署（测试环境）
+
+ACK 测试发布沿用 `E:\timeline\deploy\deploy.sh` 的流程：本地构建镜像、推送 ACR、server-side dry-run，再更新 ACK。它不替代 ADR-0006 的 ECS + Compose 生产部署。
+
+前置条件：WSL Bash、Docker、kubectl、Node.js、已登录 ACR，并能访问 context `kubernetes-admin-c72d7454d43804ccc87327b729e670ba4`。测试默认部署到 `angrymiao-test`，生产命名空间需显式传 `prod`。
+
+首次部署时复制并填写忽略入库的 `deploy/.env`（不要提交或分享该文件）：
+
+```bash
+cp deploy/.env.example deploy/.env
+# 填入 DEEPSEEK_API_KEY、DATABASE_URL；DAO issuer 默认 angrymiao
+bash deploy/deploy.sh test
+```
+
+K8s 的 `DATABASE_URL` 是完整远程 PostgreSQL DSN，保存在 namespace Secret `am-agent-fleet-secrets`；已有 Secret 会保留，不会覆盖。建议为 Fleet 单独创建 `deerflow` 数据库，并允许 ACK 网络访问及应用所需的建表/迁移权限；DSN 中的特殊字符需按 URL 编码。DSN 不要带 libpq 专用 `sslmode` 参数，应用使用 asyncpg。脚本不会输出 DSN。Gateway 镜像默认启用 DeerFlow `postgres` extra（安装 `asyncpg`），平台后端镜像包含 Scheduler 所需的 `croniter`。DAO JWT 公钥来自 `deploy/dao-jwt-public-key.pem`，issuer 为 `angrymiao`；脚本将它写入独立 Secret，Console backend 只读挂载公钥。脚本会构建 DeerFlow `am-fleet-base-v2` 网关镜像、平台后端与启用 OAuth 的 Console 前端镜像，推送到 `registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet`，随后等待状态 PVC 与 Deployment 就绪。
+
+Kubernetes 不会直接读取 `docker-compose.yml`。发布脚本按相同的构建定义生成镜像，再把镜像 tag 写入 `deploy/k8s/` 清单：网关从 `am-fleet-base-v2` 构建并把 `deploy/config.fleet.yaml` 和 `fleet_tools.py` 加入镜像；control-plane 与 Console backend 共用 `Dockerfile.fleet-python`；前端用 `Dockerfile.console-frontend`。
+
+ACK 部署不创建 PostgreSQL Pod、不拉取 PostgreSQL 镜像，也不创建数据库 PVC；数据库数据由远程 PostgreSQL 服务负责。仍保留一块 20Gi `am-agent-fleet-state` PVC（StorageClass `am-agent-fleet-ssd-retain`：`cloud_ssd`、固定可用区 `cn-shenzhen-a`、立即绑定、删除 PVC 后云盘数据保留），挂到 gateway/control-plane Pod，保存 DeerFlow 的 `.deer-flow` 运行文件、agent memory/facts，以及控制面和网关共享的 MCP 配置。部署脚本会为 `ecs.n1.xlarge` 节点补齐 ACK CSI 的 SSD 能力标签；该实例类型及现有工作负载均已验证支持此类磁盘。磁盘 I/O 对这类文件状态足够，节点池目前都在同一可用区。Pod 被重建时这些文件仍保留；前端、后端代码随镜像发布，不需要数据盘。当前 MCP 凭据实现会落文件，因此 Vault/KMS 接入前不要录入业务凭据。
+
+ACK 测试资源起始值：gateway request `150m CPU / 384Mi`、limit `4 CPU / 1Gi`；control-plane request `50m CPU / 128Mi`、limit `1 CPU / 512Mi`；Console backend request `100m CPU / 128Mi`、limit `500m CPU / 512Mi`；Console web request `25m CPU / 32Mi`、limit `200m CPU / 128Mi`。这些是单副本测试值；当前 Gateway 空闲约 254Mi，活动任务峰值需继续按指标复核。
+
+`docker-compose.yml` 仍保留本机 PostgreSQL 服务供 ECS/单机 Compose 使用；运行 `docker compose up` 仍会拉取 `postgres:16-alpine`。这不影响 ACK 发布脚本，K8s 清单只连接 `DATABASE_URL` 指向的远程数据库。
+
+部署脚本会在鉴权配置和 TLS Secret 校验通过后创建 HTTPS Ingress。域名固定为 `fleet.angrymiao.com`，写在 `deploy/k8s/ingress.yaml`；DAO Client 使用 `agent-fleet`，回调地址为 `https://fleet.angrymiao.com/oauth/callback`，授权服务为 `https://auth.angrymiao.com`，scope 为 `profile phone`，并使用 PKCE。员工登录由 Console backend 验证 RS256 JWT；access token 只保存在浏览器内存中。无需配置办公出口 IP。`prod` 使用 `angrymiao-prod`，需要独立提供 DeepSeek key 和远程数据库 DSN；若 ACR/TLS Secret 不存在，脚本会从 `angrymiao-test` 复制。
+
+当前部署把 gateway 与 control-plane 放在同一个 Pod，共享 DeerFlow 状态和 MCP 配置文件；单副本用于测试，不做自动扩缩。DeerFlow 文件状态存于集群云盘；远程 PostgreSQL 按其服务策略加密与备份。未完成 Vault/KMS 侧 MCP 凭据托管前，不要在该环境注册业务系统凭据。
+
+升级/回滚以镜像 tag 为单位：设置 `IMAGE_TAG` 可复用指定版本；默认从 Git commit 派生 tag，工作区有改动时追加时间戳。`kubectl rollout undo deployment/<name> -n angrymiao-test` 可回滚单个 Deployment。脚本不会删除 PVC。
 
 ## 0. 系统组成与上游关系
 
@@ -10,11 +40,11 @@
 
 | 组件 | 来源 | 说明 |
 |------|------|------|
-| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v1` | fork 仅作本项目的部署基线镜像来源，不向上游贡献；基线 = 上游 `89c9f08`（2026-10-08），验证方式见 fork 的 FLEET.md |
+| 网关（执行底座） | [khonsou/deer-flow](https://github.com/khonsou/deer-flow) tag `am-fleet-base-v2` | 包含 Fleet skill evolution 支持；配置文件与 tag 同步，见 ADR-0013 |
 | control-plane / Console / fleet_tools | 本仓库 | 平台自有代码 |
 | PostgreSQL | `postgres:16-alpine` 官方镜像 | ECS 自建（容器），换 RDS 见 §5.3 |
 
-版本锁定机制：compose 里网关镜像按 **git tag** 构建（`am-fleet-base-v1`）。
+版本锁定机制：compose 与 ACK 网关镜像按 **git tag** 构建（`am-fleet-base-v2`）。
 升级底座 = fork 仓库 rebase 到新上游基线 → 打新 tag → 改 compose 里的 tag →
 `docker compose up -d --build gateway`，之后必须重过 §4 验收。
 
@@ -116,22 +146,22 @@ docker compose exec control-plane python -c "import urllib.request;print(urllib.
 ### 5.4 离线/内网构建
 
 网关镜像构建需访问 github.com（git context）。纯内网环境：在有网机器
-`docker build https://github.com/khonsou/deer-flow.git#refs/tags/am-fleet-base-v1 -f backend/Dockerfile`
+`docker build https://github.com/khonsou/deer-flow.git#refs/tags/am-fleet-base-v2 -f backend/Dockerfile`
 后 `docker save` 搬运；compose 中注释掉 `build:` 段并引用导入的镜像 tag。
 
 ## 6. 安全红线（当前阶段）
 
-1. **网关鉴权处于关闭状态**（`DEER_FLOW_AUTH_DISABLED=1`，MVP 决策；P4 OIDC
-   落地后改 0）。在此之前，安全组来源白名单是唯一防线，不得放宽。
+1. `DEER_FLOW_AUTH_DISABLED=1` 仅用于集群内 Gateway。Gateway 与 control-plane 使用
+   `ClusterIP`，Ingress 只指向 Console web；浏览器访问 `/api/console/*` 必须先通过 DAO
+   OAuth JWT 验证。不要新增 Gateway 的公网 Ingress。
 2. `.env` 含密钥，永不入库、不入镜像（.dockerignore 已排除）。
-3. `PG_PASSWORD` 轮转：改 `.env` 后 `docker compose up -d`（pg-data 卷中的旧
-   口令不会自动同步，需进库 `ALTER USER` 或重建数据卷）。
+3. `PG_PASSWORD` 只供本地 Docker Compose PostgreSQL 使用，ACK 连接远程 PostgreSQL 时不读取它。
 4. 数据库与 `deer-flow-home` 卷含全部业务数据与凭据痕迹，纳入备份与加密盘策略。
 
 ## 6.1 员工登录（DAO OAuth，angrymiao-auth）
 
-员工（人）侧的鉴权已落地（与 timeline 同一接入规格：Authorization Code + PKCE
-纯前端整页跳转，token 纯内存不落 localStorage）：
+员工（人）侧的鉴权按 Timeline 的 Authorization Code + PKCE 接入：整页跳转，
+access token 纯内存保存，不写 localStorage：
 
 ```text
 员工浏览器 → DAO 授权页（auth.angrymiao.com）→ /oauth/callback → 内存会话
@@ -142,36 +172,21 @@ docker compose exec control-plane python -c "import urllib.request;print(urllib.
 
 启用步骤：
 
-1. **DAO 侧登记 Client**：`client_id=agent-fleet`，`redirect_uris` 加
-   `https://<fleet-host>:<FLEET_PORT>/oauth/callback`，`allowed_scopes: profile phone`，
-   `require_pkce: true`（参照 timeline Client 的登记方式）。
-2. **取验签材料**：DAO 提供 RSA 公钥 PEM 与 issuer 值（R4）。
-3. **compose 环境**（console-backend 服务）：
+1. DAO Client：`client_id=agent-fleet`，回调 `https://fleet.angrymiao.com/oauth/callback`，
+   `allowed_scopes: profile phone`，`require_pkce: true`。当前生产 Auth 配置已登记该 client 和回调。
+2. Console backend 使用 `deploy/dao-jwt-public-key.pem` 和 issuer `angrymiao` 本地验签，
+   不调用 introspection。部署脚本固定启用前后端鉴权并将验签材料放入 K8s Secret。
+3. 只有 `/api/console/health` 为容器探针豁免；产物下载通过带 Bearer JWT 的 fetch+blob
+   完成，同样受鉴权保护。
 
-   ```yaml
-   FLEET_AUTH_ENABLED: "1"
-   FLEET_AUTH_JWT_PUBLIC_KEY_PATH: /run/secrets/dao-jwt-pubkey.pem   # 或 _PEM 文本
-   FLEET_AUTH_JWT_ISSUER: <issuer>
-   ```
-
-   前端构建参数（Dockerfile.console-frontend 的 build args / VITE_ 变量）：
-   `VITE_AUTH_ENABLED=1`、`VITE_AUTH_ORIGIN=https://auth.angrymiao.com`、
-   `VITE_OAUTH_CLIENT_ID=agent-fleet`。
-
-4. 本地端到端验证：`node scripts/mock-oauth.mjs`（零依赖 mock，打印所需环境变量），
-   按其输出起 console-backend + vite 即可完整走一遍登录闭环。
-
-**过渡豁免**（启用鉴权后仍免 JWT 的两个端点，后续收口）：`/api/console/health`
-（容器健康检查）、`/api/console/threads/*/artifacts/*`（产物下载是 `<a download>`
-直链不带 Authorization；改 fetch+blob 下载后可纳入保护）。
 **FAP 面不受影响**：`/api/*`（PAT）与内部 `_cp` 直连链路口径不变。
 
-## 6.2 公网暴露前必须完成（P4 收口清单）
+## 6.2 公网入口检查
 
-- [ ] DAO Client 登记 + compose 启用 §6.1 环境（员工登录生效）
-- [ ] 网关 `DEER_FLOW_AUTH_DISABLED=0`（依赖网关侧 OIDC/PAT 落地）
-- [ ] 产物下载改 fetch+blob 后取消 artifacts 豁免
-- [ ] 安全组白名单收窄到不再依赖「GUI 无鉴权」
+- DNS `fleet.angrymiao.com` 指向 ACK Ingress 地址，`am-tls` 证书覆盖该域名。
+- DAO Client 已登记精确回调 `https://fleet.angrymiao.com/oauth/callback`。
+- Console frontend 构建参数和 backend JWT 验签配置由 `deploy/deploy.sh` 一并启用。
+- Gateway/control-plane 不配置公网 Ingress；Console `/api/console/*`（含产物下载）由 DAO JWT 保护。
 
 ## 7. 常见操作
 
