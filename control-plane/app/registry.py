@@ -165,6 +165,21 @@ async def apply_agent(name: str, doc: dict[str, Any]) -> dict[str, Any]:
     return dict(row)
 
 
+async def ensure_system_agent() -> None:
+    """启动时恢复内置 Ops Agent：Gateway 必须注册，Registry 按镜像 YAML 对账。
+
+    Gateway 配置在独立数据卷中，可能因冷启动或卷重建而丢失，因此每次启动都
+    同步 Gateway；仅在 Registry 缺失或摘要不一致时更新元数据，避免重启空涨版本。
+    """
+    doc = load_yaml_doc(SYSTEM_AGENT_NAME)
+    await sync_to_gateway(SYSTEM_AGENT_NAME, doc)
+    async with (await pool()).acquire() as conn:
+        current_sha = await conn.fetchval(
+            "SELECT yaml_sha256 FROM fleet_agents WHERE name=$1", SYSTEM_AGENT_NAME)
+    if current_sha != sha256_doc(doc):
+        await upsert_registry_row(SYSTEM_AGENT_NAME, doc)
+
+
 async def remove_agent(name: str) -> None:
     """真销毁：YAML + 网关配置 + 注册表行全删（与前端确认框"元数据将被清除"一致）。
 

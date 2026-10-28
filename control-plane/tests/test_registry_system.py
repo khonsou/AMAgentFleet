@@ -53,6 +53,53 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
             result = await registry.apply_agent(registry.SYSTEM_AGENT_NAME, doc)
         self.assertEqual(result["config_version"], 2)
 
+    async def test_startup_restores_system_agent_before_credential(self):
+        ensure_agent = AsyncMock()
+        ensure_credential = AsyncMock()
+        with patch("app.main.init_db", new=AsyncMock()), \
+                patch("app.main.registry.ensure_system_agent", new=ensure_agent), \
+                patch("app.main.ops_credentials.ensure_system_credential", new=ensure_credential), \
+                patch("app.main.scheduler.sync_loop", new=AsyncMock()), \
+                patch("app.main.inbox.flush_loop", new=AsyncMock()):
+            await main.startup()
+            await main.shutdown()
+        ensure_agent.assert_awaited_once_with()
+        ensure_credential.assert_awaited_once_with()
+
+    async def test_system_agent_always_syncs_gateway_without_version_churn(self):
+        doc = {"metadata": {"name": registry.SYSTEM_AGENT_NAME}}
+        sync = AsyncMock()
+        upsert = AsyncMock()
+        with patch("app.registry.load_yaml_doc", return_value=doc), \
+                patch("app.registry.sync_to_gateway", new=sync), \
+                patch("app.registry.upsert_registry_row", new=upsert), \
+                patch("app.registry.pool", new=AsyncMock()) as db_pool:
+            conn = AsyncMock()
+            conn.fetchval.return_value = registry.sha256_doc(doc)
+            acquire = type("Acquire", (), {
+                "__aenter__": AsyncMock(return_value=conn), "__aexit__": AsyncMock(),
+            })()
+            db_pool.return_value.acquire = lambda: acquire
+            await registry.ensure_system_agent()
+        sync.assert_awaited_once_with(registry.SYSTEM_AGENT_NAME, doc)
+        upsert.assert_not_awaited()
+
+    async def test_system_agent_repairs_missing_registry_row(self):
+        doc = {"metadata": {"name": registry.SYSTEM_AGENT_NAME}}
+        upsert = AsyncMock()
+        with patch("app.registry.load_yaml_doc", return_value=doc), \
+                patch("app.registry.sync_to_gateway", new=AsyncMock()), \
+                patch("app.registry.upsert_registry_row", new=upsert), \
+                patch("app.registry.pool", new=AsyncMock()) as db_pool:
+            conn = AsyncMock()
+            conn.fetchval.return_value = None
+            acquire = type("Acquire", (), {
+                "__aenter__": AsyncMock(return_value=conn), "__aexit__": AsyncMock(),
+            })()
+            db_pool.return_value.acquire = lambda: acquire
+            await registry.ensure_system_agent()
+        upsert.assert_awaited_once_with(registry.SYSTEM_AGENT_NAME, doc)
+
 
 if __name__ == "__main__":
     unittest.main()

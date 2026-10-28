@@ -70,7 +70,7 @@ cp .env.example .env
 # 3) 启动（首次构建网关镜像约 10–20 分钟，含 uv/pnpm 依赖）
 docker compose up -d --build
 
-# 4) 观察初始化（control-plane 首次启动自动建表）
+# 4) 观察初始化（control-plane 自动建表、注册 fleet-ops-01 并初始化系统 PAT）
 docker compose logs -f control-plane
 ```
 
@@ -110,10 +110,11 @@ docker compose ps                    # 全部 (healthy)
 # 2. 网关
 curl -s http://<ECS_IP>:8080/ >/dev/null && echo web-ok
 docker compose exec gateway python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8001/health').status)"
-# 3. 平台 API
-docker compose exec control-plane python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8003/api/templates').status)"
-# 4. 业务冒烟（浏览器打开 http://<ECS_IP>:8080 → Registry → 注册 website-reader 模板
-#    （填目标站点域名）→ 拉起 → 对话派发一个读取任务 → Fleet 看板验收）
+# 3. 平台 API 与内置 Ops Agent（Registry 和 Gateway 两侧都必须存在）
+docker compose exec control-plane python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8003/api/agents/fleet-ops-01').status)"
+docker compose exec gateway python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8001/api/agents/fleet-ops-01').status)"
+# 4. 业务冒烟（浏览器打开 http://<ECS_IP>:8080 → Registry 应显示 Fleet 操作助手；
+#    浮窗查询待分配任务应有明确回答；再注册 website-reader 模板并派发读取任务）
 ```
 
 验证标准对应 spike 0003 回归项：agent 拉起、YAML 下发网关、任务派发 token 落库、

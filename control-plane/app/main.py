@@ -40,6 +40,8 @@ fap.set_feature_flag("pat_auth", True)
 @app.on_event("startup")
 async def startup() -> None:
     await init_db()
+    # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
+    await registry.ensure_system_agent()
     await ops_credentials.ensure_system_credential()
     # dispatcher consumer 懒启动（首次领取时拉起，见 dispatcher.enqueue_loop_run）
     _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())
@@ -489,7 +491,10 @@ class DeliverBody(BaseModel):
 @app.post("/api/loops/{loop_id}/deliver")
 async def loop_deliver(loop_id: int, body: DeliverBody) -> dict[str, str]:
     """人交付（人机同构）：内容与 agent 产出同构入 deliverable。"""
-    await poolmod.human_deliver(loop_id, body.content, author=body.author)
+    try:
+        await poolmod.human_deliver(loop_id, body.content, author=body.author)
+    except poolmod.PoolError as exc:
+        raise _pool_err(exc)
     return {"status": "delivered"}
 
 
