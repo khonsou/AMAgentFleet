@@ -5,7 +5,8 @@ import { api, type AgentDetail, type AgentTask } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
-import { StatusPill, taskStatusMeta } from '@/components/console/Status'
+import { StatusPill } from '@/components/console/Status'
+import { taskStatusMeta } from '@/components/console/statusMeta'
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '—'

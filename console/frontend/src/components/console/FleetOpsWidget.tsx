@@ -5,31 +5,11 @@ import { api, type ChatMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Led } from '@/components/console/Status'
+import { normalizeOpsMessages } from './opsMessages'
 
 const STORAGE_KEY = 'fleet-ops-thread-id'
 const AGENT_ID = 'fleet-ops-01'
 const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
-
-function extractText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content.map((part) => typeof part === 'string' ? part : String(part?.text ?? '')).join('')
-  }
-  return ''
-}
-
-export function normalizeOpsMessages(raw: unknown): ChatMessage[] {
-  const list = Array.isArray(raw) ? raw : ((raw as { messages?: unknown[] })?.messages ?? [])
-  return (list as Record<string, unknown>[]).flatMap((message) => {
-    const inner = (message.content && typeof message.content === 'object' ? message.content : message) as Record<string, unknown>
-    const type = String(inner.type ?? message.event_type ?? '')
-    const name = String(inner.name ?? message.name ?? '')
-    const role = ['human', 'user', 'llm.human.input'].includes(type) ? 'human'
-      : ['ai', 'assistant', 'llm.ai.response'].includes(type) || (type === 'tool' && name === 'ask_clarification') ? 'ai' : null
-    const content = extractText(inner.content)
-    return role && content.trim() ? [{ role, content }] : []
-  })
-}
 
 /** 首页自然语言操作入口。业务动作统一由已注册的 Fleet Ops Agent 与协议执行。 */
 export default function FleetOpsWidget() {
