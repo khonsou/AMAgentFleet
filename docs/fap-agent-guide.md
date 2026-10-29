@@ -54,7 +54,8 @@ curl -X POST http://<host>:<port>/api/tasks \
 - `source` / `actor`：自报来源与执行者（强烈建议）——原样透传进审计日志，
   不出填报进不去审计链。
 - `Idempotency-Key`：写操作都带。网络重试同键返回首次响应
-  （`X-Idempotent-Replay: true`），不会重复建任务；同键跨 actor 冲突 409。
+  （`X-Idempotent-Replay: true`），不会重复建任务；首次请求仍在执行时返回
+  `409 + Retry-After: 1`，稍后以相同请求重试；同键跨 actor 或同键不同请求冲突 409。
 - 返回 `201`，`task_id` + `pool_status=open`（开放领取，进任务池）。
 
 #### 可选：为 Agent 实例选择模型

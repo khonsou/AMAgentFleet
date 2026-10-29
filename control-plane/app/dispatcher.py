@@ -5,7 +5,8 @@
 - loop 生命周期：claimed →（消费）running → delivered（交付自动捕获）；
   异常 → 回 claimed 记 error（可重跑）；超时 → 回 claimed（崩溃遗留，重投递幂等）。
 - 协作纪律（ADR-0004）不变：深度 ≤3 沿 task.parent_task_id 链；同链 agent 重复即拒环。
-- 打回续跑：return_loop 以 resume_comment 重新入队，gateway 调用带同 thread_id 水合。
+- 打回续跑：resume_comment 随 Loop 落库，重启/拒收不丢；成功交付后清除。
+- 启动恢复 claimed/returned；running 周期心跳，reaper 窗口至少 2×run 超时。
 """
 
 from __future__ import annotations
@@ -26,30 +27,45 @@ logger = logging.getLogger("fleet.dispatcher")
 
 MAX_DEPTH = 3
 RUN_TIMEOUT = 30 * 60
+REAPER_TIMEOUT = max(
+    2 * RUN_TIMEOUT,
+    int(os.environ.get("FLEET_REAPER_TIMEOUT", str(2 * RUN_TIMEOUT))),
+)
+HEARTBEAT_INTERVAL = max(1, int(os.environ.get("FLEET_HEARTBEAT_INTERVAL", "60")))
 
 _QUEUE: asyncio.Queue[int] = asyncio.Queue()
 _consumers_started = False
+_background_enabled = False
+_worker_tasks: set[asyncio.Task] = set()
 WORKERS = max(1, int(os.environ.get("FLEET_DISPATCHER_WORKERS", "3")))  # 并行执行竞争 loop
 
 _THREAD_UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-async def enqueue_loop_run(loop_id: int, resume_comment: str | None = None) -> None:
-    """领取/打回后入队。resume_comment 存内存映射，消费时追加为新的用户消息。"""
+def set_background_enabled(enabled: bool) -> None:
+    """由 startup 的单例门闩结果统一控制懒启动。"""
+    global _background_enabled
+    _background_enabled = enabled
+
+
+def _start_consumers() -> None:
     global _consumers_started
-    if resume_comment:
-        _resume_comments[loop_id] = resume_comment
+    if _consumers_started or not _background_enabled:
+        return
+    _consumers_started = True
+    loop = asyncio.get_running_loop()
+    for _ in range(WORKERS):
+        task = loop.create_task(_consumer())
+        _worker_tasks.add(task)
+        task.add_done_callback(_worker_tasks.discard)
+    logger.info("dispatcher started: %s consumer(s)", WORKERS)
+
+
+async def enqueue_loop_run(loop_id: int) -> None:
+    """领取/打回后入队；standby 可保留队列，但不会启动本地消费者。"""
     await _QUEUE.put(loop_id)
-    if not _consumers_started:
-        _consumers_started = True
-        loop = asyncio.get_running_loop()
-        for i in range(WORKERS):
-            loop.create_task(_consumer())
-        logger.info("dispatcher started: %s consumer(s)", WORKERS)
-
-
-_resume_comments: dict[int, str] = {}
+    _start_consumers()
 
 
 # ---------------------------------------------------------------- 执行
@@ -72,15 +88,16 @@ async def _chain(task_id: int) -> list[tuple[int, str | None]]:
 
 async def _run_loop(loop_id: int) -> None:
     async with (await pool()).acquire() as conn:
-        loop = await conn.fetchrow(
-            "SELECT * FROM fleet_task_loops WHERE id=$1 FOR UPDATE", loop_id)
-        if loop is None or loop["status"] not in ("claimed", "returned"):
-            return
-        if loop["claimant_type"] != "agent":
-            return  # human loop 不由 dispatcher 执行
-        task = await conn.fetchrow("SELECT * FROM fleet_tasks WHERE id=$1", loop["task_id"])
-        await conn.execute(
-            "UPDATE fleet_task_loops SET status='running', updated_at=now() WHERE id=$1", loop_id)
+        async with conn.transaction():
+            loop = await conn.fetchrow(
+                "SELECT * FROM fleet_task_loops WHERE id=$1 FOR UPDATE", loop_id)
+            if loop is None or loop["status"] not in ("claimed", "returned"):
+                return
+            if loop["claimant_type"] != "agent":
+                return  # human loop 不由 dispatcher 执行
+            task = await conn.fetchrow("SELECT * FROM fleet_tasks WHERE id=$1", loop["task_id"])
+            await conn.execute(
+                "UPDATE fleet_task_loops SET status='running', updated_at=now() WHERE id=$1", loop_id)
     task = dict(task)
     task_id = task["id"]
     agent = loop["claimant"]
@@ -101,8 +118,9 @@ async def _run_loop(loop_id: int) -> None:
         return
 
     input_text = task["input"]
-    if loop_id in _resume_comments:
-        input_text = f"{input_text}\n\n【验收退回意见】{_resume_comments.pop(loop_id)}\n请修正后重新交付。"
+    if loop["resume_comment"]:
+        input_text = (
+            f"{input_text}\n\n【验收退回意见】{loop['resume_comment']}\n请修正后重新交付。")
     # 起跑前即确定 thread_id 并落库：执行中途 agent_spawn 靠它反解父 task 挂树
     # （若等跑完才从网关返回写入，指挥官 run 中途 spawn 时反解必落空）。
     thread_id = loop["thread_id"] or str(uuid.uuid4())
@@ -123,6 +141,7 @@ async def _run_loop(loop_id: int) -> None:
     if loop.get("model_profile"):
         body["context"] = {"model_name": loop["model_profile"]}
 
+    heartbeat = asyncio.create_task(_heartbeat(loop_id))
     try:
         async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60, trust_env=False) as client:
             r = await client.post("/api/runs/wait", json=body)
@@ -139,28 +158,46 @@ async def _run_loop(loop_id: int) -> None:
         artifacts = _extract_artifacts(result, thread_id)
         if artifacts:
             preview = (preview or "") + "\n\n📎 产物：\n" + "\n".join(f"- {a}" for a in artifacts)
-        # 交付自动捕获 → task 入 review
+        # 交付自动捕获 → task 入 review。状态守卫放在 UPDATE 内，避免
+        # “先查状态再交付”与验收／归档并发时重新复活 Loop。
         from . import pool as poolmod
-        # 并发保护：若 task 已验收（done）或 loop 已被归档，丢弃迟到结果
-        async with (await pool()).acquire() as conn:
-            cur = await conn.fetchrow("SELECT status, task_id FROM fleet_task_loops WHERE id=$1", loop_id)
-            task_ps = await conn.fetchval("SELECT pool_status FROM fleet_tasks WHERE id=$1", cur["task_id"])
-        if cur["status"] in ("accepted", "archived") or task_ps == "done":
-            await audit("loop.late_result_dropped", detail={"loop_id": loop_id})
+        try:
+            await poolmod.deliver_loop(
+                loop_id, preview or "(无文本交付)", tokens=tokens, thread_id=thread_id)
+        except poolmod.PoolError as exc:
+            await audit("loop.late_result_dropped",
+                        detail={"loop_id": loop_id, "reason": exc.message})
             return
-        await poolmod.deliver_loop(loop_id, preview or "(无文本交付)", tokens=tokens, thread_id=thread_id)
         await audit("loop.completed", agent_name=agent, tokens=tokens,
                     detail={"loop_id": loop_id, "task_id": task_id, "thread_id": thread_id})
     except Exception as exc:  # noqa: BLE001
         logger.exception("loop run failed: %s", loop_id)
         await _reset_loop(loop_id, str(exc)[:500])
+    finally:
+        heartbeat.cancel()
+        await asyncio.gather(heartbeat, return_exceptions=True)
+
+
+async def _heartbeat(loop_id: int) -> None:
+    """长任务运行期间续租；仅 running 可更新，交付/归档后不再触碰。"""
+    while True:
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
+        try:
+            async with (await pool()).acquire() as conn:
+                await conn.execute(
+                    "UPDATE fleet_task_loops SET updated_at=now() WHERE id=$1 AND status='running'",
+                    loop_id)
+        except Exception:  # noqa: BLE001
+            # 心跳故障不中断网关执行；reaper 窗口仍兜底真正失联的 Loop。
+            logger.exception("loop heartbeat failed: %s", loop_id)
 
 
 async def _reset_loop(loop_id: int, error: str) -> None:
-    """异常/拒绝：回 claimed（可重跑），error 落库。"""
+    """异常/拒绝：仅有效执行态可回 claimed，归档／已验收 Loop 不得复活。"""
     async with (await pool()).acquire() as conn:
         await conn.execute(
-            "UPDATE fleet_task_loops SET status='claimed', error=$2, updated_at=now() WHERE id=$1",
+            """UPDATE fleet_task_loops SET status='claimed', error=$2, updated_at=now()
+               WHERE id=$1 AND status IN ('claimed','running','returned')""",
             loop_id, error,
         )
 
@@ -218,16 +255,48 @@ def _extract_preview(result: dict, limit: int = 3900) -> str | None:
     return None
 
 
+async def recover_claimed() -> int:
+    """leader 启动时恢复已提交但未入队的 agent Loop；意见直接随 DB 行恢复。"""
+    if not _background_enabled:
+        return 0
+    async with (await pool()).acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id FROM fleet_task_loops
+               WHERE claimant_type='agent' AND status IN ('claimed','returned')
+               ORDER BY id""")
+    for row in rows:
+        await _QUEUE.put(row["id"])
+    if rows:
+        _start_consumers()
+    logger.info("dispatcher startup recovery: %s loop(s)", len(rows))
+    return len(rows)
+
+
 async def consumer_loop() -> None:
-    """兼容入口：启动全部 worker（首单领取时也会懒启动）。"""
-    global _consumers_started
-    if not _consumers_started:
-        _consumers_started = True
-        loop = asyncio.get_running_loop()
-        for i in range(WORKERS):
-            loop.create_task(_consumer())
-        logger.info("dispatcher started: %s consumer(s)", WORKERS)
+    """兼容入口：仅 leader 可启动 worker，standby 调用直接返回。"""
+    if not _background_enabled:
+        logger.warning("dispatcher consumer 未启动：当前实例未持有单例门闩")
+        return
+    _start_consumers()
     await asyncio.Future()  # 常驻
+
+
+async def shutdown() -> None:
+    """停止并回收本进程全部 worker；未入队 Loop 由下次启动恢复。"""
+    global _consumers_started
+    set_background_enabled(False)
+    _consumers_started = False
+    tasks = list(_worker_tasks)
+    _worker_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    while True:
+        try:
+            _QUEUE.get_nowait()
+        except asyncio.QueueEmpty:
+            break
 
 
 async def _consumer() -> None:
@@ -239,13 +308,14 @@ async def _consumer() -> None:
         if loop_id is not None:
             await _run_loop(loop_id)
             continue
-        # 空闲时回收超时 running（崩溃遗留）→ 回 claimed 重投递（幂等）
+        # 空闲时回收超时 running（崩溃遗留）→ 回 claimed 重投递（幂等）。
+        # 窗口至少 2×run 超时，且运行心跳会持续刷新 updated_at。
         try:
             async with (await pool()).acquire() as conn:
                 stale = await conn.fetch(
                     """UPDATE fleet_task_loops SET status='claimed', updated_at=now()
                        WHERE status='running' AND updated_at < now() - ($1 || ' seconds')::interval
-                       RETURNING id""", str(RUN_TIMEOUT))
+                       RETURNING id""", str(REAPER_TIMEOUT))
             for row in stale:
                 await _QUEUE.put(row["id"])
         except Exception:  # noqa: BLE001

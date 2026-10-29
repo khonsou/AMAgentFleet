@@ -30,7 +30,18 @@ class FakeAcquire:
         return None
 
 
-class TaskConnection:
+class FakeTransaction:
+    def transaction(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class TaskConnection(FakeTransaction):
     def __init__(self, parent=None):
         self.parent = parent
         self.inserts = []
@@ -48,7 +59,7 @@ class TaskConnection:
         raise AssertionError(query)
 
 
-class LoopConnection:
+class LoopConnection(FakeTransaction):
     def __init__(self, task):
         self.task = task
         self.inserts = []
@@ -64,6 +75,8 @@ class LoopConnection:
     async def fetchrow(self, query, *_args):
         if "SELECT * FROM fleet_tasks" in query:
             return self.task
+        if "SELECT * FROM fleet_task_loops" in query:
+            return None
         if "INSERT INTO fleet_task_loops" in query:
             self.inserts.append(_args)
             return {"id": 7, "task_id": self.task["id"], "status": "claimed"}

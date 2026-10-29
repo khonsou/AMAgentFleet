@@ -26,9 +26,18 @@ class RunConnection:
         self.loop = {
             "id": 7, "task_id": 9, "claimant_type": "agent", "claimant": "worker-01",
             "status": "claimed", "thread_id": "4c6a2c52-16f2-4b0d-9882-4f826ea58f6d",
-            "model_profile": profile,
+            "model_profile": profile, "resume_comment": None,
         }
         self.execute = AsyncMock()
+
+    def transaction(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
 
     async def fetchrow(self, query, *_args):
         if "FROM fleet_task_loops WHERE id=$1 FOR UPDATE" in query:

@@ -15,7 +15,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from . import inbox, mcpservers, models, registry, scheduler, templates
+from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
 from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials
 from .db import GATEWAY, audit, init_db, pool
@@ -63,15 +63,27 @@ async def startup() -> None:
     await _ensure_system_agent_with_retry()
     await ops_credentials.ensure_system_credential()
     await ops_credentials.check_system_credential_readable()
-    # dispatcher consumer 懒启动（首次领取时拉起，见 dispatcher.enqueue_loop_run）
-    _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())
-    _state["inbox"] = asyncio.create_task(inbox.flush_loop())
+    # API 与初始化不受门闩限制；只有持锁实例可启动后台循环。
+    leader = await singleton.acquire()
+    dispatcher.set_background_enabled(leader)
+    if leader:
+        # 先恢复“数据库已提交、进程内尚未入队”的 Loop，再启动其他后台循环。
+        await dispatcher.recover_claimed()
+        # dispatcher consumer 仍按需懒启动，但 enqueue 内部会检查同一门闩。
+        _state["scheduler"] = asyncio.create_task(scheduler.sync_loop())
+        _state["inbox"] = asyncio.create_task(inbox.flush_loop())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    for t in _state.values():
-        t.cancel()
+    tasks = list(_state.values())
+    _state.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    await dispatcher.shutdown()
+    await singleton.release()
 
 
 def _reg_err(exc: registry.RegistryError) -> HTTPException:

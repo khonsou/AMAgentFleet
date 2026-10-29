@@ -4,10 +4,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 from app.main import (
-    AcceptBody, AcceptReviewedBody, ReturnBody, _acceptance_author,
-    loop_return, task_accept, tasks_accept_reviewed,
+    AcceptBody, AcceptReviewedBody, DeliverBody, ReturnBody, _acceptance_author,
+    loop_deliver, loop_return, task_accept, tasks_accept_reviewed,
 )
+from app.pool import PoolError
 
 
 def request(pat_actor=None):
@@ -58,6 +61,14 @@ class AcceptanceEndpointTests(unittest.IsolatedAsyncioTestCase):
                 AcceptReviewedBody(author="self-reported"), request("pat:u1:external"))
         self.assertEqual(result, payload)
         accept_all.assert_awaited_once_with(author="pat:u1:external")
+
+    async def test_invalid_delivery_returns_conflict(self):
+        deliver = AsyncMock(side_effect=PoolError(409, "loop 已归档"))
+        with patch("app.main.poolmod.human_deliver", deliver):
+            with self.assertRaises(HTTPException) as caught:
+                await loop_deliver(21, DeliverBody(content="迟到交付", author="human"))
+
+        self.assertEqual(caught.exception.status_code, 409)
 
 
 if __name__ == "__main__":

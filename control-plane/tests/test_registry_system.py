@@ -57,8 +57,11 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
         ensure_agent = AsyncMock()
         ensure_credential = AsyncMock()
         with patch("app.main.init_db", new=AsyncMock()), \
+                patch("app.main.singleton.acquire", new=AsyncMock(return_value=True)), \
+                patch("app.main.dispatcher.recover_claimed", new=AsyncMock(return_value=0)), \
                 patch("app.main.registry.ensure_system_agent", new=ensure_agent), \
                 patch("app.main.ops_credentials.ensure_system_credential", new=ensure_credential), \
+                patch("app.main.ops_credentials.check_system_credential_readable", new=AsyncMock()), \
                 patch("app.main.scheduler.sync_loop", new=AsyncMock()), \
                 patch("app.main.inbox.flush_loop", new=AsyncMock()):
             await main.startup()

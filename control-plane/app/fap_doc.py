@@ -29,7 +29,8 @@ FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
 ## 1. 写操作三件套（所有变更类 POST/PUT/DELETE）
 
 1. **幂等**：请求头 `Idempotency-Key: <任意唯一串>`。同键 + 同 actor 在 24h 窗口内
-   重试直接回放首次响应，不重复执行。不同 actor 同键 → 409。
+   重试直接回放首次响应，不重复执行。首次请求仍在执行时返回 `409 + Retry-After: 1`，
+   稍后以相同请求重试；不同 actor 同键或同键不同请求 → 409。
 2. **限速**：per-PAT（无 PAT 时 per-IP）令牌桶，默认 60 req/min，
    **读写统一计入配额**（GET 同样受限；分页遍历请控制节奏并遵守 `retry_after`）。
    超限返回 `429 {"error": "rate_limited", "retry_after": <秒>}`，按值退避，勿盲重试。

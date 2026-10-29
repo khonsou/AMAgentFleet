@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS fleet_task_loops (
     tokens        BIGINT,
     version       INTEGER NOT NULL DEFAULT 1,
     error         TEXT,
+    resume_comment TEXT,
     created_by    TEXT NOT NULL DEFAULT 'human',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -149,6 +150,8 @@ CREATE TABLE IF NOT EXISTS fleet_task_loops (
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_profile TEXT;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_snapshot JSONB;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_selected_by TEXT;
+-- ADR-0012：打回意见随 Loop 持久化，成功交付后才清除。
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS resume_comment TEXT;
 CREATE INDEX IF NOT EXISTS idx_loops_task ON fleet_task_loops(task_id, status);
 CREATE TABLE IF NOT EXISTS fleet_task_comments (
     id         BIGSERIAL PRIMARY KEY,
@@ -172,12 +175,15 @@ CREATE TABLE IF NOT EXISTS fap_idempotency_keys (
     method         TEXT NOT NULL,
     path           TEXT NOT NULL,
     request_digest TEXT NOT NULL DEFAULT '',
-    status_code    INTEGER NOT NULL,
-    response_json  JSONB NOT NULL,
+    status_code    INTEGER,
+    response_json  JSONB,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (key, actor)
 );
 ALTER TABLE fap_idempotency_keys ADD COLUMN IF NOT EXISTS request_digest TEXT NOT NULL DEFAULT '';
+-- ADR-0012：NULL response 表示执行中占位，完成后回填，5xx/异常删除。
+ALTER TABLE fap_idempotency_keys ALTER COLUMN status_code DROP NOT NULL;
+ALTER TABLE fap_idempotency_keys ALTER COLUMN response_json DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_fap_idem_created ON fap_idempotency_keys(created_at);
 -- ADR-0018：系统 Fleet 操作 PAT 的 Vault 密文；原始 token 不落库。
 CREATE TABLE IF NOT EXISTS fleet_system_credentials (
@@ -206,6 +212,25 @@ async def init_db() -> None:
             WHERE agent_name='unassigned' AND EXISTS (
                 SELECT 1 FROM fleet_task_loops
                 WHERE task_id=fleet_tasks.id AND claimant_type='human')""")
+        # ADR-0012：同一认领者对同一 task 终身只有一个 loop。存量重复行不得
+        # 由启动迁移静默删除（可能包含 thread、交付或验收历史）。事务化认领
+        # 已能阻止新增重复；含历史重复的库先告警并暂缓索引，清理后重启自动补齐。
+        duplicates = await conn.fetch("""
+            SELECT task_id, claimant_type, claimant, count(*) AS n
+            FROM fleet_task_loops
+            GROUP BY task_id, claimant_type, claimant
+            HAVING count(*) > 1 LIMIT 20""")
+        if duplicates:
+            summary = ", ".join(
+                f"task={r['task_id']} {r['claimant_type']}:{r['claimant']}×{r['n']}"
+                for r in duplicates)
+            logger.warning(
+                "fleet_task_loops 存在历史重复认领，唯一索引暂缓创建；"
+                "不会自动删除历史，请备份并人工清理后重启：%s", summary)
+        else:
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_fleet_task_loops_claimant
+                ON fleet_task_loops(task_id, claimant_type, claimant)""")
     logger.info("schema ready")
 
 
