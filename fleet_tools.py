@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -33,9 +34,10 @@ def _caller(config: RunnableConfig | None) -> str:
     return cfg.get("agent_name") or "unknown-agent"
 
 
-async def _cp(path: str, body: dict) -> str:
-    async with httpx.AsyncClient(base_url=CP, timeout=30) as client:
-        r = await client.post(path, json=body)
+async def _cp(path: str, body: dict, *, idempotency_key: str | None = None) -> str:
+    headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
+    async with httpx.AsyncClient(base_url=CP, timeout=30, trust_env=False) as client:
+        r = await client.post(path, json=body, headers=headers)
         if r.status_code >= 400:
             return f"失败：{r.status_code} {r.text[:200]}"
         return r.text[:500]
@@ -49,21 +51,32 @@ class SpawnArgs(BaseModel):
         default=None,
         description="本次子 Agent 实例使用的已登记模型 Profile；不填按父 Task 策略和默认规则解析",
     )
+    spawn_key: str | None = Field(
+        default=None,
+        description="可选的子任务唯一标识；重试保持不变。同文但确实不同的子任务必须使用不同标识",
+    )
 
 
 async def _spawn(task: str, assignee: str | None = None, acceptance_hint: str = "",
-                 model_profile: str | None = None, config: RunnableConfig = None) -> str:
+                 model_profile: str | None = None, spawn_key: str | None = None,
+                 config: RunnableConfig = None) -> str:
     caller = _caller(config)
     cfg = (config or {}).get("configurable", {}) if isinstance(config, dict) else {}
+    thread_id = cfg.get("thread_id") or "no-thread"
+    full_input = task + (f"\n\n【验收备注】{acceptance_hint}" if acceptance_hint else "")
+    # 同一父 Thread 重试同一子任务必须命中已有 Task；显式 spawn_key 可区分同文任务。
+    fingerprint = "\0".join((thread_id, spawn_key or assignee or "", full_input))
+    idempotency_key = "spawn:" + hashlib.sha256(fingerprint.encode()).hexdigest()[:40]
     body = {
-        "input": task + (f"\n\n【验收备注】{acceptance_hint}" if acceptance_hint else ""),
+        "input": full_input,
         "source": "agent",
         "assignee": assignee,
         "created_by": caller,
         "caller_thread_id": cfg.get("thread_id"),
         "model_profile": model_profile,
+        "idempotency_key": idempotency_key,
     }
-    out = await _cp("/api/tasks", body)
+    out = await _cp("/api/tasks", body, idempotency_key=idempotency_key)
     return f"子任务已入池（created_by={caller}）：{out}"
 
 

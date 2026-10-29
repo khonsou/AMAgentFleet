@@ -16,6 +16,7 @@ describe('Task 实例模型快照', () => {
         parent_task_id: null, created_at: '2026-10-28T01:00:00Z',
       },
       comments: [],
+      children: [],
       loops: [{
         id: 7, task_id: 9, claimant_type: 'agent', claimant: 'worker-01', thread_id: null,
         status: 'running', tokens: 12, version: 1, created_at: '2026-10-28T01:00:00Z',

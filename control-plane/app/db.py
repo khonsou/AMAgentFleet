@@ -152,6 +152,14 @@ ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_snapshot JSONB;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_selected_by TEXT;
 -- ADR-0012：打回意见随 Loop 持久化，成功交付后才清除。
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS resume_comment TEXT;
+-- 异常恢复：不改变 Task/Loop 业务状态，只记录可持久化的恢复现场。
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS failure_kind TEXT;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS continuation_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS recovery_action TEXT;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS running_action TEXT;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS last_checkpoint_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_loops_task ON fleet_task_loops(task_id, status);
 CREATE TABLE IF NOT EXISTS fleet_task_comments (
     id         BIGSERIAL PRIMARY KEY,

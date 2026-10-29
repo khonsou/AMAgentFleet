@@ -233,6 +233,8 @@ async def deliver_loop(loop_id: int, content: str, *, tokens: int | None = None,
             updated = await conn.fetchrow(
                 """UPDATE fleet_task_loops SET status='delivered', deliverable=$2,
                           tokens=COALESCE($3,tokens), thread_id=COALESCE($4,thread_id),
+                          error=NULL, failure_kind=NULL, recovery_action=NULL, running_action=NULL,
+                          next_retry_at=NULL, retry_count=0,
                           resume_comment=NULL, delivered_at=now(), updated_at=now()
                    WHERE id=$1 AND status IN ('claimed','running','returned')
                    RETURNING task_id""",
@@ -373,8 +375,11 @@ async def task_detail(task_id: int) -> dict[str, Any] | None:
             return None
         loops = await conn.fetch("SELECT * FROM fleet_task_loops WHERE task_id=$1 ORDER BY id", task_id)
         comments = await conn.fetch("SELECT * FROM fleet_task_comments WHERE task_id=$1 ORDER BY id", task_id)
+        children = await conn.fetch(
+            "SELECT * FROM fleet_tasks WHERE parent_task_id=$1 ORDER BY id", task_id)
     return {"task": dict(task), "loops": [dict(l) for l in loops],
-            "comments": [dict(c) for c in comments]}
+            "comments": [dict(c) for c in comments],
+            "children": [dict(child) for child in children]}
 
 
 async def pending_review() -> list[dict[str, Any]]:

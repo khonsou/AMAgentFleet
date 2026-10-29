@@ -133,11 +133,11 @@ class StateGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conn.tx.entered, 1)
 
     async def test_reset_does_not_revive_archived_loop(self):
-        conn = FakeConnection()
+        conn = FakeConnection(fetchrows=[None])
         with patch("app.dispatcher.pool", AsyncMock(return_value=FakePool(conn))):
             await dispatcher._reset_loop(21, "late failure")
 
-        sql = conn.execute.await_args.args[0]
+        sql = conn.fetchrow.await_args.args[0]
         self.assertIn("status IN ('claimed','running','returned')", sql)
 
 

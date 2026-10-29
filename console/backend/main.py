@@ -405,6 +405,11 @@ async def cp_loop_requeue(lid: int):
     return await _cp(f"/loops/{lid}/requeue", "POST", {})
 
 
+@app.post("/api/console/loops/{lid}/resume")
+async def cp_loop_resume(lid: int):
+    return await _cp(f"/loops/{lid}/resume", "POST", {})
+
+
 @app.get("/api/console/threads/{tid}/artifacts/{path:path}")
 async def cp_thread_artifact(tid: str, path: str):
     """产物下载代理（agent 交付物链接走 Console，生产中网关不出 VPC）。"""

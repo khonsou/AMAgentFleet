@@ -85,6 +85,7 @@ services:
     environment:
       FLEET_PG_DSN: *pg-dsn
       FLEET_GATEWAY_URL: http://gateway:8001
+      FLEET_RUN_RECURSION_LIMIT: ${FLEET_RUN_RECURSION_LIMIT:-300}
       FLEET_DEERFLOW_ROOT: /etc/deerflow
       # FAP 同源暴露的 XFF 信任链：可信 proxy = 本机 + compose 内网网段
       # （console-backend 容器直连 _cp 拉数、fap_proxy 转发客户端流量）。

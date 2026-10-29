@@ -242,6 +242,31 @@ class Acceptance:
         self.thread_ids.append(by_thread)
         context = await self.call("loops.by_thread", path={"thread_id": by_thread})
         assert context["loop"]["task_id"] == dispatch_task
+
+        # 断点续跑使用真实 Thread checkpoint。独立 Loop 夹具避免与上面的重新执行竞争；
+        # 请求体是否 input=None、是否携带 checkpoint_id 由确定性回归另行断言。
+        for _ in range(30):
+            dispatch_detail = (await self.raw("GET", f"{CP}/api/tasks/{dispatch_task}")).json()
+            if any(loop["status"] == "delivered" for loop in dispatch_detail["loops"]):
+                break
+            await asyncio.sleep(1)
+        else:
+            raise AssertionError("断点续跑夹具所需的真实 checkpoint 尚未就绪")
+        resume_task = await self.raw("POST", f"{CP}/api/tasks", json={
+            "input": f"[{self.prefix}] checkpoint 恢复", "source": "agent", "created_by": ACTOR})
+        resume_task_id = resume_task.json()["task_id"]
+        self.task_ids.append(resume_task_id)
+        conn = await asyncpg.connect(os.environ.get("CONSOLE_PG_DSN", "postgresql://postgres@127.0.0.1:5432/deerflow"))
+        try:
+            resume_loop = await conn.fetchval(
+                "INSERT INTO fleet_task_loops (task_id, claimant_type, claimant, created_by, status, thread_id, error) VALUES ($1,'agent',$2,$3,'claimed',$4,'interrupted') RETURNING id",
+                resume_task_id, self.agent_name, ACTOR, by_thread)
+            await conn.execute("UPDATE fleet_tasks SET agent_name=$2 WHERE id=$1", resume_task_id, self.agent_name)
+        finally:
+            await conn.close()
+        resumed = await self.call("loops.resume", path={"loop_id": resume_loop})
+        assert resumed["status"] == "claimed" and resumed["checkpoint_id"]
+
         closed = await self.call("tasks.close", path={"task_id": dispatch_task}, query={"author": ACTOR})
         assert closed["pool_status"] == "done"
 

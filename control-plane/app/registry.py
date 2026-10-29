@@ -31,6 +31,7 @@ class RegistryError(Exception):
 
 
 SYSTEM_AGENT_NAME = "fleet-ops-01"
+COMMANDER_AGENT_NAME = "fleet-cmd-01"
 
 
 def assert_mutable(name: str) -> None:
@@ -165,19 +166,29 @@ async def apply_agent(name: str, doc: dict[str, Any]) -> dict[str, Any]:
     return dict(row)
 
 
-async def ensure_system_agent() -> None:
-    """启动时恢复内置 Ops Agent：Gateway 必须注册，Registry 按镜像 YAML 对账。
+async def ensure_agent(name: str) -> None:
+    """启动时按版本化 YAML 部署 Agent，并避免 Registry 版本无意义增长。
 
     Gateway 配置在独立数据卷中，可能因冷启动或卷重建而丢失，因此每次启动都
-    同步 Gateway；仅在 Registry 缺失或摘要不一致时更新元数据，避免重启空涨版本。
+    同步 Gateway；仅在 Registry 缺失或摘要不一致时更新元数据。用户通过正常
+    管理面更新 YAML 后，重启对账保留其修改，不会用仓库旧副本覆盖。
     """
-    doc = load_yaml_doc(SYSTEM_AGENT_NAME)
-    await sync_to_gateway(SYSTEM_AGENT_NAME, doc)
+    doc = load_yaml_doc(name)
+    await sync_to_gateway(name, doc)
     async with (await pool()).acquire() as conn:
         current_sha = await conn.fetchval(
-            "SELECT yaml_sha256 FROM fleet_agents WHERE name=$1", SYSTEM_AGENT_NAME)
+            "SELECT yaml_sha256 FROM fleet_agents WHERE name=$1", name)
     if current_sha != sha256_doc(doc):
-        await upsert_registry_row(SYSTEM_AGENT_NAME, doc)
+        await upsert_registry_row(name, doc)
+
+
+async def ensure_system_agent() -> None:
+    await ensure_agent(SYSTEM_AGENT_NAME)
+
+
+async def ensure_commander_agent() -> None:
+    """指挥官随项目部署，但不属于只读系统 Agent。"""
+    await ensure_agent(COMMANDER_AGENT_NAME)
 
 
 async def remove_agent(name: str) -> None:

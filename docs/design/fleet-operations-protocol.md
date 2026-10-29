@@ -14,7 +14,7 @@
 | 系统与观测 | 自发现、健康、总览、Thread 舰队视图、审计 |
 | Agent | 列表、详情、注册、完整配置更新、启动、休眠、销毁、兼容派发 |
 | Task | 创建、列表、详情、评论、关闭、待验收队列 |
-| Loop | 认领、交付、打回、重派、Thread 反查 |
+| Loop | 认领、交付、打回、断点续跑、重新执行、Thread 反查 |
 | Thread / Run | 新建、对话、消息、状态、产物、销毁、执行、事件、取消、反馈、token |
 | 调度与唤醒 | YAML cron、手动对账、Inbox 收发 |
 | 接入配置 | MCP 列表/注册/更新/删除/重渲染，模板列表/渲染 |
@@ -71,13 +71,13 @@ console/backend/.venv/bin/python scripts/fleet_ops_activate.py
 ## 6. 自动化验收
 
 ```bash
-# 全部：确定性回归 + 在线激活 + 真实模型 + 66 操作 + 浏览器
+# 全部：确定性回归 + 在线激活 + 真实模型 + 67 操作 + 浏览器
 bash scripts/test_fleet_ops_all.sh
 
 # 仅确定性回归，不需要服务与模型
 bash scripts/test_fleet_ops_all.sh --offline
 
-# 单独重跑在线 66 项矩阵
+# 单独重跑在线 67 项矩阵
 console/backend/.venv/bin/python scripts/fleet_ops_acceptance.py
 ```
 
