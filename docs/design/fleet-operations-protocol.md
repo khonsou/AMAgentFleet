@@ -71,13 +71,13 @@ console/backend/.venv/bin/python scripts/fleet_ops_activate.py
 ## 6. 自动化验收
 
 ```bash
-# 全部：确定性回归 + 在线激活 + 真实模型 + 67 操作 + 浏览器
+# 全部：确定性回归 + 在线激活 + 真实模型 + 72 操作 + 浏览器
 bash scripts/test_fleet_ops_all.sh
 
 # 仅确定性回归，不需要服务与模型
 bash scripts/test_fleet_ops_all.sh --offline
 
-# 单独重跑在线 67 项矩阵
+# 单独重跑在线 72 项矩阵
 console/backend/.venv/bin/python scripts/fleet_ops_acceptance.py
 ```
 

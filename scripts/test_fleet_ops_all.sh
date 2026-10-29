@@ -52,7 +52,7 @@ for url in \
  done
 "$CONSOLE_PYTHON" scripts/fleet_ops_activate.py
 
-echo "[6/7] 67 项协议与第三方 PAT 在线验收"
+echo "[6/7] 72 项协议与第三方 PAT 在线验收"
 "$CONSOLE_PYTHON" scripts/fleet_ops_acceptance.py
 
 echo "[7/7] Chromium 桌面与移动端浏览器测试"
