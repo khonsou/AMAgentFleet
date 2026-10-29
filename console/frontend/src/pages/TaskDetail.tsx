@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LinkifyText from '@/components/LinkifyText'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
-import { StatusPill, loopStatusMeta } from '@/components/console/Status'
+import { StatusPill } from '@/components/console/Status'
+import { loopStatusMeta } from '@/components/console/statusMeta'
 import LoopOutput from '@/components/console/LoopOutput'
 
 function fmtTime(iso?: string | null) {
