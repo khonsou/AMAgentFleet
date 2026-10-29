@@ -5,7 +5,6 @@ import type { LedColor } from './statusMeta'
 export type { LedColor } from './statusMeta'
 
 /** LED 指示灯：状态的最小表达单元（点亮/呼吸/熄灭）。 */
-
 /* 必须用完整字面量类名：Tailwind 扫描不到动态拼接的 class，会整段裁掉 */
 const LED_CLS: Record<LedColor, string> = {
   green: 'led-green',
