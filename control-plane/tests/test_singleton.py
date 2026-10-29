@@ -17,6 +17,7 @@ class StartupGateTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.main.init_db", new=AsyncMock()),
             patch("app.main.registry.ensure_system_agent", new=AsyncMock()),
+            patch("app.main.registry.ensure_commander_agent", new=AsyncMock()),
             patch("app.main.ops_credentials.ensure_system_credential", new=AsyncMock()),
             patch("app.main.ops_credentials.check_system_credential_readable", new=AsyncMock()),
             patch("app.main.dispatcher.recover_claimed", new=AsyncMock(return_value=0)),

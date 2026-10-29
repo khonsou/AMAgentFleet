@@ -38,7 +38,7 @@
 
     {"id":"models.list","method":"GET","path":"/api/models","surface":"control-plane","description":"List registered model Profiles without credentials"},
 
-    {"id":"tasks.list","method":"GET","path":"/api/tasks","surface":"control-plane","description":"List Task instances and latest Loop references","query":{"agent":"<optional claimant>","status":"<optional execution status>","limit":100}},
+    {"id":"tasks.list","method":"GET","path":"/api/tasks","surface":"control-plane","description":"List Task instances and latest Loop references with deterministic limit/offset pagination","query":{"agent":"<optional claimant>","status":"<optional execution status>","pool_status":"<optional open/review/done>","limit":100,"offset":0}},
     {"id":"tasks.get","method":"GET","path":"/api/tasks/{task_id}","surface":"control-plane","description":"Read Task, all Loops, outputs, artifacts and comments"},
     {"id":"tasks.create","method":"POST","path":"/api/tasks","surface":"control-plane","write":true,"description":"Create a Task, optionally assigned to an Agent and model Profile","body":{"input":"<self-contained instruction>","assignee":"<optional agent name>","created_by":"fleet-ops-01","source":"agent","parent_task_id":null,"model_profile":"<optional registered profile>","subagent_model_policy":"auto"}},
     {"id":"tasks.review_queue","method":"GET","path":"/api/review-queue","surface":"control-plane","description":"List Tasks awaiting delivery acceptance"},
@@ -50,7 +50,8 @@
     {"id":"loops.claim","method":"POST","path":"/api/tasks/{task_id}/loops","surface":"control-plane","write":true,"description":"Claim a Task as an Agent or human and create a Loop","body":{"claimant_type":"agent","claimant":"<agent name or human>","created_by":"fleet-ops-01","model_profile":"<optional registered profile>"}},
     {"id":"loops.deliver","method":"POST","path":"/api/loops/{loop_id}/deliver","surface":"control-plane","write":true,"description":"Deliver a human or external Loop result for acceptance","body":{"content":"<delivery>","author":"fleet-ops-01"}},
     {"id":"loops.return","method":"POST","path":"/api/loops/{loop_id}/return","surface":"control-plane","write":true,"description":"Return a delivered Loop with comments and resume its Thread","body":{"comment":"<required corrections>","author":"fleet-ops-01"}},
-    {"id":"loops.requeue","method":"POST","path":"/api/loops/{loop_id}/requeue","surface":"control-plane","write":true,"description":"Requeue a stale or returned agent Loop"},
+    {"id":"loops.requeue","method":"POST","path":"/api/loops/{loop_id}/requeue","surface":"control-plane","write":true,"description":"Retry an agent Loop with a new instruction and idempotent side effects"},
+    {"id":"loops.resume","method":"POST","path":"/api/loops/{loop_id}/resume","surface":"control-plane","write":true,"description":"Resume an interrupted agent Loop from its latest checkpoint without repeating the original input"},
     {"id":"loops.by_thread","method":"GET","path":"/api/loops/by-thread/{thread_id}","surface":"control-plane","description":"Resolve a Thread to its Loop and Task acceptance context"},
 
     {"id":"threads.list","method":"GET","path":"/api/console/fleet","surface":"console","description":"List Thread instances with runtime status and cost"},

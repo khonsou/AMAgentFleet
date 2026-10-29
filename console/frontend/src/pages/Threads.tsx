@@ -3,7 +3,8 @@ import { Link } from 'react-router'
 import { api, type FleetRow } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Panel, PanelHead } from '@/components/console/Panel'
-import { StatusPill, runStatusMeta } from '@/components/console/Status'
+import { StatusPill } from '@/components/console/Status'
+import { runStatusMeta } from '@/components/console/statusMeta'
 
 function fmtTime(iso: string | null) {
   if (!iso) return '—'

@@ -42,6 +42,9 @@ class FakeClient:
     async def post(self, *args, **kwargs):
         return await type(self).post_impl(*args, **kwargs)
 
+    async def get(self, *_args, **_kwargs):
+        return FakeResponse(payload={})
+
 
 @unittest.skipUnless(os.environ.get("FLEET_TEST_PG_DSN"), "未配置 FLEET_TEST_PG_DSN")
 class PostgresRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -82,6 +85,13 @@ class PostgresRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     resume_comment TEXT,
                     deliverable TEXT,
                     tokens BIGINT,
+                    failure_kind TEXT,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    continuation_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TIMESTAMPTZ,
+                    recovery_action TEXT,
+                    running_action TEXT,
+                    last_checkpoint_id TEXT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                     delivered_at TIMESTAMPTZ
                 );
@@ -175,6 +185,56 @@ class PostgresRecoveryTests(unittest.IsolatedAsyncioTestCase):
         for body in bodies:
             content = body["input"]["messages"][0]["content"]
             self.assertIn("【验收退回意见】请补充证据", content)
+
+    async def test_transient_retry_and_recursion_continuation_have_hard_limits(self):
+        _, transient = await self.new_loop()
+        row = await dispatcher._reset_loop(transient, "gateway 503", "transient")
+        self.assertEqual(row["recovery_action"], "retry")
+        row = await dispatcher._reset_loop(transient, "gateway 503", "transient")
+        self.assertEqual(row["recovery_action"], "retry")
+        row = await dispatcher._reset_loop(transient, "gateway 503", "transient")
+        self.assertIsNone(row["recovery_action"])
+        self.assertEqual((await self.loop_row(transient))["retry_count"], 2)
+
+        _, recursive = await self.new_loop()
+        row = await dispatcher._reset_loop(
+            recursive, "Recursion limit reached", "recursion", "checkpoint-1")
+        self.assertEqual(row["recovery_action"], "resume")
+        row = await dispatcher._reset_loop(
+            recursive, "Recursion limit reached", "recursion", "checkpoint-2")
+        self.assertIsNone(row["recovery_action"])
+        current = await self.loop_row(recursive)
+        self.assertEqual(current["continuation_count"], 1)
+        self.assertEqual(current["last_checkpoint_id"], "checkpoint-2")
+
+    async def test_permanent_failure_is_not_replayed_after_restart(self):
+        _, loop_id = await self.new_loop()
+        async with self.db.acquire() as conn:
+            await conn.execute(
+                "UPDATE fleet_task_loops SET error='permission denied', failure_kind='permanent' WHERE id=$1",
+                loop_id)
+        with patch("app.dispatcher._start_consumers") as start:
+            recovered = await dispatcher.recover_claimed()
+        self.assertEqual(recovered, 0)
+        self.assertTrue(dispatcher._QUEUE.empty())
+        start.assert_not_called()
+
+    async def test_concurrent_manual_resume_enqueues_only_once(self):
+        _, loop_id = await self.new_loop()
+        async with self.db.acquire() as conn:
+            await conn.execute(
+                "UPDATE fleet_task_loops SET thread_id='thread-1', last_checkpoint_id='checkpoint-1', error='interrupted' WHERE id=$1",
+                loop_id)
+        with patch("app.dispatcher.enqueue_loop_run", AsyncMock()) as enqueue:
+            results = await asyncio.gather(*[
+                dispatcher.resume_loop(loop_id) for _ in range(10)
+            ], return_exceptions=True)
+        succeeded = [r for r in results if not isinstance(r, Exception)]
+        rejected = [r for r in results if isinstance(r, dispatcher.RecoveryError)]
+        self.assertEqual(len(succeeded), 1)
+        self.assertEqual(len(rejected), 9)
+        self.assertEqual((await self.loop_row(loop_id))["continuation_count"], 1)
+        enqueue.assert_awaited_once_with(loop_id)
 
     async def test_heartbeat_refreshes_running_loop_before_gateway_returns(self):
         _, loop_id = await self.new_loop()

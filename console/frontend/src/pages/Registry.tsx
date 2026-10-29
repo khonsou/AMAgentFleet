@@ -27,7 +27,6 @@ export default function RegistryPage() {
     load()
     const t = setInterval(load, 5000)
     return () => clearInterval(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /** 注册新 agent：表单生成模板 YAML → 部署（YAML 落盘 + 导入网关 + 元数据入库）。 */

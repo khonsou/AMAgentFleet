@@ -25,7 +25,7 @@ console/backend/.venv/bin/python scripts/fleet_ops_activate.py
 bash scripts/test_fleet_ops_all.sh
 ```
 
-66 项在线矩阵报告位于 `artifacts/fleet-ops-acceptance.json`。系统 Agent 配置只读，本地与第三方统一 PAT 鉴权，系统凭证只支持人工轮换（ADR-0018）。详见[协议设计](docs/design/fleet-operations-protocol.md)。
+67 项在线矩阵报告位于 `artifacts/fleet-ops-acceptance.json`。系统 Agent 配置只读，本地与第三方统一 PAT 鉴权，系统凭证只支持人工轮换（ADR-0018）。详见[协议设计](docs/design/fleet-operations-protocol.md)。
 
 **待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) 已锁 tag；当前部署基线为 `am-fleet-base-v2`）；阿里云首次部署实测（ECS 购买后按 DEPLOY.md §4）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
 

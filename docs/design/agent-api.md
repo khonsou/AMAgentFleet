@@ -38,6 +38,8 @@
 | B4 | 版本历史 / 导入导出 | Git 仓库 + `deerflow.custom-agent` 格式 | ✅ |
 | B5 | 销毁 agent（级联运行状态） | `DELETE /api/registry/agents/{name}` | ✅ |
 
+启动部署：`fleet-ops-01` 与 `fleet-cmd-01` 均从版本化 YAML 自动对账到 Gateway／Registry。Ops 为只读系统 Agent；指挥官保持可编辑，页面或 API 的修改会写回 YAML，重启不会用仓库旧副本覆盖。
+
 ### C. 任务池（task/loop，ADR-0010 已落地）
 
 | # | 操作 | API | 现状 |
@@ -45,11 +47,12 @@
 | C1 | 任务发起（指派 agent 或开放领取） | `POST /api/tasks` | ✅ |
 | C2 | 领取（agent/人，竞争非独占，≤3 并行 loop） | `POST /api/tasks/{id}/claim` | ✅ |
 | C3 | 任务 / loop 状态与详情 | `GET /api/tasks/{id}`、`GET /api/loops/{id}` | ✅ |
-| C4 | 任务列表 + 交付验收（交付并排比较） | `GET /api/tasks?status=` | ✅ task 内动作区 |
+| C4 | 任务列表 + 交付验收（交付并排比较） | `GET /api/tasks?status=&pool_status=&limit=&offset=` | ✅ task 内动作区；稳定倒序分页 |
 | C5 | 采纳（task → done，记审计；任何已识别的人或 Agent） | `POST /api/tasks/{id}/accept` | ✅ ADR-0015 |
 | C6 | 打回（附意见，同 thread 水合续跑重做；同权） | `POST /api/loops/{id}/return` | ✅ ADR-0015 |
 | C7 | 指挥官分解子任务 | runner 工具 `agent_spawn` | ✅ 零改上游 |
 | C8 | 人机同构交付（人贴链接交付，同等验收） | `POST /api/loops/{id}/deliver` | ✅ |
+| C9 | 异常恢复（断点续跑／重新执行） | `POST /api/loops/{id}/resume`、`POST /api/loops/{id}/requeue` | ✅ ADR-0029；临时故障最多自动重试 2 次，递归异常自动续跑 1 次，人工续跑总上限 3 次 |
 
 ### D. Thread 执行与对话
 

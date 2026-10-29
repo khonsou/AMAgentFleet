@@ -40,27 +40,29 @@ fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
 
-async def _ensure_system_agent_with_retry(timeout: float = 120.0) -> None:
+async def _ensure_agent_with_retry(name: str, ensure, timeout: float = 120.0) -> None:
     """同 pod 的网关可能晚于控制面就绪，启动阶段容忍短暂连接失败。"""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while True:
         try:
-            await registry.ensure_system_agent()
+            await ensure()
             return
         except (httpx.TransportError, registry.RegistryError) as exc:
             retryable = isinstance(exc, httpx.TransportError) or getattr(exc, "status", 0) in (502, 503)
             if not retryable or loop.time() >= deadline:
                 raise
-            log.warning("gateway not ready (%s); retrying system agent sync", exc)
+            log.warning("gateway not ready (%s); retrying %s sync", exc, name)
             await asyncio.sleep(2)
 
 
 @app.on_event("startup")
 async def startup() -> None:
     await init_db()
+    # 版本化内置 Agent 均随项目部署；Ops 只读，指挥官仍可由用户正常优化。
+    await _ensure_agent_with_retry(registry.SYSTEM_AGENT_NAME, registry.ensure_system_agent)
+    await _ensure_agent_with_retry(registry.COMMANDER_AGENT_NAME, registry.ensure_commander_agent)
     # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
-    await _ensure_system_agent_with_retry()
     await ops_credentials.ensure_system_credential()
     await ops_credentials.check_system_credential_readable()
     # API 与初始化不受门闩限制；只有持锁实例可启动后台循环。
@@ -260,15 +262,25 @@ async def model_profiles() -> list[dict[str, Any]]:
 async def list_tasks(
     agent: str | None = None,
     status: str | None = None,
-    limit: int = Query(default=50, le=200),
+    pool_status: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
-    clause, args = "", []
+    filters, args = [], []
     if agent:
-        args.append(agent); clause = "WHERE t.agent_name=$1"
+        args.append(agent)
+        filters.append(f"t.agent_name=${len(args)}")
     if status:
         args.append(status)
-        clause += (" AND " if clause else "WHERE ") + f"t.status=${len(args)}"
+        filters.append(f"t.status=${len(args)}")
+    if pool_status:
+        args.append(pool_status)
+        filters.append(f"t.pool_status=${len(args)}")
+    clause = "WHERE " + " AND ".join(filters) if filters else ""
     args.append(limit)
+    limit_param = len(args)
+    args.append(offset)
+    offset_param = len(args)
     async with (await pool()).acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT t.*, l.id AS latest_loop_id, l.thread_id AS latest_thread_id,
@@ -278,7 +290,8 @@ async def list_tasks(
                   SELECT id, thread_id, status FROM fleet_task_loops
                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                 ) l ON true
-                {clause} ORDER BY t.id DESC LIMIT ${len(args)}""", *args)
+                {clause} ORDER BY t.id DESC
+                LIMIT ${limit_param} OFFSET ${offset_param}""", *args)
     return [dict(r) for r in rows]
 
 
@@ -451,6 +464,7 @@ class TaskCreateBody(BaseModel):
     caller_thread_id: str | None = None  # runner 工具反解父 task 用
     model_profile: str | None = None
     subagent_model_policy: str = Field(default="auto", pattern="^(auto|inherit)$")
+    idempotency_key: str | None = None  # spawn/写请求重试去重
 
 
 @app.post("/api/tasks", status_code=201)
@@ -473,6 +487,7 @@ async def task_create(body: TaskCreateBody) -> dict[str, Any]:
         t = await poolmod.create_task(
             body.input, source=body.source, assignee=body.assignee,
             created_by=body.created_by, parent_task_id=parent,
+            idempotency_key=body.idempotency_key,
             model_profile=body.model_profile,
             subagent_model_policy=body.subagent_model_policy)
     except poolmod.PoolError as exc:
@@ -668,18 +683,33 @@ async def task_close(task_id: int, author: str = "human") -> dict[str, str]:
 
 
 @app.post("/api/loops/{loop_id}/requeue", status_code=202)
-async def loop_requeue(loop_id: int) -> dict[str, str]:
-    """重派：error/滞留的 agent loop 回 claimed 并入队（human loop 不适用）。"""
+async def loop_requeue(loop_id: int, request: Request) -> dict[str, str]:
+    """重新执行：清空自动重试序列，以新指令续接当前 Thread；副作用由幂等键去重。"""
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow(
-            """UPDATE fleet_task_loops SET status='claimed', error=NULL, updated_at=now()
+            """UPDATE fleet_task_loops SET status='claimed', error=NULL, failure_kind=NULL,
+                   recovery_action='retry', running_action=NULL, retry_count=0,
+                   next_retry_at=NULL, updated_at=now()
                WHERE id=$1 AND claimant_type='agent' AND status IN ('claimed','returned')
+                 AND recovery_action IS NULL
                RETURNING id""", loop_id)
     if row is None:
-        raise HTTPException(409, "loop 不存在、非 agent 领取或状态不可重派")
+        raise HTTPException(409, "loop 不存在、状态不可重新执行或已有恢复动作排队")
+    actor = _acceptance_author(request, "human")
+    await audit("loop.requeued", actor=actor, detail={"loop_id": loop_id})
     from .dispatcher import enqueue_loop_run
     await enqueue_loop_run(loop_id)
-    return {"status": "claimed"}
+    return {"status": "claimed", "recovery_action": "retry"}
+
+
+@app.post("/api/loops/{loop_id}/resume", status_code=202)
+async def loop_resume(loop_id: int, request: Request) -> dict[str, str]:
+    """从最近 checkpoint 继续，不重复追加原始任务输入。"""
+    try:
+        return await dispatcher.resume_loop(
+            loop_id, actor=_acceptance_author(request, "human"))
+    except dispatcher.RecoveryError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
 
 
 @app.get("/api/loops/by-thread/{thread_id}")

@@ -175,6 +175,8 @@ export const api = {
     req<ReviewContext>(`/threads/${threadId}/review-context`),
   loopRequeue: (loopId: number) =>
     req<{ status: string }>(`/loops/${loopId}/requeue`, { method: 'POST' }),
+  loopResume: (loopId: number) =>
+    req<{ status: string }>(`/loops/${loopId}/resume`, { method: 'POST' }),
   loopReturn: (loopId: number, comment: string, author = 'human') =>
     req<{ status: string }>(`/loops/${loopId}/return`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -341,6 +343,13 @@ export interface Loop {
   model_profile?: string | null
   model_snapshot?: { profile: string; model: string; display_name: string; source: string } | null
   model_selected_by?: string | null
+  failure_kind?: 'recursion' | 'transient' | 'permanent' | null
+  retry_count?: number
+  continuation_count?: number
+  next_retry_at?: string | null
+  recovery_action?: 'retry' | 'resume' | null
+  running_action?: 'retry' | 'resume' | null
+  last_checkpoint_id?: string | null
   created_at: string
 }
 
@@ -356,6 +365,8 @@ export interface TaskDetail {
   task: AgentTask
   loops: Loop[]
   comments: TaskComment[]
+  /** 指挥官已通过 agent_spawn 创建的子任务；失败恢复时用于核对进度，避免重复派发。 */
+  children: AgentTask[]
 }
 
 export interface AgentTask {

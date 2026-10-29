@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
 import ArtifactText from '@/components/console/ArtifactText'
-import { Led, StatusPill, runStatusMeta } from '@/components/console/Status'
+import { Led, StatusPill } from '@/components/console/Status'
+import { runStatusMeta } from '@/components/console/statusMeta'
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '—'

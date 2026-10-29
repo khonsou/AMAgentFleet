@@ -22,6 +22,7 @@ const apiMock = vi.hoisted(() => ({
   loopReturn: vi.fn(),
   loopDeliver: vi.fn(),
   loopRequeue: vi.fn(),
+  loopResume: vi.fn(),
   agent: vi.fn(),
   agentTasks: vi.fn(),
   agentUpdate: vi.fn(),
@@ -102,6 +103,7 @@ function makeTaskDetail(overrides: Partial<TaskDetail> = {}): TaskDetail {
     task: makeTask(),
     loops: [],
     comments: [],
+    children: [],
     ...overrides,
   }
 }
@@ -268,6 +270,32 @@ describe('定义与实例导航', () => {
     expect(humanCard).not.toBeNull()
     expect(within(humanCard as HTMLElement).queryByRole('link', { name: /会话/ })).toBeNull()
     await waitFor(() => expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled())
+  })
+
+  it('失败 Task 显示子任务与恢复现场，并区分断点续跑和重新执行', async () => {
+    const user = userEvent.setup()
+    const failed = makeLoop({
+      status: 'claimed',
+      deliverable: null,
+      latest_output: null,
+      error: 'Recursion limit of 100 reached',
+      failure_kind: 'recursion',
+      continuation_count: 1,
+      last_checkpoint_id: 'checkpoint-1',
+    })
+    apiMock.taskDetail.mockResolvedValue(makeTaskDetail({
+      loops: [failed],
+      children: [makeTask({ id: 31, parent_task_id: 11, agent_name: 'worker', input: '已完成创建的子任务' })],
+    }))
+    renderPage('/tasks/11', '/tasks/:tid', <TaskDetailPage />)
+
+    expect(await screen.findByText('CHILD TASKS / 已创建的子任务')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'TASK #31' })).toHaveAttribute('href', '/tasks/31')
+    expect(screen.getByText('异常：运行步数耗尽')).toBeInTheDocument()
+    expect(screen.getByText('断点续跑 1/3')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '从断点继续' }))
+    await waitFor(() => expect(apiMock.loopResume).toHaveBeenCalledWith(21))
+    expect(screen.getByRole('button', { name: '重新执行' })).toBeInTheDocument()
   })
 
   it('Thread 详情保留实例 breadcrumb，Agent 定义为独立横向链接', async () => {

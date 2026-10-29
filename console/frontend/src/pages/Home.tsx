@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api, type AgentTask, type RegistryAgent, type TaskDetail, type Loop } from '@/lib/api'
 import LoopOutput from '@/components/console/LoopOutput'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
-import { Led, StatusPill, taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/Status'
+import { Led, StatusPill } from '@/components/console/Status'
+import { taskStatusMeta, loopStatusMeta, LOOP_AGG } from '@/components/console/statusMeta'
 
 /** Fleet 任务看板：以协作根任务为锚的任务池。
  *  指挥官在顶，worker 在下方按线程树流动；无父任务的是独立任务。
@@ -174,8 +175,11 @@ function ReviewPanel({ taskId, onDone }: { taskId: number; onDone: () => void })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
-  const load = () => api.taskDetail(taskId).then(setDetail).catch((e) => setMsg(String(e)))
-  useEffect(() => { load() }, [taskId])
+  const load = useCallback(
+    () => api.taskDetail(taskId).then(setDetail).catch((e) => setMsg(String(e))),
+    [taskId],
+  )
+  useEffect(() => { load() }, [load])
 
   const act = async (fn: () => Promise<unknown>, okMsg: string) => {
     setBusy(true); setMsg('')
