@@ -22,7 +22,7 @@
 | 7 | Console 需**公网可达**（出差场景），OAuth 登录 | 控制台/API 经公网入口 + OIDC/OAuth SSO；agent runtime 与业务系统仍留在 VPC 内 |
 | 8 | **多 agent 协作是刚需**；现有"单 agent 多 skill"系统已出现上下文溢出、记忆混乱 | 核心章节：多专精 agent + 线程树 + 摘要返回 + 上下文纪律（见 §7.3、§7.4） |
 | 9 | **全公司可见所有 agent**（统一舰队，无部门/个人隔离；2026-10-09 QA-5） | agents_api user-scoped 隔离不适用，映射简化为单一共享组织作用域（如统一 `org` 用户）；fleet 看板无需权限过滤；审计仍记操作人 |
-| 10 | **agent 可自由配置模型**（2026-10-09 QA-6） | 模型政策放宽为"provider 锁定 + profile 自由"：per-agent `model` 覆盖开放，限 `config.yaml` 已声明的 profile（当前为 DeepSeek 系列）；新增模型 = 改 config.yaml 加 profile（OpenAI 兼容协议）。见 ADR-0009 |
+| 10 | **Agent 定义与运行实例均可选模型**（2026-10-09 QA-6；2026-10-28 增补） | Agent YAML 的 `model` 是默认值，Loop／Thread 创建时可覆盖；用户可让指挥官自动选择 Subagent 模型或固定继承。Profile 限 Gateway 已登记目录；多模型与独立 API Key 复用 Managed Models，密钥不进协议和 Thread。见 ADR-0009／0028 |
 | 11 | 触发器排期：**cron 先行（P2），IM 靠后**；每个 agent 必须有一个网页同时看到**配置与对话**（2026-10-09 QA-7） | P2 只做 Scheduler(cron)；IM adapter 排 P3 之后；Console agent 详情页 = 配置区 + 对话区一页合并（P2 验收项） |
 | 12 | **DeerFlow 跟踪策略 = fork GitHub 仓库**（2026-10-09 QA-8） | P2 前置任务：fork 并锁定版本基线，定制以 patch/cherry-pick 管理；替换 spike 的 tarball 快照 |
 
@@ -342,6 +342,13 @@ task（open → review → done，只前进不回退）
   采纳记审计。打回 = 对该 loop 评论 → 同 thread 水合续跑 → 交 v2，不影响 task 与其他 loop。
 - **人机同构**：人领取后在 Console 对话交付，产出结构与 agent loop 一致。
 - 数据模型：`fleet_task_loops`（loop 表）、`fleet_task_comments`；`fleet_tasks` 状态收敛 open|review|done。
+
+### 7.7++ Thread 实例选模（2026-10-28，ADR-0028）
+
+- **Agent 定义只给默认值**：`spec.agent.model` 不再是一次执行的强制绑定；每个 agent Loop 领取时解析 `model_profile` 并保存模型快照，Dispatcher 通过 Gateway 原生 `context.model_name` 执行，打回续跑不改变快照。
+- **人与指挥官分工**：创建 Task 时可指定初始 Thread 的 Profile；`subagent_model_policy=auto` 允许指挥官逐个子任务选模，`inherit` 固定所有后代继承用户指定 Profile。Ops／第三方 Agent 使用同一结构化字段，自然语言不是权限边界。
+- **解析与校验**：实例显式 Profile → Agent 默认 → Gateway 默认。可选 `model_policy.allowed_profiles` 约束 Agent 可用范围；未知、越权或继承冲突在入队前拒绝。
+- **模型与密钥管理**：复用 Gateway Managed Models，每个受管 Profile 可拥有独立 API Key；现有 `$DEEPSEEK_API_KEY` 继续作为系统默认。密钥只写不回显，管理操作 human-only，不进 Agent Thread、审计或 Git。
 
 ### 7.8 Console 页面（fleet view 极简版）
 

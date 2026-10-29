@@ -56,6 +56,8 @@ class ClaimTransactionTests(unittest.IsolatedAsyncioTestCase):
             patch("app.pool.pool", AsyncMock(return_value=FakePool(conn))),
             patch("app.pool.audit", AsyncMock()),
             patch("app.pool.enqueue_loop_run", AsyncMock()),
+            patch("app.models.resolve_profile", AsyncMock(
+                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
         ):
             return await poolmod.claim_loop(
                 11, claimant_type, claimant, created_by="test"
@@ -183,7 +185,9 @@ class PostgresConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     id BIGSERIAL PRIMARY KEY,
                     agent_name TEXT NOT NULL DEFAULT 'unassigned',
                     input TEXT NOT NULL DEFAULT 'test',
-                    pool_status TEXT NOT NULL DEFAULT 'open'
+                    pool_status TEXT NOT NULL DEFAULT 'open',
+                    model_profile TEXT,
+                    subagent_model_policy TEXT NOT NULL DEFAULT 'auto'
                 );
                 CREATE TABLE fleet_task_loops (
                     id BIGSERIAL PRIMARY KEY,
@@ -198,6 +202,9 @@ class PostgresConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     thread_id TEXT,
                     delivered_at TIMESTAMPTZ,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    model_profile TEXT,
+                    model_snapshot JSONB,
+                    model_selected_by TEXT,
                     UNIQUE(task_id, claimant_type, claimant)
                 );
             """)
@@ -209,6 +216,8 @@ class PostgresConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             patch("app.pool.pool", AsyncMock(return_value=self.db)),
             patch("app.pool.audit", AsyncMock()),
             patch("app.pool.enqueue_loop_run", AsyncMock()),
+            patch("app.models.resolve_profile", AsyncMock(
+                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
         ]
         for item in self.patches:
             item.start()

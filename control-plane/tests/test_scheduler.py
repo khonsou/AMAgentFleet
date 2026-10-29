@@ -103,8 +103,8 @@ class CronClaimantTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_task.await_count, 2)
         self.assertTrue(all(c.kwargs["source"] == "cron" for c in create_task.await_args_list))
         self.assertEqual(claim_loop.await_args_list, [
-            call(ANY, 101, "agent", "ar-reconciliation-01", created_by="scheduler", idempotent=True),
-            call(ANY, 102, "agent", "fleet-cmd-01", created_by="scheduler", idempotent=True),
+            call(ANY, 101, "agent", "ar-reconciliation-01", created_by="scheduler", idempotent=True, model_profile=None),
+            call(ANY, 102, "agent", "fleet-cmd-01", created_by="scheduler", idempotent=True, model_profile=None),
         ])
         self.assertEqual(enqueue.await_args_list, [call(1101), call(1102)])
         self.assertLess(events.index("commit"), events.index("enqueue"))
@@ -126,8 +126,8 @@ class CronClaimantTests(unittest.IsolatedAsyncioTestCase):
             docs, default_orchestrator="global-commander")
 
         self.assertEqual(claim_loop.await_args_list, [
-            call(ANY, 101, "agent", "global-commander", created_by="scheduler", idempotent=True),
-            call(ANY, 102, "agent", "fleet-cmd-01", created_by="scheduler", idempotent=True),
+            call(ANY, 101, "agent", "global-commander", created_by="scheduler", idempotent=True, model_profile=None),
+            call(ANY, 102, "agent", "fleet-cmd-01", created_by="scheduler", idempotent=True, model_profile=None),
         ])
 
     async def test_claim_failure_rolls_back_without_fired_marker_or_enqueue(self):

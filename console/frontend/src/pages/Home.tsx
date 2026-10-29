@@ -260,6 +260,9 @@ export default function Home() {
   })
   const [instruction, setInstruction] = useState('')
   const [launching, setLaunching] = useState(false)
+  const [modelProfiles, setModelProfiles] = useState<Awaited<ReturnType<typeof api.models>>>([])
+  const [modelProfile, setModelProfile] = useState('')
+  const [subagentModelPolicy, setSubagentModelPolicy] = useState<'auto' | 'inherit'>('auto')
 
   const load = () => {
     api.allTasks(200).then((list) => { setTasks(list); setErr('') }).catch((e) => setErr(String(e)))
@@ -268,6 +271,7 @@ export default function Home() {
 
   useEffect(() => {
     load()
+    api.models().then(setModelProfiles).catch(() => setModelProfiles([]))
     const t = setInterval(load, 15000)
     return () => clearInterval(t)
   }, [])
@@ -278,9 +282,9 @@ export default function Home() {
     setErr('')
     try {
       if (launchAgent) {
-        await api.agentDispatch(launchAgent, instruction.trim())  // 指派给该 agent
+        await api.agentDispatch(launchAgent, instruction.trim(), modelProfile || undefined, subagentModelPolicy)
       } else {
-        await api.createTask(instruction.trim())                   // 入池待认领
+        await api.createTask(instruction.trim(), undefined, modelProfile || undefined, subagentModelPolicy)
       }
       setInstruction('')
       load()
@@ -333,11 +337,25 @@ export default function Home() {
             rows={3}
             placeholder="输入任务指令发起任务实例；认领的 agent 可再拆分子任务协作。支持多行，Ctrl/⌘+Enter 提交。"
             className={INPUT_CLS + ' min-h-[72px] resize-y'} disabled={launching} />
-          <div className="mt-2.5 flex items-center gap-2.5">
-            <select value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
+          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+            <select aria-label="执行 Agent" value={launchAgent} onChange={(e) => setLaunchAgent(e.target.value)}
               className={SELECT_CLS + ' w-56'}>
               <option value="">不入池指派 · 先放任务池</option>
               {agents.map((a) => <option key={a.name} value={a.name}>{a.display_name || a.name}</option>)}
+            </select>
+            <select aria-label="实例模型" value={modelProfile}
+              onChange={(e) => {
+                setModelProfile(e.target.value)
+                if (!e.target.value) setSubagentModelPolicy('auto')
+              }} className={SELECT_CLS + ' w-52'}>
+              <option value="">实例模型 · 系统默认</option>
+              {modelProfiles.map((p) => <option key={p.name} value={p.name}>{p.display_name} · {p.model}</option>)}
+            </select>
+            <select aria-label="Subagent 模型策略" value={subagentModelPolicy}
+              onChange={(e) => setSubagentModelPolicy(e.target.value as 'auto' | 'inherit')}
+              disabled={!modelProfile} className={SELECT_CLS + ' w-56'}>
+              <option value="auto">Subagent · 指挥官自动选模</option>
+              <option value="inherit">Subagent · 全部继承此模型</option>
             </select>
             <Button variant="signal" onClick={launch} disabled={launching || !instruction.trim()} className="shrink-0">
               {launching ? '发起中…' : launchAgent ? '指派并发起' : '放入任务池'}

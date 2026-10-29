@@ -331,6 +331,7 @@ export default function ThreadDetailPage() {
                     <div>LLM 调用 <span className="tabular-nums text-ink">{r.llm_call_count}</span></div>
                     <div>消息 <span className="tabular-nums text-ink">{r.message_count}</span></div>
                   </div>
+                  <div className="mt-2 font-mono text-[11px] text-ink-2">实际模型：{r.model_name || '系统默认（旧记录）'}</div>
                   <div className="mt-1 font-mono text-[11px] text-ink-3">{fmtTime(r.created_at)}</div>
                   {r.error && (
                     <div className="mt-2 max-h-20 overflow-y-auto rounded-[2px] border border-led-red/20 bg-led-red/10 px-2 py-1 font-mono text-[11px] text-led-red">

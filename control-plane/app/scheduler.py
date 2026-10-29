@@ -33,13 +33,17 @@ def _cron_specs(doc: dict) -> list[dict]:
     out = []
     for i, item in enumerate(triggers.get("cron") or []):
         if isinstance(item, str):
-            out.append({"cron": item, "timezone": "Asia/Shanghai", "prompt": "", "orchestrator": None})
+            out.append({"cron": item, "timezone": "Asia/Shanghai", "prompt": "",
+                        "orchestrator": None, "model_profile": None,
+                        "subagent_model_policy": "auto"})
         elif isinstance(item, dict):
             out.append({
                 "cron": item["cron"],
                 "timezone": item.get("timezone", "Asia/Shanghai"),
                 "prompt": item.get("prompt", ""),
                 "orchestrator": item.get("orchestrator"),
+                "model_profile": item.get("model_profile"),
+                "subagent_model_policy": item.get("subagent_model_policy", "auto"),
             })
     return out
 
@@ -81,7 +85,7 @@ async def sync(actor: str = "scheduler") -> dict:
                 try:
                     async with conn.transaction():
                         # 即使误开多个调度实例，同一条 cron 的同一轮也串行处理；
-                        # 常驻单例门闩由 ADR-0012 后续批次补齐。
+                        # 后台循环另由常驻单例门闩限制为单一活跃实例。
                         await conn.fetchval(
                             "SELECT pg_advisory_xact_lock(hashtext($1))",
                             f"fleet:cron:{name}:{i}",
@@ -104,6 +108,8 @@ async def sync(actor: str = "scheduler") -> dict:
                             conn, prompt, source="cron", assignee=None,
                             parent_task_id=None,
                             idempotency_key=f"cron:{name}:{i}:{prev.isoformat()}",
+                            model_profile=spec["model_profile"],
+                            subagent_model_policy=spec["subagent_model_policy"],
                         )
                         loop = None
                         loop_created = False
@@ -111,6 +117,7 @@ async def sync(actor: str = "scheduler") -> dict:
                             loop, loop_created = await poolmod._claim_loop_with_conn(
                                 conn, task["id"], "agent", claimant,
                                 created_by="scheduler", idempotent=True,
+                                model_profile=spec["model_profile"],
                             )
                         await conn.execute(
                             """INSERT INTO fleet_cron_fires (agent_name, cron_idx, last_fired_at)
@@ -126,11 +133,16 @@ async def sync(actor: str = "scheduler") -> dict:
                     continue
             if task_created:
                 await audit("task.created", actor="scheduler",
-                            args={"input": prompt[:200]}, detail={"task_id": task["id"]})
+                            args={"input": prompt[:200]},
+                            detail={"task_id": task["id"],
+                                    "model_profile": spec["model_profile"],
+                                    "subagent_model_policy": spec["subagent_model_policy"]})
             if loop_created:
                 await audit("loop.claimed", agent_name=claimant, actor="scheduler",
                             detail={"loop_id": loop["id"], "task_id": task["id"],
-                                    "claimant": f"agent:{claimant}"})
+                                    "claimant": f"agent:{claimant}",
+                                    "model_profile": loop.get("model_profile"),
+                                    "model_selected_by": loop.get("model_selected_by")})
             if loop and loop["status"] in ("claimed", "returned"):
                 await enqueue_loop_run(loop["id"])
             fired.append(task["id"])

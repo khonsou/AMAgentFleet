@@ -137,6 +137,9 @@ async def _run_loop(loop_id: int) -> None:
         # lead_agent 解析：subagent_enabled = requested and allowed != []）。
         "config": {"configurable": {"thread_id": thread_id, "subagent_enabled": True}},
     }
+    # ADR-0028：Loop 创建时已解析并锁定 Profile；旧数据 NULL 保持 Gateway 原默认。
+    if loop.get("model_profile"):
+        body["context"] = {"model_name": loop["model_profile"]}
 
     heartbeat = asyncio.create_task(_heartbeat(loop_id))
     try:

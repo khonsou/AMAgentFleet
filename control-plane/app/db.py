@@ -125,6 +125,10 @@ ALTER TABLE fleet_agents ADD COLUMN IF NOT EXISTS egress JSONB NOT NULL DEFAULT 
 ALTER TABLE fleet_tasks ADD COLUMN IF NOT EXISTS pool_status TEXT NOT NULL DEFAULT 'open'
     CHECK (pool_status IN ('open','review','done'));
 ALTER TABLE fleet_tasks ADD COLUMN IF NOT EXISTS accepted_loop_id BIGINT;
+-- ADR-0028：Task 保存用户选模与后代策略；Loop 保存不含秘密的实例快照。
+ALTER TABLE fleet_tasks ADD COLUMN IF NOT EXISTS model_profile TEXT;
+ALTER TABLE fleet_tasks ADD COLUMN IF NOT EXISTS subagent_model_policy TEXT NOT NULL DEFAULT 'auto'
+    CHECK (subagent_model_policy IN ('auto','inherit'));
 CREATE TABLE IF NOT EXISTS fleet_task_loops (
     id            BIGSERIAL PRIMARY KEY,
     task_id       BIGINT NOT NULL REFERENCES fleet_tasks(id),
@@ -143,6 +147,9 @@ CREATE TABLE IF NOT EXISTS fleet_task_loops (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     delivered_at  TIMESTAMPTZ
 );
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_profile TEXT;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_snapshot JSONB;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS model_selected_by TEXT;
 -- ADR-0012：打回意见随 Loop 持久化，成功交付后才清除。
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS resume_comment TEXT;
 CREATE INDEX IF NOT EXISTS idx_loops_task ON fleet_task_loops(task_id, status);

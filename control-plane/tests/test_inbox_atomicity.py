@@ -108,7 +108,9 @@ class PostgresTriggerAtomicityTests(unittest.IsolatedAsyncioTestCase):
                     source TEXT NOT NULL DEFAULT 'web',
                     parent_task_id BIGINT,
                     idempotency_key TEXT UNIQUE,
-                    pool_status TEXT NOT NULL DEFAULT 'open'
+                    pool_status TEXT NOT NULL DEFAULT 'open',
+                    model_profile TEXT,
+                    subagent_model_policy TEXT NOT NULL DEFAULT 'auto'
                 );
                 CREATE TABLE fleet_task_loops (
                     id BIGSERIAL PRIMARY KEY,
@@ -117,6 +119,9 @@ class PostgresTriggerAtomicityTests(unittest.IsolatedAsyncioTestCase):
                     claimant TEXT NOT NULL,
                     created_by TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'claimed',
+                    model_profile TEXT,
+                    model_snapshot JSONB,
+                    model_selected_by TEXT,
                     UNIQUE(task_id, claimant_type, claimant)
                 );
                 CREATE TABLE fleet_inbox (
@@ -148,6 +153,8 @@ class PostgresTriggerAtomicityTests(unittest.IsolatedAsyncioTestCase):
             patch("app.inbox.enqueue_loop_run", self.enqueue),
             patch("app.scheduler.enqueue_loop_run", self.enqueue),
             patch("app.scheduler._retire_gateway_crons", AsyncMock(return_value=0)),
+            patch("app.models.resolve_profile", AsyncMock(
+                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
         ]
         for item in self.patches:
             item.start()

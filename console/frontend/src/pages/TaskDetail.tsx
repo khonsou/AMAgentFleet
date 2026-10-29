@@ -170,6 +170,9 @@ export default function TaskDetailPage() {
             <PanelHead><span className="silk">TASK INSTANCE&nbsp;/&nbsp;任务实例输入</span></PanelHead>
             <PanelBody>
               <pre className="lcd whitespace-pre-wrap rounded-[2px] border border-hairline-soft p-3 text-xs leading-relaxed text-ink-2">{t.input}</pre>
+              <div className="mt-2 font-mono text-[11px] text-ink-3">
+                首选模型：{t.model_profile || '系统／Agent 默认'} · Subagent 策略：{t.subagent_model_policy === 'inherit' ? '固定继承' : '指挥官自动选模'}
+              </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {t.pool_status !== 'done' && (
                   <Button size="sm" variant="destructive" disabled={busy}
@@ -209,6 +212,14 @@ export default function TaskDetailPage() {
                       <StatusPill color={lm.led} blink={lm.blink}>{lm.label} v{l.version}</StatusPill>
                       <span className="ml-auto tabular-nums">{l.tokens ?? '—'} tok · {fmtTime(l.created_at)}</span>
                     </div>
+                    {l.claimant_type === 'agent' && (
+                      <div className="mt-2 font-mono text-[11px] text-ink-2">
+                        模型：{l.model_snapshot?.display_name || l.model_profile || '系统默认（旧实例）'}
+                        {l.model_snapshot?.model && l.model_snapshot.model !== l.model_snapshot.display_name && ` · ${l.model_snapshot.model}`}
+                        {l.model_selected_by && <span className="text-ink-3"> · 选择者 {l.model_selected_by}</span>}
+                        {l.model_snapshot?.source && <span className="text-ink-3"> · 来源 {l.model_snapshot.source}</span>}
+                      </div>
+                    )}
                     {l.deliverable && <LoopOutput l={l} />}
                     {l.error && <div className="mt-1 text-xs text-led-red">{l.error}</div>}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
