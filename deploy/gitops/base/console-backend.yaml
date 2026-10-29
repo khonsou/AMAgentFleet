@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: console-backend
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+spec:
+  selector:
+    app: am-agent-fleet-console-backend
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: am-agent-fleet-console-backend
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: am-agent-fleet-console-backend
+  template:
+    metadata:
+      labels:
+        app: am-agent-fleet-console-backend
+        app.kubernetes.io/part-of: am-agent-fleet
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: console-backend
+          image: am-agent-fleet-backend
+          imagePullPolicy: Always
+          workingDir: /app/console/backend
+          command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+          ports:
+            - name: http
+              containerPort: 8002
+          env:
+            - name: CONSOLE_PG_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-secrets
+                  key: DATABASE_URL
+            - name: CONSOLE_GATEWAY_URL
+              value: http://am-agent-fleet-gateway:8001
+            - name: CONSOLE_CONTROL_PLANE_URL
+              value: http://am-agent-fleet-control-plane:8003
+            - name: FLEET_AUTH_ENABLED
+              value: "1"
+            - name: FLEET_AUTH_JWT_PUBLIC_KEY_PATH
+              value: /run/secrets/dao-jwt-public-key.pem
+            - name: FLEET_AUTH_JWT_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-auth
+                  key: FLEET_AUTH_JWT_ISSUER
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/console/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/console/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - name: dao-jwt-public-key
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: dao-jwt-public-key
+          secret:
+            secretName: am-agent-fleet-auth
+            items:
+              - key: dao-jwt-public-key.pem
+                path: dao-jwt-public-key.pem
+      imagePullSecrets:
+        - name: aliyun-reg-secret

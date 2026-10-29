@@ -1,0 +1,169 @@
+name: ci
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Common image tag suffix to release (for example sha-2ed48b9c1a2b); leave empty to build current commit"
+        required: false
+        type: string
+      runner:
+        description: "Build runner"
+        required: true
+        default: github-hosted
+        type: choice
+        options:
+          - github-hosted
+          - self-hosted
+      push_image:
+        description: "Push the built images to ACR (disable for a build-only dry run)"
+        required: true
+        default: true
+        type: boolean
+      release:
+        description: "Update the test overlay after build/push"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: am-agent-fleet-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python and shell checks
+        run: |
+          python -m compileall -q -x '(^|/)\.venv/' control-plane console/backend fleet_tools.py
+          bash -n deploy/deploy.sh
+      - uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.4.3"
+      - run: kustomize build deploy/gitops/overlays/test > /dev/null
+
+  build:
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.image_tag == ''
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'self-hosted') && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    concurrency:
+      group: am-agent-fleet-build
+      cancel-in-progress: false
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute image tag
+        id: meta
+        shell: bash
+        run: echo "image_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: github.event.inputs.push_image != 'false'
+        with:
+          registry: registry.cn-shenzhen.aliyuncs.com
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Build gateway base
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain \
+            --build-arg UV_EXTRAS=postgres \
+            -f backend/Dockerfile \
+            -t am-agent-fleet-gateway-base:am-fleet-base-v2 \
+            "https://github.com/khonsou/deer-flow.git#refs/tags/am-fleet-base-v2"
+      - name: Build gateway, backend and frontend images
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          REGISTRY="registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet"
+          GATEWAY_IMAGE="$REGISTRY:gateway-test-${TAG}"
+          BACKEND_IMAGE="$REGISTRY:backend-test-${TAG}"
+          FRONTEND_IMAGE="$REGISTRY:frontend-test-${TAG}"
+
+          docker build --progress=plain \
+            --build-arg BASE_IMAGE=am-agent-fleet-gateway-base:am-fleet-base-v2 \
+            -f deploy/Dockerfile.gateway -t "$GATEWAY_IMAGE" .
+
+          docker build --progress=plain \
+            -f deploy/Dockerfile.fleet-python -t "$BACKEND_IMAGE" .
+
+          docker build --progress=plain \
+            -f deploy/Dockerfile.console-frontend \
+            --build-arg VITE_AUTH_ENABLED=1 \
+            --build-arg VITE_AUTH_ORIGIN=https://auth.angrymiao.com \
+            --build-arg VITE_OAUTH_CLIENT_ID=am-agent-fleet \
+            -t "$FRONTEND_IMAGE" .
+      - name: Push images
+        if: github.event.inputs.push_image != 'false'
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          REGISTRY="registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet"
+          docker push "$REGISTRY:gateway-test-${TAG}"
+          docker push "$REGISTRY:backend-test-${TAG}"
+          docker push "$REGISTRY:frontend-test-${TAG}"
+
+  release:
+    needs: [build]
+    if: |
+      always() &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.push_image != 'false') &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.release != 'false') && (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag != '' && needs.build.result == 'skipped') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag == '' && needs.build.result == 'success')
+      )
+    runs-on: ubuntu-latest
+    environment: test
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.4.3"
+      - name: Update test image tags
+        shell: bash
+        env:
+          INPUT_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_IMAGE_TAG:-sha-${GITHUB_SHA::12}}"
+          REGISTRY="registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet"
+          cd deploy/gitops/overlays/test
+          kustomize edit set image \
+            am-agent-fleet-gateway="${REGISTRY}:gateway-test-${TAG}"
+          kustomize edit set image \
+            am-agent-fleet-backend="${REGISTRY}:backend-test-${TAG}"
+          kustomize edit set image \
+            am-agent-fleet-frontend="${REGISTRY}:frontend-test-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "release(am-agent-fleet): ${TAG}" || echo "No manifest change"
+          git push origin HEAD:main
+      - name: Next step
+        run: |
+          echo "Argo CD is manual-sync. Review and run:"
+          echo "  argocd app diff am-agent-fleet-test"
+          echo "  argocd app sync am-agent-fleet-test"

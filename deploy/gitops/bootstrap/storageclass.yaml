@@ -1,0 +1,14 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: am-agent-fleet-ssd-retain
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+provisioner: diskplugin.csi.alibabacloud.com
+parameters:
+  fstype: ext4
+  type: cloud_ssd
+  zoneId: cn-shenzhen-a
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

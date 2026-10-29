@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: am-agent-fleet
+  labels:
+    app.kubernetes.io/part-of: am-agent-fleet
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - fleet.angrymiao.com
+      secretName: am-tls
+  rules:
+    - host: fleet.angrymiao.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: am-agent-fleet-console-web
+                port:
+                  number: 80
