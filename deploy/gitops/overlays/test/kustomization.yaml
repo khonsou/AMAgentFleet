@@ -2,16 +2,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: angrymiao-test
 resources:
-  - ../../base
-images:
+- ../../base
   # Initial values match the live Deployments so the first Argo CD sync is a
   # no-op. The release workflow replaces them with the VPC address and SHA tags.
-  - name: am-agent-fleet-gateway
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: gateway-test-2ed48b9-dirty-20261028183243
-  - name: am-agent-fleet-backend
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: backend-test-2ed48b9-dirty-20261028183243
-  - name: am-agent-fleet-frontend
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: frontend-test-2ed48b9-dirty-20261028183243
+images:
+- name: am-agent-fleet-backend
+  newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+  newTag: backend-test-sha-eefd9e507a55
+- name: am-agent-fleet-frontend
+  newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+  newTag: frontend-test-sha-eefd9e507a55
+- name: am-agent-fleet-gateway
+  newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+  newTag: gateway-test-sha-eefd9e507a55
