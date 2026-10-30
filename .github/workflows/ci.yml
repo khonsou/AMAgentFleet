@@ -2,6 +2,8 @@ name: ci
 
 on:
   pull_request:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -55,8 +57,8 @@ jobs:
 
   build:
     if: |
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.image_tag == ''
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag == '')
     runs-on: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'self-hosted') && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 180
     concurrency:
@@ -127,6 +129,7 @@ jobs:
       always() &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.push_image != 'false') &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.release != 'false') && (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag != '' && needs.build.result == 'skipped') ||
         (github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag == '' && needs.build.result == 'success')
       )
@@ -137,7 +140,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
       - uses: imranismail/setup-kustomize@v2
         with:
@@ -159,11 +161,16 @@ jobs:
             am-agent-fleet-frontend="${REGISTRY}:frontend-test-${TAG}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- kustomization.yaml; then
+            echo "No manifest change"
+            exit 0
+          fi
           git add kustomization.yaml
-          git commit -m "release(am-agent-fleet): ${TAG}" || echo "No manifest change"
-          git push origin HEAD:main
+          git commit -m "release(am-agent-fleet): ${TAG}"
+          git tag -f deploy-fleet-test
+          git push --force origin deploy-fleet-test
       - name: Next step
         run: |
-          echo "Argo CD is manual-sync. Review and run:"
+          echo "Argo CD tracks deploy-fleet-test. Review and run:"
           echo "  argocd app diff am-agent-fleet-test"
           echo "  argocd app sync am-agent-fleet-test"
