@@ -90,6 +90,7 @@ export interface ThreadDetail {
 export interface ChatMessage {
   role: 'human' | 'ai' | 'tool' | 'system' | 'unknown'
   content: string
+  name?: string
 }
 
 export const api = {

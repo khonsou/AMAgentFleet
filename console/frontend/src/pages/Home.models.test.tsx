@@ -31,16 +31,18 @@ describe('首页实例选模', () => {
   it('把 Profile 与固定继承策略随待分配 Task 提交', async () => {
     const user = userEvent.setup()
     renderHome()
+    await user.click(screen.getByText('高级设置'))
     await user.selectOptions(await screen.findByLabelText('实例模型'), 'reasoner')
     await user.selectOptions(screen.getByLabelText('Subagent 模型策略'), 'inherit')
-    await user.type(screen.getByPlaceholderText(/输入任务指令/), '测试多模型')
-    await user.click(screen.getByRole('button', { name: '放入任务池' }))
+    await user.type(screen.getByPlaceholderText(/输入 Task 指令/), '测试多模型')
+    await user.click(screen.getByRole('button', { name: '创建 Task' }))
     await waitFor(() => expect(apiMock.createTask).toHaveBeenCalledWith('测试多模型', undefined, 'reasoner', 'inherit'))
   })
 
   it('切回系统默认会重置继承，直接派发也携带选模', async () => {
     const user = userEvent.setup()
     renderHome()
+    await user.click(screen.getByText('高级设置'))
     await user.selectOptions(await screen.findByLabelText('实例模型'), 'reasoner')
     await user.selectOptions(screen.getByLabelText('Subagent 模型策略'), 'inherit')
     await user.selectOptions(screen.getByLabelText('实例模型'), '')
@@ -49,8 +51,8 @@ describe('首页实例选模', () => {
 
     await user.selectOptions(screen.getByLabelText('执行 Agent'), 'fleet-cmd-01')
     await user.selectOptions(screen.getByLabelText('实例模型'), 'reasoner')
-    await user.type(screen.getByPlaceholderText(/输入任务指令/), '测试派发')
-    await user.click(screen.getByRole('button', { name: '指派并发起' }))
+    await user.type(screen.getByPlaceholderText(/输入 Task 指令/), '测试派发')
+    await user.click(screen.getByRole('button', { name: '指派并创建' }))
     await waitFor(() => expect(apiMock.agentDispatch).toHaveBeenCalledWith('fleet-cmd-01', '测试派发', 'reasoner', 'auto'))
   })
 })

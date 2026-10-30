@@ -14,9 +14,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-[70vh] flex-col items-center justify-center gap-5">
       <div className="silk text-center text-[13px] text-ink-2">
-        AM AGENT FLEET / CONSOLE
-        <div className="mt-2 text-[21px] font-semibold tracking-tight text-ink">员工登录</div>
-        <div className="mt-1.5 text-[12px]">使用公司统一账号（DAO）登录后继续</div>
+        AM AGENT FLEET
+        <div className="mt-2 text-[21px] font-semibold tracking-tight text-ink">登录 Fleet Console</div>
+        <div className="mt-1.5 text-[12px]">使用公司统一账号（DAO）继续</div>
       </div>
       <button
         onClick={() => void startOauthLogin('/')}

@@ -14,7 +14,7 @@
     --hairline-soft: 210 4% 20%;  /* 面板内分隔线 */
     --ink: 60 3% 90%;             /* 主文字（暖白） #E8E8E4 */
     --ink-2: 100 3% 60%;          /* 次文字/丝印 #9A9C96 */
-    --ink-3: 86 3% 43%;           /* 弱文字 #6E7069 */
+    --ink-3: 86 3% 52%;           /* 弱文字 #6E7069 */
     --signal: 16 100% 56%;        /* 信号橙：唯一强调色 #FF5C1F */
     --signal-foreground: 30 33% 7%;
     --led-green: 142 69% 58%;
@@ -82,6 +82,21 @@
     color: hsl(var(--ink-2));
     font-weight: 500;
   }
+
+  /* 功能性面板标题：与装饰丝印分离 */
+  .panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: hsl(var(--ink));
+  }
+
+  .title-link {
+    color: hsl(var(--ink));
+    text-decoration: none;
+    transition: color 0.12s;
+  }
+  .title-link:hover { color: hsl(var(--signal)); }
 
   /* 控制台链接：暖白 + 点状下划线，hover 变信号橙 */
   .link-console {

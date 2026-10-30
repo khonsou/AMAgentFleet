@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api, type RegistryAgent } from '@/lib/api'
+import { fmtTime, fmtFullTime } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelBody, PanelHead } from '@/components/console/Panel'
 import { StatusPill } from '@/components/console/Status'
+import { agentStatusMeta } from '@/components/console/statusMeta'
+import ErrorBanner from '@/components/console/ErrorBanner'
 
-function fmtTime(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('zh-CN', { hour12: false })
+const SELECT_CLS = 'ctl h-9 w-full rounded-[2px] border border-hairline bg-inset px-2 font-mono text-xs text-ink'
+const FORM_INPUT_CLS = 'w-full rounded-[2px] border-hairline bg-inset text-sm text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
+
+function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
+  return <label className={`block ${wide ? 'md:col-span-2' : ''}`}>
+    <span className="mb-1.5 block text-xs font-medium text-ink-2">{label}</span>
+    {children}
+  </label>
 }
-
-const SELECT_CLS = 'ctl h-9 shrink-0 rounded-[2px] border border-hairline bg-inset px-2 font-mono text-xs text-ink'
-const FORM_INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-sm text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
 
 export default function RegistryPage() {
   const [agents, setAgents] = useState<RegistryAgent[]>([])
@@ -20,7 +25,7 @@ export default function RegistryPage() {
   const navigate = useNavigate()
 
   const load = () => {
-    api.agents().then(setAgents).catch(() => setAgents([]))
+    api.agents().then((list) => { setAgents(list); setErr('') }).catch((e) => { setAgents([]); setErr(String(e)) })
   }
 
   useEffect(() => {
@@ -97,51 +102,58 @@ export default function RegistryPage() {
       <header className="mb-6 flex items-end justify-between">
         <div>
           <div className="silk">MODULE <b>02</b> / REGISTRY</div>
-          <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">Agent 定义</h1>
-          <p className="mt-1 text-[12.5px] text-ink-2">
-            注册 / 配置 / 停止拉起 Agent 定义。发起任务实例见「任务实例看板」，工作会话见「Thread 实例观测」。
-          </p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight">Agent 定义</h1>
         </div>
         <div className="flex items-center gap-3">
           <span className="silk hidden md:inline">5S&nbsp;REFRESH</span>
           <Button variant="signal" onClick={() => setShowRegister(!showRegister)} className="shrink-0">
-            + 注册新 Agent
+            + 注册 Agent
           </Button>
         </div>
       </header>
 
       {showRegister && (
         <Panel className="mb-5 border-signal/40">
-          <PanelHead>
-            <span className="silk">REGISTER&nbsp;/&nbsp;注册新 Agent</span>
-            <span className="silk hidden md:inline">YAML&nbsp;一等公民</span>
-          </PanelHead>
+          <PanelHead><span className="panel-title">注册 Agent</span></PanelHead>
           <PanelBody className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <p className="text-xs text-ink-3 md:col-span-2">创建定义 → 进 Registry，可在详情页继续改 YAML。</p>
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}
-              className={SELECT_CLS + ' w-full md:col-span-2'}>
-              <option value="">空白模板（默认配置）</option>
-              {tplList.map((t) => <option key={t.id} value={t.id}>模板：{t.id} — {t.description.slice(0, 40)}</option>)}
-            </select>
-            <Input value={reg.name} onChange={(e) => setReg({ ...reg, name: e.target.value })}
-              placeholder="标识名（英文/数字/连字符，如 sales-followup-01）" className={FORM_INPUT_CLS + ' font-mono'} />
-            <Input value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })}
-              placeholder="显示名（如 销售跟进）" className={FORM_INPUT_CLS} />
-            <Input value={reg.owner} onChange={(e) => setReg({ ...reg, owner: e.target.value })}
-              placeholder="负责人/团队（如 sales-team）" className={FORM_INPUT_CLS} />
-            <Input value={reg.costCenter} onChange={(e) => setReg({ ...reg, costCenter: e.target.value })}
-              placeholder="成本中心（如 SAL-001，可空）" className={FORM_INPUT_CLS} />
+            <p className="text-xs text-ink-2 md:col-span-2">创建后可继续编辑完整 YAML。</p>
+            <Field label="模板" wide>
+              <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className={SELECT_CLS}>
+                <option value="">空白模板（默认配置）</option>
+                {tplList.map((t) => <option key={t.id} value={t.id} title={t.description}>{t.displayName || t.id} — {t.description}</option>)}
+              </select>
+            </Field>
+            <Field label="标识名">
+              <Input value={reg.name} onChange={(e) => setReg({ ...reg, name: e.target.value })}
+                placeholder="sales-followup-01" className={FORM_INPUT_CLS + ' font-mono'} />
+            </Field>
+            <Field label="显示名">
+              <Input value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })}
+                placeholder="销售跟进" className={FORM_INPUT_CLS} />
+            </Field>
+            <Field label="负责人／团队">
+              <Input value={reg.owner} onChange={(e) => setReg({ ...reg, owner: e.target.value })}
+                placeholder="sales-team" className={FORM_INPUT_CLS} />
+            </Field>
+            <Field label="成本中心（可选）">
+              <Input value={reg.costCenter} onChange={(e) => setReg({ ...reg, costCenter: e.target.value })}
+                placeholder="SAL-001" className={FORM_INPUT_CLS} />
+            </Field>
             {!templateId && (
-              <Input value={reg.description} onChange={(e) => setReg({ ...reg, description: e.target.value })}
-                placeholder="职责描述（写入 SOUL 护栏，可空）" className={FORM_INPUT_CLS + ' md:col-span-2'} />
+              <Field label="职责描述（可选）" wide>
+                <Input value={reg.description} onChange={(e) => setReg({ ...reg, description: e.target.value })}
+                  placeholder="说明该 Agent 的职责边界" className={FORM_INPUT_CLS} />
+              </Field>
             )}
             {templateId && (
-              <Input value={reg.egressDomain} onChange={(e) => setReg({ ...reg, egressDomain: e.target.value })}
-                placeholder="目标站点域名（egress 白名单，如 data.example.com，可空）" className={FORM_INPUT_CLS + ' md:col-span-2'} />
+              <Field label="目标站点域名（可选）" wide>
+                <Input value={reg.egressDomain} onChange={(e) => setReg({ ...reg, egressDomain: e.target.value })}
+                  placeholder="data.example.com" className={FORM_INPUT_CLS} />
+              </Field>
             )}
             <div className="flex gap-2 md:col-span-2">
               <Button variant="signal" onClick={register} disabled={registering || !reg.name.trim()}>
-                {registering ? '注册中…' : '创建并部署'}
+                {registering ? '注册中…' : '创建 Agent'}
               </Button>
               <Button variant="outline" onClick={() => setShowRegister(false)}>取消</Button>
             </div>
@@ -149,70 +161,54 @@ export default function RegistryPage() {
         </Panel>
       )}
 
-      {err && (
-        <div className="mb-5 rounded-[2px] border border-led-red/30 bg-led-red/10 px-4 py-3 text-sm text-led-red">
-          后端连接异常：{err}（确认 console backend :8002 与 DeerFlow 网关 :8001 已启动）
-        </div>
-      )}
+      {err && <ErrorBanner title="Agent 列表加载失败" error={err} className="mb-5" />}
 
       <Panel className="mb-6">
         <PanelHead>
-          <span className="silk">REGISTRY&nbsp;AGENTS&nbsp;/&nbsp;配置面 · 全员可见</span>
+          <span className="panel-title">全部 Agent</span>
           <span className="silk">{agents.length}&nbsp;AGENTS</span>
         </PanelHead>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-hairline-soft text-left">
-                {['Agent', 'Owner / 成本中心', '状态', '配置版本', 'cron 触发', '最近同步'].map((h, i) => (
+                {['Agent', '负责人／成本中心', '状态', '版本', '定时任务', '最近同步'].map((h, i) => (
                   <th key={h} className={`silk whitespace-nowrap px-4 py-2.5 font-medium ${i >= 3 && i <= 4 ? 'text-right' : ''} ${i === 0 ? 'pl-5' : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {agents.map((a) => (
-                <tr key={a.name} className="border-b border-hairline-soft/60 transition-colors hover:bg-raised/40">
-                  <td className="px-4 py-3 pl-5">
-                    <Link to={`/agents/${a.name}`} className="block">
-                      <div className="font-medium text-ink">{a.display_name || a.name}</div>
-                      <div className="mt-0.5 font-mono text-xs text-ink-3">{a.name}</div>
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-ink-2">
-                    {a.owner || '—'} / {a.cost_center || '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill color={a.status === 'running' ? 'green' : a.status === 'registered' ? 'cyan' : 'off'}>
-                      {a.status}
-                    </StatusPill>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-ink-2">v{a.config_version}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-ink-2">
-                    {Array.isArray((a.triggers as { cron?: unknown })?.cron)
-                      ? ((a.triggers as { cron: unknown[] }).cron.length + ' 条')
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-ink-3">{fmtTime(a.synced_at)}</td>
-                </tr>
-              ))}
-              {agents.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center font-mono text-sm text-ink-3">
-                    Registry 暂无 agent（control-plane :8003 未启动或尚未部署）
-                  </td>
-                </tr>
+              {agents.map((a) => {
+                const status = agentStatusMeta(a.status)
+                return (
+                  <tr key={a.name} className="border-b border-hairline-soft/60 transition-colors hover:bg-raised/40">
+                    <td className="px-4 py-3 pl-5">
+                      <Link to={`/agents/${a.name}`} className="block">
+                        <div className="font-medium text-ink">{a.display_name || a.name}</div>
+                        <div className="mt-0.5 font-mono text-xs text-ink-3">{a.name}</div>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-2">
+                      <div>{a.owner || '—'}</div><div className="mt-0.5 text-ink-3">{a.cost_center || '—'}</div>
+                    </td>
+                    <td className="px-4 py-3"><StatusPill color={status.led} blink={status.blink}>{status.label}</StatusPill></td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-ink-2">v{a.config_version}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-ink-2">
+                      {Array.isArray((a.triggers as { cron?: unknown })?.cron)
+                        ? ((a.triggers as { cron: unknown[] }).cron.length + ' 条')
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-3" title={fmtFullTime(a.synced_at)}>{fmtTime(a.synced_at)}</td>
+                  </tr>
+                )
+              })}
+              {agents.length === 0 && !err && (
+                <tr><td colSpan={6} className="px-6 py-12 text-center font-mono text-sm text-ink-3">暂无 Agent，点击“注册 Agent”创建。</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Panel>
-
-      {/* 运行观测已移至独立页 /threads，避免与 Registry 混淆 */}
-      <div className="text-right">
-        <Link to="/threads" className="link-console font-mono text-xs">
-          Thread 实例观测（工作会话日志，备用查询）→
-        </Link>
-      </div>
     </div>
   )
 }

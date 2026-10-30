@@ -5,6 +5,7 @@ import { api, type ChatMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Led } from '@/components/console/Status'
+import CollapsibleContent from './CollapsibleContent'
 import { normalizeOpsMessages } from './opsMessages'
 
 const STORAGE_KEY = 'fleet-ops-thread-id'
@@ -95,7 +96,7 @@ export default function FleetOpsWidget() {
       setInput('')
       const refreshed = await loadMessages(threadId)
       if (!refreshed.length || refreshed[refreshed.length - 1].role !== 'ai') {
-        setError('Agent 已结束，但没有返回可展示的结果；请打开完整会话检查运行状态。')
+        setError('Agent 已结束，但没有返回可展示的结果；请打开完整 Thread 检查运行状态。')
       }
     } catch (e) {
       setError(String(e))
@@ -115,7 +116,7 @@ export default function FleetOpsWidget() {
               <div className="silk mt-0.5">FLEET OPS / {AGENT_ID}</div>
             </div>
             {threadId && (
-              <Link to={`/threads/${threadId}`} className="link-console ml-auto shrink-0 text-ink-3" title="打开完整会话" aria-label="打开完整会话">
+              <Link to={`/threads/${threadId}`} className="link-console ml-auto shrink-0 text-ink-3" title="打开完整 Thread" aria-label="打开完整 Thread">
                 <ExternalLink size={15} />
               </Link>
             )}
@@ -125,7 +126,7 @@ export default function FleetOpsWidget() {
           </header>
 
           <div className="border-b border-hairline-soft px-4 py-2.5 text-[11px] leading-relaxed text-ink-3">
-            用自然语言查询或操作舰队。普通对话不会创建任务；写操作会先说明动作和参数，待你明确确认后执行。
+            查询或操作舰队；涉及写操作时，助手会先请你确认。
           </div>
 
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3" aria-live="polite">
@@ -139,8 +140,9 @@ export default function FleetOpsWidget() {
               <div key={`${message.role}-${index}`} className={`rounded-[2px] border px-3 py-2 text-[13px] leading-relaxed ${
                 message.role === 'human' ? 'ml-7 border-signal/25 bg-signal/5 text-ink' : 'mr-4 border-hairline-soft bg-inset/60 text-ink'
               }`}>
-                <div className="silk mb-1">{message.role === 'human' ? '你' : 'AGENT'}</div>
-                <div className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words">{message.content}</div>
+                <div className="silk mb-1">{message.role === 'human' ? '你' : '助手'}</div>
+                <CollapsibleContent text={message.content} kind={message.role === 'tool' ? 'tool' : 'message'} label={message.name}
+                  collapseAfterChars={700} collapseAfterLines={12} previewLines={8} />
               </div>
             ))}
             {sending && (
@@ -153,7 +155,11 @@ export default function FleetOpsWidget() {
 
           {error && (
             <div role="alert" className="mx-4 mb-2 rounded-[2px] border border-led-red/30 bg-led-red/10 px-3 py-2 text-xs leading-relaxed text-led-red">
-              <div className="break-words">{error}</div>
+              <div>操作助手暂时不可用</div>
+              <details className="mt-1">
+                <summary className="cursor-pointer select-none text-ink-2">技术详情</summary>
+                <div className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px]">{error}</div>
+              </details>
               {!threadId && <button type="button" className="link-console mt-1 text-xs" onClick={retry}>重新连接</button>}
             </div>
           )}
@@ -169,8 +175,8 @@ export default function FleetOpsWidget() {
               rows={3} placeholder="查询或操作舰队，Ctrl/⌘+Enter 发送…"
               className={INPUT_CLS + ' min-h-[68px] resize-none text-[13px]'} disabled={sending || loading || !threadId} />
             <div className="mt-2 flex items-center gap-2">
-              <span className="min-w-0 truncate font-mono text-[10px] text-ink-3" title={threadId}>
-                {threadId ? `THREAD ${threadId}` : '持久会话'}
+              <span className="min-w-0 truncate font-mono text-[10px] text-ink-3" title={threadId || '新 Thread 将持久保存'}>
+                持久 Thread
               </span>
               <Button variant="signal" size="sm" className="ml-auto shrink-0" onClick={() => void send()} disabled={sending || loading || !threadId || !input.trim()}>
                 {sending ? '执行中…' : '发送'}

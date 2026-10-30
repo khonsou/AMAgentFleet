@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api, type OpsCredentialStatus, type Pat } from '@/lib/api'
 import { AUTH_ENABLED, getOauthSession, oauthLogout } from '@/lib/auth'
+import { fmtTime } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelBody, PanelHead } from '@/components/console/Panel'
 import { StatusPill } from '@/components/console/Status'
 import ModelSettings from '@/components/console/ModelSettings'
-
-function fmtTime(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('zh-CN', { hour12: false })
-}
+import ErrorBanner from '@/components/console/ErrorBanner'
 
 const SELECT_CLS = 'ctl h-9 shrink-0 rounded-[2px] border border-hairline bg-inset px-2 font-mono text-xs text-ink'
 const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-sm text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
@@ -94,21 +91,11 @@ export default function SettingsPage() {
         <div>
           <div className="silk">MODULE <b>04</b> / SETTINGS</div>
           <h1 className="mt-1.5 text-[21px] font-semibold tracking-tight">设置</h1>
-          <p className="mt-1 text-[12.5px] text-ink-2">
-            模型 Profile 与独立 API Key 由人工管理；第三方 agent 接入（FAP）使用 PAT，token 只显示一次。
-          </p>
-          <p className="mt-1.5 font-mono text-[12px] text-ink-2">
-            API 接入地址（与本页同源）：<code className="text-led-green">{window.location.origin}</code>
-            <span className="ml-2 text-ink-3">— 第三方 agent 先 GET <code>{window.location.origin}/api/meta</code> 自发现，详见接入指南 docs/fap-agent-guide.md</span>
-          </p>
+          <p className="mt-1 text-[12.5px] text-ink-2">管理模型 Profile、API Key 与第三方访问 PAT。</p>
         </div>
       </header>
 
-      {err && (
-        <div className="mb-4 rounded-[2px] border border-signal/40 bg-signal/10 px-4 py-2.5 font-mono text-xs text-signal">
-          {err}
-        </div>
-      )}
+      {err && <ErrorBanner error={err} className="mb-4" />}
 
       <ModelSettings />
 
@@ -142,24 +129,21 @@ export default function SettingsPage() {
           <span className="silk">PAT / 签发新令牌</span>
         </PanelHead>
         <PanelBody>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="用途标识，如 n8n-workflow"
-              className={INPUT_CLS + ' w-64'}
-            />
-            <select
-              value={scopeSel}
-              onChange={(e) => setScopeSel(e.target.value as 'read' | 'write')}
-              className={SELECT_CLS}
-            >
-              <option value="read">read（只读）</option>
-              <option value="write">write（读写）</option>
-            </select>
-            <Button size="sm" onClick={issue} disabled={issuing || !name.trim()}>
-              {issuing ? '签发中…' : '签发'}
-            </Button>
+          <div className="flex flex-wrap items-end gap-2.5">
+            <label className="block">
+              <span className="mb-1.5 block font-mono text-[11px] text-ink-2">用途名称</span>
+              <Input aria-label="PAT 用途名称" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="如 n8n-workflow" className={INPUT_CLS + ' w-64'} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block font-mono text-[11px] text-ink-2">权限 Scope</span>
+              <select aria-label="PAT 权限 Scope" value={scopeSel}
+                onChange={(e) => setScopeSel(e.target.value as 'read' | 'write')} className={SELECT_CLS}>
+                <option value="read">read（只读）</option>
+                <option value="write">write（读写）</option>
+              </select>
+            </label>
+            <Button size="sm" onClick={issue} disabled={issuing || !name.trim()}>{issuing ? '签发中…' : '签发 PAT'}</Button>
           </div>
           {freshToken && (
             <div className="mt-4 rounded-[2px] border border-green-600/40 bg-green-500/10 px-4 py-3">
@@ -225,10 +209,14 @@ export default function SettingsPage() {
         </Panel>
       </div>
 
-      <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">
-        自发现入口：<code className="font-mono">GET /api/meta</code>（免鉴权）；机器可读文档：<code className="font-mono">GET /api/agent-doc</code>。
-        控制面未对公网开放前，PAT 仅在内网链路生效；公网暴露需等待 OIDC/PAT 全链路（P4，见 ADR-0011 第 5 条）。
-      </p>
+      <details className="mt-5 rounded-[2px] border border-hairline-soft bg-inset/40 px-4 py-3">
+        <summary className="cursor-pointer select-none font-mono text-xs text-ink-2">第三方接入</summary>
+        <div className="mt-3 space-y-2 text-[11.5px] leading-relaxed text-ink-3">
+          <div>API Origin：<code className="break-all font-mono text-ink-2">{window.location.origin}</code></div>
+          <div>自发现：<code className="font-mono">GET /api/meta</code>（免鉴权） · 机器文档：<code className="font-mono">GET /api/agent-doc</code></div>
+          <div>接入指南：<code className="font-mono">docs/fap-agent-guide.md</code>。公网暴露前，PAT 仅在内网链路生效。</div>
+        </div>
+      </details>
       {AUTH_ENABLED && getOauthSession() && (
         <p className="mt-3 font-mono text-[12px] text-ink-2">
           员工身份（DAO OAuth）：

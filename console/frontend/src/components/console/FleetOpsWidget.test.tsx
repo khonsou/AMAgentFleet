@@ -33,13 +33,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('FleetOpsWidget', () => {
-  it('打开时创建 fleet-ops-01 的空白持久会话，关闭不销毁会话', async () => {
+  it('打开时创建 fleet-ops-01 的空白持久 Thread，关闭不销毁 Thread', async () => {
     const user = userEvent.setup()
     renderWidget()
     await openWidget(user)
     await waitFor(() => expect(apiMock.create).toHaveBeenCalledWith(undefined, 'fleet-ops-01'))
     expect(screen.getByLabelText('给舰队操作助手的指令')).toBeEnabled()
-    expect(screen.getByText('THREAD ops-thread-1')).toBeInTheDocument()
+    expect(screen.getByText('持久 Thread')).toBeInTheDocument()
     expect(window.localStorage.getItem('fleet-ops-thread-id')).toBe('ops-thread-1')
     expect(apiMock.createTask).not.toHaveBeenCalled()
 
@@ -49,7 +49,7 @@ describe('FleetOpsWidget', () => {
     expect(apiMock.create).toHaveBeenCalledTimes(1)
   })
 
-  it('恢复已保存会话及事件信封中的历史消息，不新建 Thread', async () => {
+  it('恢复已保存 Thread 及事件信封中的历史消息，不新建 Thread', async () => {
     const user = userEvent.setup()
     window.localStorage.setItem('fleet-ops-thread-id', 'saved-thread')
     apiMock.messages.mockResolvedValue([
@@ -63,7 +63,7 @@ describe('FleetOpsWidget', () => {
     expect(screen.getByText('当前没有待验收任务。')).toBeInTheDocument()
     expect(screen.queryByText('内部工具结果')).toBeNull()
     expect(apiMock.create).not.toHaveBeenCalled()
-    expect(screen.getByRole('link', { name: '打开完整会话' })).toHaveAttribute('href', '/threads/saved-thread')
+    expect(screen.getByRole('link', { name: '打开完整 Thread' })).toHaveAttribute('href', '/threads/saved-thread')
   })
 
   it('将 ask_clarification 工具消息作为可见追问，不再静默吞掉', async () => {
@@ -89,7 +89,7 @@ describe('FleetOpsWidget', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('没有返回可展示的结果')
   })
 
-  it('发送自然语言指令后刷新同一会话，普通聊天不调用任务创建', async () => {
+  it('发送自然语言指令后刷新同一 Thread，普通聊天不调用任务创建', async () => {
     const user = userEvent.setup()
     apiMock.messages.mockResolvedValue([
       { content: { type: 'human', content: '你好' } },
@@ -112,7 +112,7 @@ describe('FleetOpsWidget', () => {
     await openWidget(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('500: unavailable')
     await user.click(screen.getByRole('button', { name: '重新连接' }))
-    await waitFor(() => expect(screen.getByText('THREAD recovered')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('持久 Thread')).toBeInTheDocument())
     expect(apiMock.create).toHaveBeenCalledTimes(2)
   })
 
@@ -128,13 +128,13 @@ describe('FleetOpsWidget', () => {
     expect(apiMock.send).not.toHaveBeenCalled()
   })
 
-  it('旧浮窗 Thread 身份为空或错误时新建会话，不恢复错误身份', async () => {
+  it('旧浮窗 Thread 身份为空或错误时新建 Thread，不恢复错误身份', async () => {
     const user = userEvent.setup()
     window.localStorage.setItem('fleet-ops-thread-id', 'legacy-lead-thread')
     apiMock.thread.mockResolvedValue({ thread: { assistant_id: null }, runs: [], checkpoints: 1 })
     renderWidget()
     await openWidget(user)
-    expect(await screen.findByText('THREAD ops-thread-1')).toBeInTheDocument()
+    expect(await screen.findByText('持久 Thread')).toBeInTheDocument()
     expect(apiMock.create).toHaveBeenCalledWith(undefined, 'fleet-ops-01')
     expect(apiMock.messages).not.toHaveBeenCalled()
     expect(window.localStorage.getItem('fleet-ops-thread-id')).toBe('ops-thread-1')
