@@ -40,8 +40,8 @@ export default function AuthCallbackPage() {
       <div className="font-mono text-[13px] text-ink-2">
         {err ? (
           <div className="text-center">
-            <div className="mb-4 text-signal">{err}</div>
-            <a className="text-sky-400 underline decoration-dotted" href="/">返回首页重新登录</a>
+            <div className="mb-4 text-led-red">{err}</div>
+            <a className="link-console underline decoration-dotted" href="/">返回首页重新登录</a>
           </div>
         ) : (
           '登录中…'

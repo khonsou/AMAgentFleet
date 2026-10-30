@@ -9,7 +9,7 @@ export default function LinkifyText({ text, className }: { text: string; classNa
       {parts.map((part, i) =>
         i % 2 === 1 ? (
           <a key={i} href={part} target="_blank" rel="noreferrer"
-            className="text-sky-400 underline decoration-dotted hover:text-sky-300">
+            className="break-all text-ink-2 underline decoration-dotted decoration-ink-3 underline-offset-2 hover:text-signal">
             {part}
           </a>
         ) : (

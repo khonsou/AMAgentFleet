@@ -7,8 +7,8 @@ const apiMock = vi.hoisted(() => ({ taskDetail: vi.fn() }))
 vi.mock('@/lib/api', () => ({ api: apiMock }))
 afterEach(cleanup)
 
-describe('Task 实例模型快照', () => {
-  it('显示 Task 继承策略、Loop 模型、选择者与来源', async () => {
+describe('Task 模型快照', () => {
+  it('显示 Task 继承策略与 LOOP 实际模型', async () => {
     apiMock.taskDetail.mockResolvedValue({
       task: {
         id: 9, agent_name: 'worker-01', input: '多模型任务', source: 'web', status: 'running',
@@ -25,7 +25,7 @@ describe('Task 实例模型快照', () => {
       }],
     })
     render(<MemoryRouter initialEntries={['/tasks/9']}><Routes><Route path="/tasks/:tid" element={<TaskDetailPage />} /></Routes></MemoryRouter>)
-    expect(await screen.findByText(/Subagent 策略：固定继承/)).toBeInTheDocument()
-    expect(screen.getByText(/模型：推理模型/)).toHaveTextContent('模型：推理模型 · deepseek-reasoner · 选择者 task · 来源 task')
+    expect(await screen.findByText(/Subagent：继承 Task 模型/)).toBeInTheDocument()
+    expect(screen.getByText(/模型 推理模型/)).toHaveTextContent('模型 推理模型 · 由 task 选择')
   })
 })

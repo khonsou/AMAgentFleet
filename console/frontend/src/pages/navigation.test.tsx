@@ -150,6 +150,7 @@ describe('定义与实例导航', () => {
       agent_name: 'worker',
       status: 'success',
       pool_status: 'done',
+      accepted_loop_id: 21,
       result_preview: '这是最终交付摘要',
       thread_id: 'legacy-task-thread',
       latest_loop_id: 21,
@@ -161,36 +162,35 @@ describe('定义与实例导航', () => {
     const { container } = renderPage('/', '/', <Home />)
 
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /已验收/ }))
+    await user.click(await screen.findByRole('button', { name: /已结束/ }))
     await screen.findAllByText('整理发布简报')
-    expect(screen.getByText('FINAL OUTPUT / 最终输出')).toBeInTheDocument()
+    expect(screen.getByText('FINAL OUTPUT')).toBeInTheDocument()
     expect(screen.getByText('这是最终交付摘要')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'loop #21' })).toHaveAttribute('href', '/tasks/11#loop-21')
-    expect(screen.getByRole('link', { name: '会话 latest-l →' })).toHaveAttribute('href', '/threads/latest-loop-thread')
+    expect(screen.getByRole('link', { name: 'LOOP #21' })).toHaveAttribute('href', '/tasks/11#loop-21')
+    expect(screen.getByRole('link', { name: 'Thread latest-l →' })).toHaveAttribute('href', '/threads/latest-loop-thread')
     expect(container.querySelector('a[href="/tasks/11"]')).not.toBeNull()
-    expect(screen.getByRole('link', { name: 'Agent 定义：worker →' })).toHaveAttribute('href', '/agents/worker')
+    expect(screen.getByRole('link', { name: 'Agent：worker →' })).toHaveAttribute('href', '/agents/worker')
     expect(container.querySelector('a[href="/threads/legacy-task-thread"]')).toBeNull()
   })
 
-  it('交付验收是 task 内动作区，允许已识别的人或 Agent 验收', async () => {
+  it('交付验收是 Task 内动作区，允许已识别的人或 Agent 验收', async () => {
     const task = makeTask({ agent_name: 'worker', status: 'success', pool_status: 'review' })
     apiMock.allTasks.mockResolvedValue([task])
     apiMock.taskDetail.mockResolvedValue(makeTaskDetail({ task, loops: [makeLoop()] }))
 
     renderPage('/', '/', <Home />)
 
-    expect(await screen.findByText('交付验收 · 1 份交付')).toBeInTheDocument()
-    expect(screen.getByText('任何已识别的人或 Agent 均可验收')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '采纳这份' })).toBeInTheDocument()
+    expect(await screen.findByText('验收 · 1 份交付')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '采纳交付' })).toBeInTheDocument()
     expect(screen.queryByText(/验收台/)).toBeNull()
   })
 
-  it('首页未指派时创建任务实例', async () => {
+  it('首页未指派时创建 Task', async () => {
     const user = userEvent.setup()
     renderPage('/', '/', <Home />)
 
-    await user.type(screen.getByPlaceholderText(/输入任务指令/), '创建一个开放任务')
-    await user.click(screen.getByRole('button', { name: '放入任务池' }))
+    await user.type(screen.getByPlaceholderText(/输入 Task 指令/), '创建一个开放任务')
+    await user.click(screen.getByRole('button', { name: '创建 Task' }))
 
     await waitFor(() => expect(apiMock.createTask).toHaveBeenCalledWith('创建一个开放任务', undefined, undefined, 'auto'))
     expect(apiMock.agentDispatch).not.toHaveBeenCalled()
@@ -203,14 +203,14 @@ describe('定义与实例导航', () => {
 
     const selector = await screen.findByRole('combobox', { name: '执行 Agent' })
     await user.selectOptions(selector, 'worker')
-    await user.type(screen.getByPlaceholderText(/输入任务指令/), '执行指定任务')
-    await user.click(screen.getByRole('button', { name: '指派并发起' }))
+    await user.type(screen.getByPlaceholderText(/输入 Task 指令/), '执行指定任务')
+    await user.click(screen.getByRole('button', { name: '指派并创建' }))
 
     await waitFor(() => expect(apiMock.agentDispatch).toHaveBeenCalledWith('worker', '执行指定任务', undefined, 'auto'))
     expect(apiMock.createTask).not.toHaveBeenCalled()
   })
 
-  it('Agent 详情返回 Registry，定义与关联任务实例分区且无 thread 直达', async () => {
+  it('Agent 详情返回 Registry，定义与关联 Task 分区且无 Thread 直达', async () => {
     const user = userEvent.setup()
     apiMock.agentTasks.mockResolvedValue([
       makeTask({ agent_name: 'worker', thread_id: 'legacy-task-thread' }),
@@ -219,13 +219,13 @@ describe('定义与实例导航', () => {
 
     await screen.findByText('整理发布简报')
     expect(screen.getByRole('link', { name: '← AGENT REGISTRY' })).toHaveAttribute('href', '/registry')
-    expect(screen.getByText(/AGENT DEFINITION/)).toBeInTheDocument()
-    expect(screen.getByText(/关联任务实例/)).toBeInTheDocument()
+    expect(screen.getByText('Agent 配置 · YAML')).toBeInTheDocument()
+    expect(screen.getByText('关联 Task')).toBeInTheDocument()
     expect(container.querySelector('a[href="/tasks/11"]')).not.toBeNull()
     expect(container.querySelector('a[href="/threads/legacy-task-thread"]')).toBeNull()
 
-    await user.type(screen.getByPlaceholderText(/输入指令发起任务实例/), '新任务')
-    await user.click(screen.getByRole('button', { name: '派发' }))
+    await user.type(screen.getByPlaceholderText(/输入 Task 指令/), '新任务')
+    await user.click(screen.getByRole('button', { name: '指派并创建' }))
     await waitFor(() => expect(apiMock.agentDispatch).toHaveBeenCalledWith('worker', '新任务'))
   })
 
@@ -261,18 +261,18 @@ describe('定义与实例导航', () => {
 
     renderPage('/tasks/11#loop-22', '/tasks/:tid', <TaskDetailPage />)
 
-    const definitionLink = await screen.findByRole('link', { name: 'Agent 定义：worker →' })
+    const definitionLink = await screen.findByRole('link', { name: 'Agent：worker →' })
     expect(definitionLink).toHaveAttribute('href', '/agents/worker')
     expect(screen.getByRole('link', { name: /TASK\s*#9/ })).toHaveAttribute('href', '/tasks/9')
-    expect(screen.getByRole('link', { name: '会话 loop-thr →' })).toHaveAttribute('href', '/threads/loop-thread')
+    expect(screen.getByRole('link', { name: 'Thread loop-thr →' })).toHaveAttribute('href', '/threads/loop-thread')
 
-    const humanCard = screen.getByText('loop #22').closest('#loop-22')
+    const humanCard = screen.getByText('LOOP #22').closest('#loop-22')
     expect(humanCard).not.toBeNull()
-    expect(within(humanCard as HTMLElement).queryByRole('link', { name: /会话/ })).toBeNull()
+    expect(within(humanCard as HTMLElement).queryByRole('link', { name: /Thread/ })).toBeNull()
     await waitFor(() => expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled())
   })
 
-  it('失败 Task 显示子任务与恢复现场，并区分断点续跑和重新执行', async () => {
+  it('失败 Task 显示子 Task 与恢复现场，并区分断点续跑和重新执行', async () => {
     const user = userEvent.setup()
     const failed = makeLoop({
       status: 'claimed',
@@ -289,16 +289,16 @@ describe('定义与实例导航', () => {
     }))
     renderPage('/tasks/11', '/tasks/:tid', <TaskDetailPage />)
 
-    expect(await screen.findByText('CHILD TASKS / 已创建的子任务')).toBeInTheDocument()
+    expect(await screen.findByText('子 TASK')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'TASK #31' })).toHaveAttribute('href', '/tasks/31')
-    expect(screen.getByText('异常：运行步数耗尽')).toBeInTheDocument()
-    expect(screen.getByText('断点续跑 1/3')).toBeInTheDocument()
+    expect(screen.getByText(/执行异常 · 运行步数耗尽/)).toBeInTheDocument()
+    expect(screen.getByText(/断点续跑 1\/3/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '从断点继续' }))
     await waitFor(() => expect(apiMock.loopResume).toHaveBeenCalledWith(21))
     expect(screen.getByRole('button', { name: '重新执行' })).toBeInTheDocument()
   })
 
-  it('Thread 详情保留实例 breadcrumb，Agent 定义为独立横向链接', async () => {
+  it('Thread 详情保留 Task 与 LOOP breadcrumb，Agent 为独立横向链接', async () => {
     apiMock.reviewContext.mockResolvedValue({
       loop: makeLoop(),
       task: { id: 11, pool_status: 'review', input: '整理发布简报' },
@@ -308,18 +308,18 @@ describe('定义与实例导航', () => {
     expect(await screen.findByRole('link', { name: /TASK\s*#11/ })).toHaveAttribute('href', '/tasks/11')
     expect(screen.getByRole('link', { name: /LOOP\s*#21/ })).toHaveAttribute('href', '/tasks/11#loop-21')
     expect(screen.getByText('THREAD')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Agent 定义：worker →' })).toHaveAttribute('href', '/agents/worker')
+    expect(screen.getByRole('link', { name: 'Agent：worker →' })).toHaveAttribute('href', '/agents/worker')
   })
 
   it('自由 Thread 没有任务上下文时不显示空实例 breadcrumb', async () => {
     renderPage('/threads/free-thread', '/threads/:tid', <ThreadDetailPage />)
 
-    expect(await screen.findByText('Agent 会话实例详情')).toBeInTheDocument()
+    expect(await screen.findByText('Thread 详情')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^TASK/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /^LOOP/ })).toBeNull()
   })
 
-  it('Threads 列表分别链接会话实例与 Agent 定义', async () => {
+  it('Threads 列表分别链接 Thread 与 Agent', async () => {
     const row: FleetRow = {
       thread_id: 'loop-thread',
       display_name: '整理发布简报',
@@ -340,8 +340,8 @@ describe('定义与实例导航', () => {
     apiMock.fleet.mockResolvedValue([row])
     renderPage('/threads', '/threads', <ThreadsPage />)
 
-    expect(await screen.findByRole('link', { name: 'Agent 定义：worker →' })).toHaveAttribute('href', '/agents/worker')
-    expect(screen.getByText('Thread 实例观测')).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Agent：worker →' })).toHaveAttribute('href', '/agents/worker')
+    expect(screen.getByText('Thread 列表')).toBeInTheDocument()
     expect(document.querySelector('a[href="/threads/loop-thread"]')).not.toBeNull()
   })
 })

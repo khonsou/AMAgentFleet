@@ -28,10 +28,10 @@ describe('Managed Models 密钥边界', () => {
   it('目录不回显 Key，编辑留空保存不发送 api_key', async () => {
     const user = userEvent.setup()
     render(<ModelSettings />)
-    await user.click(await screen.findByRole('button', { name: '编辑／轮换' }))
+    await user.click(await screen.findByRole('button', { name: '编辑' }))
     expect(screen.getByLabelText('API Key')).toHaveValue('')
 
-    await user.click(screen.getByRole('button', { name: '保存并轮换' }))
+    await user.click(screen.getByRole('button', { name: '保存修改' }))
     await waitFor(() => expect(apiMock.managedModelSave).toHaveBeenCalledTimes(1))
     const [config, revision] = apiMock.managedModelSave.mock.calls[0]
     expect(revision).toBe('rev-1')

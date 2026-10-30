@@ -59,7 +59,7 @@ describe('全局舰队操作助手', () => {
     const user = userEvent.setup()
     renderAt('/registry')
     await user.click(screen.getByRole('button', { name: '打开舰队操作助手' }))
-    expect(await screen.findByText('THREAD global-ops-thread')).toBeInTheDocument()
+    expect(await screen.findByText('持久 Thread')).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: '前往 Threads' }))
     expect(screen.getByText('Threads page')).toBeInTheDocument()
@@ -67,7 +67,7 @@ describe('全局舰队操作助手', () => {
 
     await user.click(screen.getByRole('link', { name: '前往 Settings' }))
     expect(screen.getByText('Settings page')).toBeInTheDocument()
-    expect(screen.getByText('THREAD global-ops-thread')).toBeInTheDocument()
+    expect(screen.getByText('持久 Thread')).toBeInTheDocument()
     await waitFor(() => expect(apiMock.create).toHaveBeenCalledTimes(1))
   })
 })

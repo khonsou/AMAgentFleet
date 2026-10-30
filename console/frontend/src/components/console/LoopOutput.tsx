@@ -1,5 +1,5 @@
 import type { Loop } from '@/lib/api'
-import ArtifactText from './ArtifactText'
+import CollapsibleContent from './CollapsibleContent'
 import { Led } from './Status'
 
 /** loop 当前产出展示（方案 A：展示派生）：
@@ -14,18 +14,18 @@ export default function LoopOutput({ l }: { l: Loop }) {
   const files = l.artifacts ?? []
   const text = latest || l.deliverable || ''
   return (
-    <div className="mt-2.5 rounded-[2px] border border-led-green/40 bg-led-green/[0.07] px-3.5 py-3">
-      <div className="silk mb-2 flex items-center gap-2">
+    <div className="mt-2.5 rounded-[2px] border border-hairline-soft bg-inset/60 px-3.5 py-3">
+      <div className="panel-title mb-2 flex items-center gap-2">
         <Led color="green" />
-        OUTPUT&nbsp;/&nbsp;交付内容
+        OUTPUT
       </div>
-      <ArtifactText className="block whitespace-pre-wrap text-[13px] leading-relaxed text-ink"
-        text={text} tid={l.thread_id ?? ''} files={files} />
+      <CollapsibleContent text={text} tid={l.thread_id ?? ''} files={files} />
       {showSnapshot && (
-        <div className="mt-2 border-t border-led-green/20 pt-1.5 font-mono text-[10.5px] text-ink-3">
-          交付快照 v{l.version}（入库时的交付记录）：
-          <span className="line-clamp-1" title={l.deliverable ?? ''}>{l.deliverable}</span>
-        </div>
+        <details className="mt-2 border-t border-hairline-soft pt-2 font-mono text-[10.5px] text-ink-3">
+          <summary className="cursor-pointer select-none hover:text-ink">OUTPUT SNAPSHOT v{l.version}</summary>
+          <CollapsibleContent className="mt-2 block whitespace-pre-wrap text-xs leading-relaxed text-ink-2"
+            text={l.deliverable ?? ''} tid={l.thread_id ?? ''} files={files} />
+        </details>
       )}
     </div>
   )
