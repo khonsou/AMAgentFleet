@@ -167,10 +167,9 @@ jobs:
           fi
           git add kustomization.yaml
           git commit -m "release(am-agent-fleet): ${TAG}"
-          git tag -f deploy-fleet-test
-          git push --force origin deploy-fleet-test
+          git push --force origin HEAD:deploy-fleet-live
       - name: Next step
         run: |
-          echo "Argo CD tracks deploy-fleet-test. Review and run:"
+          echo "Argo CD tracks deploy-fleet-live. Review and run:"
           echo "  argocd app diff am-agent-fleet-test"
           echo "  argocd app sync am-agent-fleet-test"
