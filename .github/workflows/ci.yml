@@ -140,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: gitops-release
           fetch-depth: 0
       - uses: imranismail/setup-kustomize@v2
         with:
@@ -166,15 +166,11 @@ jobs:
             echo "No manifest change"
             exit 0
           fi
-          BRANCH="release/am-agent-fleet-${TAG}"
-          git checkout -B "$BRANCH"
           git add kustomization.yaml
           git commit -m "release(am-agent-fleet): ${TAG}"
-          git push --force origin "HEAD:${BRANCH}"
-          echo "Open a PR from ${BRANCH} to main:"
-          echo "  https://github.com/khonsou/AMAgentFleet/compare/main...${BRANCH}?expand=1"
+          git push origin HEAD:gitops-release
       - name: Next step
         run: |
-          echo "Open and merge the release PR, then review and run:"
+          echo "Argo CD is manual-sync. Review and run:"
           echo "  argocd app diff am-agent-fleet-test"
           echo "  argocd app sync am-agent-fleet-test"
