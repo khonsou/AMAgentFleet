@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fleet Operations Protocol 67 项在线验收（ADR-0017）。
+"""Fleet Operations Protocol 72 项在线验收（ADR-0017）。
 
 只使用协议 operation ID 驱动请求；测试资源带唯一前缀，凭证仅保存在进程内存。
 退出码非零即存在未通过操作。报告只记录状态与断言，不保存响应正文或秘密。
@@ -32,7 +32,7 @@ class Acceptance:
     def __init__(self, report_path: Path):
         self.protocol = json.loads((ROOT / "fleet-ops-protocol.json").read_text(encoding="utf-8"))
         self.operations = {op["id"]: op for op in self.protocol["operations"]}
-        assert len(self.operations) == 67, "协议操作数应为 67"
+        assert len(self.operations) == 72, "协议操作数应为 72"
         self.report_path = report_path
         self.results: list[dict[str, Any]] = []
         self.seen: set[str] = set()
@@ -94,6 +94,7 @@ class Acceptance:
 
     async def run(self):
         await self.system_and_templates()
+        await self.model_protocol()
         await self.agent_lifecycle()
         await self.task_loop_lifecycle()
         await self.scheduler_and_mcp()
@@ -102,11 +103,13 @@ class Acceptance:
         await self.system_credential()
         await self.cleanup_operations()
         await self.security_scan()
+        missing = set(self.operations) - self.seen
+        assert not missing, f"协议操作未执行: {sorted(missing)}"
 
     async def system_and_templates(self):
         await self.call("system.meta", check=lambda p, _: (_ for _ in ()).throw(AssertionError("缺少协议入口")) if p.get("operations_protocol") != "/api/ops/protocol" else None)
         await self.call("system.agent_doc", check=lambda p, r: (_ for _ in ()).throw(AssertionError("文档为空或协议头缺失")) if not p.strip() or r.headers.get("x-protocol-version") != "1.0" else None)
-        await self.call("system.protocol", check=lambda p, _: (_ for _ in ()).throw(AssertionError("在线协议不是 67 项")) if len(p.get("operations", [])) != 67 else None)
+        await self.call("system.protocol", check=lambda p, _: (_ for _ in ()).throw(AssertionError("在线协议不是 72 项")) if len(p.get("operations", [])) != 72 else None)
         await self.call("system.openapi", check=lambda p, _: (_ for _ in ()).throw(AssertionError("OpenAPI 无路径")) if not p.get("paths") else None)
         await self.call("system.health", check=lambda p, _: (_ for _ in ()).throw(AssertionError("控制面不健康")) if p.get("status") != "ok" else None)
         await self.call("console.health", check=lambda p, _: (_ for _ in ()).throw(AssertionError("Console 不健康")) if p.get("console") != "ok" else None)
@@ -122,6 +125,35 @@ class Acceptance:
         self.agent_doc.setdefault("spec", {}).setdefault("agent", {})["soul"] = "你是自动化验收 Agent。只简洁回答用户，不调用工具，不创建任务。"
         self.agent_doc["spec"]["agent"]["memory_enabled"] = False
         self.agent_doc["triggers"] = {"web": True, "im": False, "agentCallable": False, "cron": []}
+
+    async def model_protocol(self):
+        public_models = await self.call("models.list")
+        assert isinstance(public_models, list) and public_models
+        assert "api_key" not in json.dumps(public_models) and "base_url" not in json.dumps(public_models)
+        catalog = await self.call("models.managed_list")
+        assert isinstance(catalog.get("models"), list)
+        assert "api_key" not in json.dumps(catalog)
+
+        # 固定保留一个禁用 Profile，避免每次验收累积测试模型或影响实例选模。
+        # 连接测试走明确的失败路径；真实provider正向调用由Thread/Run验收覆盖。
+        name = "ops-acceptance-disabled"
+        previous = next((item for item in catalog["models"] if item["name"] == name), None)
+        config = {
+            "name": name, "display_name": "Ops Acceptance Disabled",
+            "model": "ops-acceptance-model", "base_url": "http://127.0.0.1:1/v1",
+            "api_key": "ops-acceptance-not-a-secret", "enabled": False,
+        }
+        saved = await self.call("models.managed_save", body={
+            "config": config, "expected_revision": previous["revision"] if previous else None,
+        })
+        assert saved["name"] == name and saved["enabled"] is False and saved["has_api_key"] is True
+        assert "api_key" not in saved
+        probe_config = {key: value for key, value in config.items() if key != "api_key"}
+        probe = await self.call("models.managed_test", body={
+            "config": probe_config, "expected_revision": saved["revision"],
+        })
+        assert probe == {"ok": False, "message": "connection_failed"}
+        assert "ops-acceptance-not-a-secret" not in json.dumps(probe)
 
     async def agent_lifecycle(self):
         assert self.agent_doc
@@ -242,6 +274,31 @@ class Acceptance:
         self.thread_ids.append(by_thread)
         context = await self.call("loops.by_thread", path={"thread_id": by_thread})
         assert context["loop"]["task_id"] == dispatch_task
+
+        # 断点续跑使用真实 Thread checkpoint。独立 Loop 夹具避免与上面的重新执行竞争；
+        # 请求体是否 input=None、是否携带 checkpoint_id 由确定性回归另行断言。
+        for _ in range(30):
+            dispatch_detail = (await self.raw("GET", f"{CP}/api/tasks/{dispatch_task}")).json()
+            if any(loop["status"] == "delivered" for loop in dispatch_detail["loops"]):
+                break
+            await asyncio.sleep(1)
+        else:
+            raise AssertionError("断点续跑夹具所需的真实 checkpoint 尚未就绪")
+        resume_task = await self.raw("POST", f"{CP}/api/tasks", json={
+            "input": f"[{self.prefix}] checkpoint 恢复", "source": "agent", "created_by": ACTOR})
+        resume_task_id = resume_task.json()["task_id"]
+        self.task_ids.append(resume_task_id)
+        conn = await asyncpg.connect(os.environ.get("CONSOLE_PG_DSN", "postgresql://postgres@127.0.0.1:5432/deerflow"))
+        try:
+            resume_loop = await conn.fetchval(
+                "INSERT INTO fleet_task_loops (task_id, claimant_type, claimant, created_by, status, thread_id, error) VALUES ($1,'agent',$2,$3,'claimed',$4,'interrupted') RETURNING id",
+                resume_task_id, self.agent_name, ACTOR, by_thread)
+            await conn.execute("UPDATE fleet_tasks SET agent_name=$2 WHERE id=$1", resume_task_id, self.agent_name)
+        finally:
+            await conn.close()
+        resumed = await self.call("loops.resume", path={"loop_id": resume_loop})
+        assert resumed["status"] == "claimed" and resumed["checkpoint_id"]
+
         closed = await self.call("tasks.close", path={"task_id": dispatch_task}, query={"author": ACTOR})
         assert closed["pool_status"] == "done"
 

@@ -4,7 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import yaml
 
@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 import fleet_tools  # noqa: E402
 from app.fap import meta  # noqa: E402
 from app.fleet_ops import operations_protocol  # noqa: E402
-from app.main import app  # noqa: E402
+from app.main import app, list_tasks  # noqa: E402
 
 
 def load_protocol():
@@ -121,6 +121,54 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
         self.assertIn("只调用一次 tasks.accept_reviewed", soul)
         self.assertIn("不再额外查询或分页", soul)
+
+    def test_ops_executes_explicit_regular_writes_without_redundant_discovery(self):
+        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+            soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
+        self.assertIn("就是本次操作的确认", soul)
+        self.assertIn("直接以 confirmed=true 执行", soul)
+        self.assertIn("不要在创建前读取任务列表或待验收队列", soul)
+        self.assertIn('body={"input":"用户给出的完整任务内容","source":"agent","created_by":"fleet-ops-01"}', soul)
+        self.assertIn("不要使用 title 代替 input", soul)
+        self.assertIn("不再 tasks.get", soul)
+        self.assertNotIn("每个新会话先调用", soul)
+
+    def test_commander_uses_stable_spawn_keys_and_incremental_recovery(self):
+        with (ROOT / "control-plane/agents/fleet-cmd-01.yaml").open(encoding="utf-8") as f:
+            soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
+        self.assertIn("稳定、有语义且彼此不同的 spawn_key", soul)
+        self.assertIn("默认每个 agent_spawn 都显式填写 assignee", soul)
+        self.assertIn("只有用户明确要求开放抢单时 assignee 才留空", soul)
+        self.assertIn("不得静默创建一批待分配任务", soul)
+        self.assertIn("只补未完成且缺失的子任务", soul)
+        self.assertIn("已创建只表示入池", soul)
+        self.assertIn("不反复轮询无进展状态", soul)
+
+
+class TaskListTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filters_and_offset_have_distinct_sql_parameters(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        acquire = type("Acquire", (), {
+            "__aenter__": AsyncMock(return_value=conn), "__aexit__": AsyncMock(),
+        })()
+        with patch("app.main.pool", new=AsyncMock()) as db_pool:
+            db_pool.return_value.acquire = lambda: acquire
+            result = await list_tasks(
+                agent="worker-1", status="queued", pool_status="open", limit=100, offset=200)
+
+        self.assertEqual(result, [])
+        sql, *args = conn.fetch.await_args.args
+        self.assertIn("t.agent_name=$1", sql)
+        self.assertIn("t.status=$2", sql)
+        self.assertIn("t.pool_status=$3", sql)
+        self.assertIn("LIMIT $4 OFFSET $5", sql)
+        self.assertEqual(args, ["worker-1", "queued", "open", 100, 200])
+
+    def test_protocol_exposes_pool_status_and_offset(self):
+        operation = next(op for op in load_protocol()["operations"] if op["id"] == "tasks.list")
+        self.assertEqual(operation["query"]["pool_status"], "<optional open/review/done>")
+        self.assertEqual(operation["query"]["offset"], 0)
 
 
 class FleetOpsExecutorTests(unittest.IsolatedAsyncioTestCase):

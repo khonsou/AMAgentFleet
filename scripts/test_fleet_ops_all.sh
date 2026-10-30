@@ -33,9 +33,10 @@ echo "[3/7] Console 后端回归测试"
   "$CONSOLE_PYTHON" -m unittest test_main -v
 )
 
-echo "[4/7] 前端组件、导航、类型与构建测试"
+echo "[4/7] 前端组件、导航、类型、构建与 lint 检查"
 npm --prefix console/frontend test
 npm --prefix console/frontend run build
+npm --prefix console/frontend run lint
 
 if [[ "$MODE" == "--offline" ]]; then
   echo "离线验收完成（未调用在线服务或模型）。"
@@ -51,7 +52,7 @@ for url in \
  done
 "$CONSOLE_PYTHON" scripts/fleet_ops_activate.py
 
-echo "[6/7] 66 项协议与第三方 PAT 在线验收"
+echo "[6/7] 72 项协议与第三方 PAT 在线验收"
 "$CONSOLE_PYTHON" scripts/fleet_ops_acceptance.py
 
 echo "[7/7] Chromium 桌面与移动端浏览器测试"

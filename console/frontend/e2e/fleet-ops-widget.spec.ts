@@ -15,6 +15,7 @@ async function mockConsole(page: Page) {
       return json({ task_id: 99 })
     }
     if (path === '/api/console/agents' && request.method() === 'GET') return json([])
+    if (path === '/api/console/models' && request.method() === 'GET') return json([])
     if (path === '/api/console/threads' && request.method() === 'POST') {
       created.push(request.postDataJSON())
       return json({ thread_id: 'browser-ops-thread' })

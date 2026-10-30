@@ -9,6 +9,9 @@ const apiMock = vi.hoisted(() => ({
   patRevoke: vi.fn(),
   opsCredential: vi.fn(),
   opsCredentialRotate: vi.fn(),
+  managedModels: vi.fn(),
+  managedModelSave: vi.fn(),
+  managedModelTest: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({ api: apiMock }))
@@ -42,6 +45,9 @@ beforeEach(() => {
   ])
   apiMock.opsCredential.mockResolvedValueOnce(status).mockResolvedValue({ ...status, version: 4 })
   apiMock.opsCredentialRotate.mockResolvedValue({ ...status, version: 4 })
+  apiMock.managedModels.mockResolvedValue({ models: [] })
+  apiMock.managedModelSave.mockResolvedValue({})
+  apiMock.managedModelTest.mockResolvedValue({ ok: true, message: 'ok' })
   vi.stubGlobal('confirm', vi.fn(() => true))
 })
 

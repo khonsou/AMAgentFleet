@@ -405,6 +405,11 @@ async def cp_loop_requeue(lid: int):
     return await _cp(f"/loops/{lid}/requeue", "POST", {})
 
 
+@app.post("/api/console/loops/{lid}/resume")
+async def cp_loop_resume(lid: int):
+    return await _cp(f"/loops/{lid}/resume", "POST", {})
+
+
 @app.get("/api/console/threads/{tid}/artifacts/{path:path}")
 async def cp_thread_artifact(tid: str, path: str):
     """产物下载代理（agent 交付物链接走 Console，生产中网关不出 VPC）。"""
@@ -460,6 +465,40 @@ async def cp_pat_create(body: PatCreateBody):
 @app.delete("/api/console/pats/{pat_id}")
 async def cp_pat_revoke(pat_id: str):
     return await _cp(f"/pats/{pat_id}", "DELETE", {})
+
+
+# ---------------------------------------------------------------------------
+# 模型 Profile 与 Managed Models（ADR-0028）
+# 选模目录经控制面暴露；密钥管理仅存在于已登录 Console → Gateway 的内部链路。
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/console/models")
+async def cp_models():
+    return await _cp("/models")
+
+
+async def _managed_models(method: str, path: str = "", body: dict | None = None):
+    async with httpx.AsyncClient(trust_env=False, base_url=GATEWAY, timeout=45) as client:
+        resp = await client.request(method, f"/api/managed-models{path}", json=body)
+    if resp.status_code >= 400:
+        raise HTTPException(resp.status_code, resp.text[:500])
+    return resp.json()
+
+
+@app.get("/api/console/managed-models")
+async def console_managed_models():
+    return await _managed_models("GET")
+
+
+@app.put("/api/console/managed-models")
+async def console_managed_model_save(body: dict):
+    return await _managed_models("PUT", body=body)
+
+
+@app.post("/api/console/managed-models/test")
+async def console_managed_model_test(body: dict):
+    return await _managed_models("POST", "/test", body)
 
 
 # ---------------------------------------------------------------------------

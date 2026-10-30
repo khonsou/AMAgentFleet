@@ -58,6 +58,21 @@ curl -X POST http://<host>:<port>/api/tasks \
   `409 + Retry-After: 1`，稍后以相同请求重试；同键跨 actor 或同键不同请求冲突 409。
 - 返回 `201`，`task_id` + `pool_status=open`（开放领取，进任务池）。
 
+#### 可选：为 Agent 实例选择模型
+
+先调用 `GET /api/models` 获取已登记 Profile。创建 Task 时可传
+`model_profile` 与 `subagent_model_policy`；领取内部 Agent Loop 时也可传
+`model_profile`。解析顺序为「实例显式值 → Agent YAML 默认值 → Gateway 默认」。
+
+- `subagent_model_policy=auto`（默认）：允许舰队指挥官在 `agent_spawn` 时用
+  `model_profile` 为各子 Agent 实例选模。
+- `subagent_model_policy=inherit`：根 Task 必须显式指定 `model_profile`，所有后代
+  Task／Loop 固定继承，试图覆盖会在入队前被拒绝。
+- 协议只接受 Profile 名，不接受 API Key 或任意 Provider URL。未知 Profile 返回
+  422，Agent 白名单或固定继承冲突返回 403／409。
+- Profile 与独立 API Key 只由人在 Settings 的 Managed Models 页面管理。相关
+  `models.managed_*` 操作为 human-only，Ops 与第三方 PAT 不得调用；API Key 不回显。
+
 ### Step 2：领取（≤3 个 loop 并行，竞争非独占）
 
 ```bash

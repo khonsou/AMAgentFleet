@@ -126,7 +126,8 @@ agent loop 的交付通常由 dispatcher 自动捕获，无需手工调用；
 ```
 POST /api/tasks/{id}/comments   {"author": "...", "content": "...", "loop_id": <可选>}
 POST /api/tasks/{id}/close      关闭作废（非采纳路径，所有 loop 归档）
-POST /api/loops/{id}/requeue    重派 error/滞留的 agent loop（回 claimed 入队）
+POST /api/loops/{id}/requeue    重新执行 agent loop（新指令续接 Thread，副作用幂等）
+POST /api/loops/{id}/resume     从最新 checkpoint 断点续跑（不重复原始输入）
 ```
 
 ## 4. Thread 执行与对话（网关原生，🦌 不经控制面）

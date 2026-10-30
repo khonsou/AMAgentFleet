@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import LinkifyText from '@/components/LinkifyText'
 import { Panel, PanelBody, PanelHead, InsetRow } from '@/components/console/Panel'
-import { StatusPill, loopStatusMeta } from '@/components/console/Status'
+import { StatusPill } from '@/components/console/Status'
+import { loopStatusMeta } from '@/components/console/statusMeta'
 import LoopOutput from '@/components/console/LoopOutput'
 
 function fmtTime(iso?: string | null) {
@@ -169,6 +170,9 @@ export default function TaskDetailPage() {
             <PanelHead><span className="silk">TASK INSTANCE&nbsp;/&nbsp;任务实例输入</span></PanelHead>
             <PanelBody>
               <pre className="lcd whitespace-pre-wrap rounded-[2px] border border-hairline-soft p-3 text-xs leading-relaxed text-ink-2">{t.input}</pre>
+              <div className="mt-2 font-mono text-[11px] text-ink-3">
+                首选模型：{t.model_profile || '系统／Agent 默认'} · Subagent 策略：{t.subagent_model_policy === 'inherit' ? '固定继承' : '指挥官自动选模'}
+              </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {t.pool_status !== 'done' && (
                   <Button size="sm" variant="destructive" disabled={busy}
@@ -191,6 +195,27 @@ export default function TaskDetailPage() {
             </PanelBody>
           </Panel>
 
+          {detail!.children.length > 0 && (
+            <Panel className="mb-5">
+              <PanelHead>
+                <span className="silk">CHILD TASKS&nbsp;/&nbsp;已创建的子任务</span>
+                <span className="silk">{detail!.children.length}&nbsp;TASKS</span>
+              </PanelHead>
+              <PanelBody className="space-y-2">
+                {detail!.children.map((child) => (
+                  <InsetRow key={child.id} className="flex flex-wrap items-center gap-2.5 text-xs">
+                    <Link to={`/tasks/${child.id}`} className="link-console font-mono">TASK #{child.id}</Link>
+                    <span className="min-w-0 flex-1 truncate text-ink-2" title={child.input}>{child.input}</span>
+                    <span className="font-mono text-[11px] text-ink-3">{child.agent_name}</span>
+                    <StatusPill color={child.pool_status === 'done' ? 'green' : child.pool_status === 'review' ? 'amber' : 'cyan'}>
+                      {child.pool_status === 'done' ? '已验收' : child.pool_status === 'review' ? '待验收' : child.status}
+                    </StatusPill>
+                  </InsetRow>
+                ))}
+              </PanelBody>
+            </Panel>
+          )}
+
           <Panel className="mb-5">
             <PanelHead>
               <span className="silk">LOOP INSTANCES&nbsp;/&nbsp;领取、执行与交付</span>
@@ -208,8 +233,27 @@ export default function TaskDetailPage() {
                       <StatusPill color={lm.led} blink={lm.blink}>{lm.label} v{l.version}</StatusPill>
                       <span className="ml-auto tabular-nums">{l.tokens ?? '—'} tok · {fmtTime(l.created_at)}</span>
                     </div>
+                    {l.claimant_type === 'agent' && (
+                      <div className="mt-2 font-mono text-[11px] text-ink-2">
+                        模型：{l.model_snapshot?.display_name || l.model_profile || '系统默认（旧实例）'}
+                        {l.model_snapshot?.model && l.model_snapshot.model !== l.model_snapshot.display_name && ` · ${l.model_snapshot.model}`}
+                        {l.model_selected_by && <span className="text-ink-3"> · 选择者 {l.model_selected_by}</span>}
+                        {l.model_snapshot?.source && <span className="text-ink-3"> · 来源 {l.model_snapshot.source}</span>}
+                      </div>
+                    )}
                     {l.deliverable && <LoopOutput l={l} />}
-                    {l.error && <div className="mt-1 text-xs text-led-red">{l.error}</div>}
+                    {l.error && (
+                      <div className="mt-2 rounded-[2px] border border-led-red/20 bg-led-red/5 p-2.5">
+                        <div className="text-xs text-led-red">{l.error}</div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-ink-3">
+                          <span>异常：{l.failure_kind === 'recursion' ? '运行步数耗尽' : l.failure_kind === 'transient' ? '临时故障' : l.failure_kind === 'permanent' ? '需人工处理' : '历史故障'}</span>
+                          <span>自动重试 {l.retry_count ?? 0}/2</span>
+                          <span>断点续跑 {l.continuation_count ?? 0}/3</span>
+                          {l.recovery_action && <span className="text-led-amber">已排队：{l.recovery_action === 'resume' ? '断点续跑' : '自动重试'}{l.next_retry_at ? ` · ${fmtTime(l.next_retry_at)}` : ''}</span>}
+                          {l.running_action && <span className="text-led-cyan">正在{l.running_action === 'resume' ? '从断点继续' : '重试'}</span>}
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {l.thread_id && (
                         <Link to={`/threads/${l.thread_id}`} className="link-console font-mono text-[11px]">
@@ -220,11 +264,20 @@ export default function TaskDetailPage() {
                         <HumanDeliverBox loopId={l.id} version={l.version} onDone={load} />
                       )}
                       {l.claimant_type === 'agent' && ['claimed', 'returned'].includes(l.status) && t.pool_status !== 'done' && (
-                        <Button size="sm" variant="outline" disabled={busy}
-                          onClick={() => act(() => api.loopRequeue(l.id), `loop #${l.id} 已重派`)}
-                          className="h-7 px-2.5 text-[11px]">
-                          重新入队
-                        </Button>
+                        <>
+                          {l.thread_id && l.error && (
+                            <Button size="sm" variant="signal" disabled={busy || Boolean(l.recovery_action) || (l.continuation_count ?? 0) >= 3}
+                              onClick={() => act(() => api.loopResume(l.id), `loop #${l.id} 已从最近断点继续`)}
+                              className="h-7 px-2.5 text-[11px]">
+                              从断点继续
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" disabled={busy || Boolean(l.recovery_action)}
+                            onClick={() => act(() => api.loopRequeue(l.id), `loop #${l.id} 已重新执行`)}
+                            className="h-7 px-2.5 text-[11px]">
+                            重新执行
+                          </Button>
+                        </>
                       )}
                       {l.status === 'delivered' && t.pool_status === 'review' && (
                         <>
