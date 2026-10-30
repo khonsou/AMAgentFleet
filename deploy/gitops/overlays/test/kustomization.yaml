@@ -7,11 +7,11 @@ images:
   # Initial values match the live Deployments so the first Argo CD sync is a
   # no-op. The release workflow replaces them with the VPC address and SHA tags.
   - name: am-agent-fleet-gateway
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: gateway-test-2ed48b9-dirty-20261028183243
+    newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+    newTag: gateway-test-sha-a8cbc3bead2c
   - name: am-agent-fleet-backend
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: backend-test-2ed48b9-dirty-20261028183243
+    newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+    newTag: backend-test-sha-a8cbc3bead2c
   - name: am-agent-fleet-frontend
-    newName: registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-    newTag: frontend-test-2ed48b9-dirty-20261028183243
+    newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
+    newTag: frontend-test-sha-a8cbc3bead2c
