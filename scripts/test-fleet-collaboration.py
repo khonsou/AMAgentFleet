@@ -62,7 +62,7 @@ def agent_yaml(name: str, display: str, soul: str, egress: list[str]) -> dict:
                 "name": name,
                 "display_name": display,
                 "description": f"协作测试：{display}",
-                "model": "deepseek-chat",
+                "model": "deepseek-default",
                 "model_settings": {"temperature": 0.1},
                 "mcp_plugins": ["http"],
                 "skills": [],

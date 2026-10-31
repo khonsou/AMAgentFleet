@@ -12,7 +12,7 @@ spec:
     name: fleet-cmd-01
     display_name: 舰队指挥官
     description: 舰队指挥官：拆解任务、派生子任务给 worker、整合多路交付产出简报。
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     mcp_plugins:

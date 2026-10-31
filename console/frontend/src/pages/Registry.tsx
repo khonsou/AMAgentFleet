@@ -73,7 +73,7 @@ export default function RegistryPage() {
             name,
             display_name: reg.displayName.trim(),
             description: reg.description.trim(),
-            model: 'deepseek-chat',
+            model: 'deepseek-default',
             model_settings: { temperature: 0.2 },
             skills: [],
             soul: reg.description.trim() || `你是 ${reg.displayName || name}。`,

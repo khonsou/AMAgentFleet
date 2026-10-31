@@ -15,7 +15,8 @@ beforeEach(() => {
   apiMock.allTasks.mockResolvedValue([])
   apiMock.agents.mockResolvedValue([{ name: 'fleet-cmd-01', display_name: '舰队指挥官', status: 'registered' }])
   apiMock.models.mockResolvedValue([
-    { name: 'deepseek-chat', model: 'deepseek-chat', display_name: 'DeepSeek Chat' },
+    { name: 'deepseek-default', model: 'deepseek-flash', display_name: 'DeepSeek Default' },
+    { name: 'deepseek-chat', model: 'deepseek-flash', display_name: 'DeepSeek Default（兼容别名）' },
     { name: 'reasoner', model: 'deepseek-reasoner', display_name: 'DeepSeek Reasoner' },
   ])
   apiMock.createTask.mockResolvedValue({ task_id: 1 })

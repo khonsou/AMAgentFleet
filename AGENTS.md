@@ -49,6 +49,7 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
 
 - **架构决策**：涉及 ADR-0000 第 4 条所列变化时，先写新 ADR 再改代码；设计文档随最新 ADR 回改。
 - **Agent YAML**：schema 变更必须向后兼容或升 `apiVersion`；运行中任务锁定旧版配置的语义不得破坏。
+- **模型升级**：Agent 只引用稳定 Profile（默认 `deepseek-default`；`deepseek-chat` 为历史兼容别名），不写官方模型 ID。同端点、同 Key 的模型切换只改 Gateway Profile 的 `model`；官方同 ID 服务端升级零配置。活跃 Loop 未结束时不得无说明地热改 Profile 映射。
 - **协作语义**：`agent_spawn` 返回值必须经摘要压缩（≤500 字硬上限）；禁止把子线程全量 transcript 注入父上下文（ADR-0004）。
 - **预算**：任何 LLM 调用路径必须携带 `agent_id`/`thread_id` 标签并计量 token；不得绕过 `maxTokensPerRun` 熔断。
 - **审计**：`audit_events` 只追加，不更新不删除。

@@ -12,7 +12,7 @@ spec:
     name: fleet-ops-01
     display_name: Fleet 操作助手
     description: 通过完整 Fleet Operations Protocol 查询和操作 Agent、Task、Loop、Thread、Run、验收、调度及平台配置。
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     tool_groups:

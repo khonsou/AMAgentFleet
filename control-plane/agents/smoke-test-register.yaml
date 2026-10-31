@@ -12,7 +12,7 @@ spec:
     name: smoke-test-register
     display_name: Timeline 冒烟
     description: Timeline 业务读数验证 agent（真实业务案例测试）
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     mcp_plugins:

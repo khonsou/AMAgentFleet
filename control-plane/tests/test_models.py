@@ -5,12 +5,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import yaml
+
 from app import models, pool, scheduler
 from app.db import SCHEMA
 
 
 PROFILES = [
-    {"name": "deepseek-chat", "model": "deepseek-chat", "display_name": "DeepSeek Chat"},
+    {"name": "deepseek-default", "model": "deepseek-flash", "display_name": "DeepSeek Default"},
+    {"name": "deepseek-chat", "model": "deepseek-flash", "display_name": "DeepSeek Default（兼容别名）"},
     {"name": "reasoner", "model": "deepseek-reasoner", "display_name": "DeepSeek Reasoner"},
     {"name": "qwen", "model": "qwen3-max", "display_name": "Qwen Max"},
 ]
@@ -105,14 +108,20 @@ class ResolveProfileTests(unittest.IsolatedAsyncioTestCase):
     async def test_explicit_then_agent_default_then_system_default(self):
         self.assertEqual((await self.resolve(None, default="qwen"))[0], "qwen")
         profile, _, source = await self.resolve(None)
-        self.assertEqual((profile, source), ("deepseek-chat", "system_default"))
+        self.assertEqual((profile, source), ("deepseek-default", "system_default"))
+
+    async def test_legacy_profile_keeps_resolving_to_current_provider_model(self):
+        profile, snapshot, source = await self.resolve("deepseek-chat")
+        self.assertEqual(profile, "deepseek-chat")
+        self.assertEqual(snapshot["model"], "deepseek-flash")
+        self.assertEqual(source, "human")
 
     async def test_unknown_profile_and_agent_whitelist_are_rejected(self):
         with self.assertRaises(models.ModelError) as unknown:
             await self.resolve("missing")
         self.assertEqual(unknown.exception.status, 422)
         with self.assertRaises(models.ModelError) as denied:
-            await self.resolve("qwen", allowed=["deepseek-chat", "reasoner"])
+            await self.resolve("qwen", allowed=["deepseek-default", "reasoner"])
         self.assertEqual(denied.exception.status, 403)
 
     async def test_public_catalog_never_forwards_provider_secrets(self):
@@ -134,7 +143,7 @@ class ResolveProfileTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.models.httpx.AsyncClient", return_value=Client()):
             result = await models.list_profiles()
-        self.assertEqual(result[0]["name"], "deepseek-chat")
+        self.assertEqual(result[0]["name"], "deepseek-default")
         self.assertNotIn("api_key", result[0])
         self.assertNotIn("base_url", result[0])
 
@@ -237,6 +246,28 @@ class SchemaAndCronTests(unittest.TestCase):
         self.assertEqual(legacy["subagent_model_policy"], "auto")
         self.assertEqual(selected["model_profile"], "reasoner")
         self.assertEqual(selected["subagent_model_policy"], "inherit")
+
+    def test_stable_default_legacy_alias_and_agent_references_stay_valid(self):
+        root = Path(__file__).parents[2]
+        config = yaml.safe_load((root / "deploy/config.fleet.yaml").read_text(encoding="utf-8"))
+        profiles = {item["name"]: item for item in config["models"]}
+        self.assertEqual(config["models"][0]["name"], "deepseek-default")
+        for name in ("deepseek-default", "deepseek-chat"):
+            self.assertEqual(profiles[name]["model"], "deepseek-flash")
+            self.assertEqual(profiles[name]["api_key"], "$DEEPSEEK_API_KEY")
+            self.assertTrue(profiles[name]["supports_thinking"])
+            self.assertTrue(profiles[name]["supports_reasoning_effort"])
+            self.assertEqual(
+                profiles[name]["when_thinking_enabled"]["extra_body"]["thinking"]["type"], "enabled")
+            self.assertEqual(
+                profiles[name]["when_thinking_disabled"]["extra_body"]["thinking"]["type"], "disabled")
+        for directory in (root / "agents", root / "control-plane/agents"):
+            for path in directory.rglob("*.yaml"):
+                doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+                agent = (doc.get("spec") or {}).get("agent") or {}
+                profile = agent.get("model")
+                if profile is not None:
+                    self.assertIn(profile, profiles, f"{path} 引用了未登记的 Profile：{profile}")
 
     def test_protocol_registers_model_selection_and_human_only_key_management(self):
         protocol = json.loads((Path(__file__).parents[2] / "fleet-ops-protocol.json").read_text())

@@ -12,7 +12,7 @@ spec:
     name: "{{name}}"
     display_name: "{{displayName}}"
     description: 通用数据网站对接 agent：凭用户提供的接入文档，用 http 工具自主完成探测、鉴权与数据读取。
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     mcp_plugins:

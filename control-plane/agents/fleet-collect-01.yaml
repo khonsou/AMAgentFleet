@@ -12,7 +12,7 @@ spec:
     name: fleet-collect-01
     display_name: 采集员
     description: 协作测试：采集员
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     mcp_plugins:

@@ -78,7 +78,7 @@ cron 表达式不建议验收使用；摘除后 `fleet_cron_fires` 行保留，�
 
 ## 风险与备忘
 
-- **成本**：10 agent + cron 多周期 + 多轮唤醒，deepseek-chat token 消耗预计
+- **成本**：10 agent + cron 多周期 + 多轮唤醒，deepseek-default（deepseek-flash）token 消耗预计
   数十万级（远低于各 agent dailyTokenCap 200 万），无需特殊限额。
 - **并发**：dispatcher 3 worker 并行消费，B/C 用例与日常 agent 测试并行跑
   不冲突；如观察 loop 排队 > 5 分钟，先查 `fleet_task_loops` claimed/running

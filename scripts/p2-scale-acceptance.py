@@ -63,7 +63,7 @@ def agent_yaml(name: str, display: str, soul: str, cron: list | None = None) -> 
                 "name": name,
                 "display_name": display,
                 "description": f"P2 规模化验收测试 agent {name}",
-                "model": "deepseek-chat",
+                "model": "deepseek-default",
                 "model_settings": {"temperature": 0.1},
                 "skills": None,
                 "soul": soul,

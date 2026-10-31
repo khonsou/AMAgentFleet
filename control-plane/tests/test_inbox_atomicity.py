@@ -154,7 +154,7 @@ class PostgresTriggerAtomicityTests(unittest.IsolatedAsyncioTestCase):
             patch("app.scheduler.enqueue_loop_run", self.enqueue),
             patch("app.scheduler._retire_gateway_crons", AsyncMock(return_value=0)),
             patch("app.models.resolve_profile", AsyncMock(
-                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
+                return_value=("deepseek-default", {"profile": "deepseek-default"}, "system_default"))),
         ]
         for item in self.patches:
             item.start()

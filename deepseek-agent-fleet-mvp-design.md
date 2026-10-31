@@ -200,7 +200,7 @@ metadata:
   owner: finance-team
 spec:
   model:
-    name: deepseek-chat             # 或 deepseek-reasoner，锁定 deepseek 系
+    name: deepseek-default          # 稳定 Profile；官方模型 ID 只在 Gateway Profile 中维护
     temperature: 0.1
     maxTokensPerRun: 200000         # 单次任务 token 预算，超了熔断
   skills:                           # 按需加载
@@ -345,10 +345,13 @@ task（open → review → done，只前进不回退）
 
 ### 7.7++ Thread 实例选模（2026-10-28，ADR-0028）
 
-- **Agent 定义只给默认值**：`spec.agent.model` 不再是一次执行的强制绑定；每个 agent Loop 领取时解析 `model_profile` 并保存模型快照，Dispatcher 通过 Gateway 原生 `context.model_name` 执行，打回续跑不改变快照。
+- **Agent 定义只给默认值**：`spec.agent.model` 不再是一次执行的强制绑定；每个 agent Loop 领取时解析 `model_profile` 并保存模型快照，Dispatcher 通过 Gateway 原生 `context.model_name` 执行，打回续跑沿用 Loop Profile，快照记录不被改写。
 - **人与指挥官分工**：创建 Task 时可指定初始 Thread 的 Profile；`subagent_model_policy=auto` 允许指挥官逐个子任务选模，`inherit` 固定所有后代继承用户指定 Profile。Ops／第三方 Agent 使用同一结构化字段，自然语言不是权限边界。
 - **解析与校验**：实例显式 Profile → Agent 默认 → Gateway 默认。可选 `model_policy.allowed_profiles` 约束 Agent 可用范围；未知、越权或继承冲突在入队前拒绝。
 - **模型与密钥管理**：复用 Gateway Managed Models，每个受管 Profile 可拥有独立 API Key；现有 `$DEEPSEEK_API_KEY` 继续作为系统默认。密钥只写不回显，管理操作 human-only，不进 Agent Thread、审计或 Git。
+- **稳定 Profile 与本次升级（2026-10-31）**：`deepseek-default` 为系统默认，`model=deepseek-flash`；`deepseek-chat` 仅为历史 Task／Loop 兼容别名并指向同一模型，旧实例结束后删除。Agent YAML、脚本和 Console 新 Agent 默认值只引用稳定 Profile。兼容期内两个 Profile 的 `model` 必须同步；移除别名后每套配置只维护 `deepseek-default` 一处。本次 Profile 改名还须把既有 Agent 的 YAML 显式全量同步到 Gateway；启动只自动同步系统 Ops 与指挥官，以后仅改 Profile 的 Provider 模型 ID 不需逐 Agent 同步。
+- **同 Key 升级 SOP**：官方同 ID 服务端升级零项目配置；ID 变化时只改 `deploy/config.fleet.yaml` 与本地 `spike/deer-flow/config.yaml` 的 Profile `model`，重新部署／重启网关并做对话、工具调用、续跑、token／延迟冒烟。Managed Models 可建临时 Profile 灰度，编辑时 Key 留空保留。
+- **活跃 Loop 约束**：Dispatcher 执行只传 Profile 名，模型快照用于审计而非 Provider 版本锁；切换 Profile 映射会影响后续续跑，活跃 Loop 需先结束或明确接受热升级。
 
 ### 7.8 Console 页面（fleet view 极简版）
 

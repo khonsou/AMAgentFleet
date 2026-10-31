@@ -57,7 +57,7 @@ class ClaimTransactionTests(unittest.IsolatedAsyncioTestCase):
             patch("app.pool.audit", AsyncMock()),
             patch("app.pool.enqueue_loop_run", AsyncMock()),
             patch("app.models.resolve_profile", AsyncMock(
-                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
+                return_value=("deepseek-default", {"profile": "deepseek-default"}, "system_default"))),
         ):
             return await poolmod.claim_loop(
                 11, claimant_type, claimant, created_by="test"
@@ -217,7 +217,7 @@ class PostgresConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             patch("app.pool.audit", AsyncMock()),
             patch("app.pool.enqueue_loop_run", AsyncMock()),
             patch("app.models.resolve_profile", AsyncMock(
-                return_value=("deepseek-chat", {"profile": "deepseek-chat"}, "system_default"))),
+                return_value=("deepseek-default", {"profile": "deepseek-default"}, "system_default"))),
         ]
         for item in self.patches:
             item.start()

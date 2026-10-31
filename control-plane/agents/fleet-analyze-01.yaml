@@ -12,7 +12,7 @@ spec:
     name: fleet-analyze-01
     display_name: 分析师
     description: 协作测试：分析师
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.1
     mcp_plugins:

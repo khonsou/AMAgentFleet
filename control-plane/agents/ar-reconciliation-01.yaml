@@ -12,7 +12,7 @@ spec:
     name: ar-reconciliation-01
     display_name: 应收对账
     description: 财务域应收对账 agent：核对应收账款、输出差异分析；只读分析，不做凭证过账。
-    model: deepseek-chat
+    model: deepseek-default
     model_settings:
       temperature: 0.15
       max_tokens: 8192

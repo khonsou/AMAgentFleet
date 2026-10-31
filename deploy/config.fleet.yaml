@@ -30,11 +30,46 @@ max_recursion_limit: 1000
 
 
 models:
-  - name: deepseek-chat
-    display_name: DeepSeek Chat (官方)
+  # 稳定默认 Profile：Agent 只引用 name；官方模型升级只改 model。
+  - name: deepseek-default
+    display_name: DeepSeek Default (官方)
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
-    model: deepseek-chat
+    model: deepseek-flash
     api_key: $DEEPSEEK_API_KEY
+    supports_thinking: true
+    supports_reasoning_effort: true
+    when_thinking_enabled:
+      extra_body:
+        thinking:
+          type: enabled
+    when_thinking_disabled:
+      extra_body:
+        thinking:
+          type: disabled
+    timeout: 600.0
+    max_retries: 2
+    max_tokens: 8192
+    context_window: 131072
+    request_admission:
+      requests_per_minute: 60
+      max_wait_seconds: 300
+
+  # 兼容历史 Task/Loop 的旧 Profile 名；旧实例全部结束后可移除。
+  - name: deepseek-chat
+    display_name: DeepSeek Default (兼容别名)
+    use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
+    model: deepseek-flash
+    api_key: $DEEPSEEK_API_KEY
+    supports_thinking: true
+    supports_reasoning_effort: true
+    when_thinking_enabled:
+      extra_body:
+        thinking:
+          type: enabled
+    when_thinking_disabled:
+      extra_body:
+        thinking:
+          type: disabled
     timeout: 600.0
     max_retries: 2
     max_tokens: 8192
