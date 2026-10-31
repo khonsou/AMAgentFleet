@@ -40,6 +40,7 @@
 
     {"id":"tasks.list","method":"GET","path":"/api/tasks","surface":"control-plane","description":"List Task instances and latest Loop references with deterministic limit/offset pagination","query":{"agent":"<optional claimant>","status":"<optional execution status>","pool_status":"<optional open/review/done>","limit":100,"offset":0}},
     {"id":"tasks.get","method":"GET","path":"/api/tasks/{task_id}","surface":"control-plane","description":"Read Task, all Loops, outputs, artifacts and comments"},
+    {"id":"tasks.conversation","method":"GET","path":"/api/tasks/{task_id}/conversation","surface":"control-plane","description":"Read the shared Task group-chat projection with all participants, Thread messages, comments and OUTPUT"},
     {"id":"tasks.create","method":"POST","path":"/api/tasks","surface":"control-plane","write":true,"description":"Create a Task, optionally assigned to an Agent and model Profile","body":{"input":"<self-contained instruction>","assignee":"<optional agent name>","created_by":"fleet-ops-01","source":"agent","parent_task_id":null,"model_profile":"<optional registered profile>","subagent_model_policy":"auto"}},
     {"id":"tasks.review_queue","method":"GET","path":"/api/review-queue","surface":"control-plane","description":"List Tasks awaiting delivery acceptance"},
     {"id":"tasks.comment","method":"POST","path":"/api/tasks/{task_id}/comments","surface":"control-plane","write":true,"description":"Comment on a Task or one of its Loops","body":{"author":"fleet-ops-01","content":"<comment>","loop_id":null}},

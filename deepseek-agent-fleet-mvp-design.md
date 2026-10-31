@@ -377,6 +377,10 @@ ADR-0010"3 个并行 loop"措辞澄清为"终身累计 ≤3 个 agent loop"
 
 本地执行代理与第三方 Agent 统一使用 PAT／FAP 鉴权，Agent 名称不再是授权依据。原始系统 PAT 只存服务端 Vault 密文，由控制面执行代理解密并注入 Authorization；Runner 只提交 operation ID 和参数，不能接触 token。operation ID 白名单、写操作明确确认、human-only 与 secrets 隔离继续生效。
 
+### 7.11 统一协议客户端与 Playground（2026-10-31，ADR-0031）
+
+FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户端只适配各自既有身份通道，不新增 Playground 特权。Task 群聊通过通用 `tasks.conversation` 只读投影聚合多个 LOOP、Thread、评论与 OUTPUT，不创建新业务实体；写操作仍调用既有 operation。群聊输入默认发给选中的 Agent／LOOP，“全组”只写 Task comment，避免隐式广播收费 RUN。Diorama 3D renderer 与协议客户端解耦，视觉严格沿用团队 review 的 demo。
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）

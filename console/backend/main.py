@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from authjwt import DaoAuthMiddleware
+import operations
 
 PG_DSN = os.environ.get(
     "CONSOLE_PG_DSN", "postgresql://postgres@127.0.0.1:5432/deerflow"
@@ -263,9 +264,10 @@ async def send_message(tid: str, msg: MessageIn):
 # Console 前端只连本后端；以下路由原样转发到 control-plane :8003。
 # ---------------------------------------------------------------------------
 
-async def _cp(path: str, method: str = "GET", json_body=None, timeout: float = 60):
+async def _cp(path: str, method: str = "GET", json_body=None, timeout: float = 60, idempotency_key: str | None = None):
+    headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
     async with httpx.AsyncClient(trust_env=False, base_url=CONTROL_PLANE, timeout=timeout) as client:
-        resp = await client.request(method, f"/api{path}", json=json_body)
+        resp = await client.request(method, f"/api{path}", json=json_body, headers=headers)
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, resp.text[:500])
     if resp.status_code == 204:
@@ -499,6 +501,16 @@ async def console_managed_model_save(body: dict):
 @app.post("/api/console/managed-models/test")
 async def console_managed_model_test(body: dict):
     return await _managed_models("POST", "/test", body)
+
+
+@app.get("/api/console/operations/protocol")
+async def console_operations_protocol():
+    return await operations.protocol_document()
+
+
+@app.post(operations.GUI_EXECUTE_PATH)
+async def console_execute_operation(request: Request, body: operations.GuiOperationBody):
+    return await operations.execute_gui_operation(request, body)
 
 
 # ---------------------------------------------------------------------------

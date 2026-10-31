@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
-from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials
+from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation
 from .db import GATEWAY, audit, init_db, pool
 
 log = logging.getLogger("fleet.control-plane")
@@ -36,6 +36,7 @@ app.include_router(fap.router)
 app.include_router(fap_pats.router)
 app.include_router(fleet_ops.router)
 app.include_router(ops_credentials.router)
+app.include_router(conversation.router)
 fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
@@ -284,15 +285,35 @@ async def list_tasks(
     async with (await pool()).acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT t.*, l.id AS latest_loop_id, l.thread_id AS latest_thread_id,
-                       l.status AS latest_loop_status
+                       l.status AS latest_loop_status, l.deliverable AS latest_deliverable,
+                       claimants.items AS claimants,
+                       (SELECT re.content FROM run_events re
+                        WHERE re.thread_id=l.thread_id AND re.event_type='llm.ai.response'
+                        ORDER BY re.seq DESC LIMIT 1) AS latest_message_content
                 FROM fleet_tasks t
                 LEFT JOIN LATERAL (
-                  SELECT id, thread_id, status FROM fleet_task_loops
+                  SELECT id, thread_id, status, deliverable FROM fleet_task_loops
                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                 ) l ON true
+                LEFT JOIN LATERAL (
+                  SELECT json_agg(json_build_object(
+                    'loop_id', loops.id, 'claimant_type', loops.claimant_type,
+                    'claimant', loops.claimant, 'status', loops.status,
+                    'thread_id', loops.thread_id)) AS items
+                  FROM fleet_task_loops loops WHERE loops.task_id=t.id
+                ) claimants ON true
                 {clause} ORDER BY t.id DESC
                 LIMIT ${limit_param} OFFSET ${offset_param}""", *args)
-    return [dict(r) for r in rows]
+    from .conversation import content_text
+    result = []
+    for row in rows:
+        item = dict(row)
+        raw = item.pop("latest_message_content", None)
+        item["latest_message"] = content_text(raw)[:500] or None
+        if isinstance(item.get("claimants"), str):
+            item["claimants"] = json.loads(item["claimants"])
+        result.append(item)
+    return result
 
 
 # ---------------------------------------------------------------- Inbox

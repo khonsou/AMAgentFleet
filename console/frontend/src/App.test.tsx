@@ -27,6 +27,7 @@ vi.mock('@/pages/ThreadDetail', () => ({ default: () => <div>Thread detail</div>
 vi.mock('@/pages/AgentDetail', () => ({ default: () => <div>Agent detail</div> }))
 vi.mock('@/pages/TaskDetail', () => ({ default: () => <div>Task detail</div> }))
 vi.mock('@/pages/AuthCallback', () => ({ default: () => <div>OAuth callback</div> }))
+vi.mock('@/playground/Playground', () => ({ default: () => <div>Playground page</div> }))
 
 function renderAt(route: string) {
   return render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>)
@@ -53,6 +54,12 @@ describe('全局舰队操作助手', () => {
   ])('在 %s 提供浮窗入口', (route) => {
     renderAt(route)
     expect(screen.getByRole('button', { name: '打开舰队操作助手' })).toBeInTheDocument()
+  })
+
+  it('Playground 使用自己的 Operations Center，不叠加旧浮窗', async () => {
+    renderAt('/playground')
+    expect(await screen.findByText('Playground page')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '打开舰队操作助手' })).toBeNull()
   })
 
   it('切换页面时保持浮窗展开状态和同一个持久 Thread', async () => {

@@ -1,4 +1,5 @@
-import { Route, Routes } from 'react-router'
+import { lazy, Suspense } from 'react'
+import { Route, Routes, useLocation } from 'react-router'
 import Rack from './components/console/Rack'
 import AuthGate from './components/console/AuthGate'
 import Home from './pages/Home'
@@ -11,7 +12,10 @@ import SettingsPage from './pages/Settings'
 import AuthCallbackPage from './pages/AuthCallback'
 import FleetOpsWidget from './components/console/FleetOpsWidget'
 
+const PlaygroundPage = lazy(() => import('./playground/Playground'))
+
 export default function App() {
+  const location = useLocation()
   return (
     <div className="min-h-screen bg-chassis text-ink">
       <Rack />
@@ -22,6 +26,7 @@ export default function App() {
           <AuthGate>
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/playground" element={<Suspense fallback={<div className="p-7 font-mono text-xs">Loading Playground…</div>}><PlaygroundPage /></Suspense>} />
               <Route path="/registry" element={<RegistryPage />} />
               <Route path="/threads" element={<ThreadsPage />} />
               <Route path="/agents/:name" element={<AgentDetailPage />} />
@@ -29,7 +34,7 @@ export default function App() {
               <Route path="/threads/:tid" element={<ThreadDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
-            <FleetOpsWidget />
+            {!location.pathname.startsWith('/playground') && <FleetOpsWidget />}
           </AuthGate>
         } />
       </Routes>

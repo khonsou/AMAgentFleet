@@ -7,6 +7,7 @@ import { Led } from './Status'
  *  视觉隐喻：机架式仪器的模块选择排，当前模块亮信号橙 LED。 */
 const MODULES = [
   { to: '/', label: 'FLEET', end: true },
+  { to: '/playground', label: 'PLAYGROUND' },
   { to: '/registry', label: 'REGISTRY' },
   { to: '/threads', label: 'THREADS' },
   { to: '/settings', label: 'SETTINGS' },
@@ -25,7 +26,7 @@ function Clock() {
 
 export default function Rack() {
   return (
-    <nav className="flex h-[52px] items-center gap-7 border-b border-hairline bg-rack px-7">
+    <nav className="flex h-[52px] w-full max-w-[100vw] items-center gap-7 overflow-x-auto border-b border-hairline bg-rack px-7">
       <div className="flex items-center gap-2.5">
         <div className="grid h-6 w-6 place-items-center rounded-[2px] bg-signal font-mono text-[11px] font-semibold text-signal-foreground">
           AM
