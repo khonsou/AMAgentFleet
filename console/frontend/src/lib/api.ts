@@ -1,6 +1,12 @@
 import { getOauthSession, notifySessionExpired } from '@/lib/auth'
+import { executeOperation, type OperationRequest } from '@/protocol/client'
 
 const BASE = '/api/console'
+
+async function read<T>(operationId: string, request: OperationRequest = {}): Promise<T> {
+  const response = await executeOperation<T>(operationId, request)
+  return response.result
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = authHeaders(init?.headers)
@@ -94,9 +100,9 @@ export interface ChatMessage {
 }
 
 export const api = {
-  overview: () => req<Overview>('/overview'),
-  fleet: () => req<FleetRow[]>('/fleet'),
-  thread: (tid: string) => req<ThreadDetail>(`/threads/${tid}`),
+  overview: () => read<Overview>('overview.get'),
+  fleet: () => read<FleetRow[]>('fleet.threads'),
+  thread: (tid: string) => read<ThreadDetail>('threads.get', { path_params: { tid } }),
   /** 产物下载地址（agent present_files 呈现的文件，经 Console 代理到网关） */
   artifactUrl: (tid: string, path: string) =>
     `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
@@ -105,7 +111,7 @@ export const api = {
       `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
       path.split('/').pop() || 'artifact',
     ),
-  messages: (tid: string) => req<unknown>(`/threads/${tid}/messages`),
+  messages: (tid: string) => read<unknown>('threads.messages', { path_params: { tid } }),
   send: (tid: string, content: string, assistantId?: string) =>
     req<unknown>(`/threads/${tid}/messages`, {
       method: 'POST',
@@ -124,8 +130,8 @@ export const api = {
   destroy: (tid: string) => req<{ deleted: string }>(`/threads/${tid}`, { method: 'DELETE' }),
 
   // ---- Registry（control-plane 代理，P2） ----
-  agents: () => req<RegistryAgent[]>('/agents'),
-  agent: (name: string) => req<AgentDetail>(`/agents/${name}`),
+  agents: () => read<RegistryAgent[]>('agents.list'),
+  agent: (name: string) => read<AgentDetail>('agents.get', { path_params: { name } }),
   agentUpdate: (name: string, yaml: unknown) =>
     req<RegistryAgent>(`/agents/${name}`, {
       method: 'PUT',
@@ -141,9 +147,9 @@ export const api = {
         subagent_model_policy: subagentModelPolicy,
       }),
     }),
-  agentTasks: (name: string) => req<AgentTask[]>(`/agents/${name}/tasks`),
-  allTasks: (limit = 200) => req<AgentTask[]>(`/tasks?limit=${limit}`),
-  taskDetail: (id: number) => req<TaskDetail>(`/tasks/${id}`),
+  agentTasks: (name: string) => read<AgentTask[]>('tasks.list', { query: { agent: name, limit: 200 } }),
+  allTasks: (limit = 200) => read<AgentTask[]>('tasks.list', { query: { limit } }),
+  taskDetail: (id: number) => read<TaskDetail>('tasks.get', { path_params: { task_id: id } }),
   createTask: (input: string, assignee?: string, modelProfile?: string, subagentModelPolicy = 'auto') =>
     req<{ task_id: number }>('/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -173,7 +179,7 @@ export const api = {
       body: JSON.stringify({ content, author }),
     }),
   reviewContext: (threadId: string) =>
-    req<ReviewContext>(`/threads/${threadId}/review-context`),
+    read<ReviewContext>('threads.review_context', { path_params: { tid: threadId } }),
   loopRequeue: (loopId: number) =>
     req<{ status: string }>(`/loops/${loopId}/requeue`, { method: 'POST' }),
   loopResume: (loopId: number) =>
@@ -204,11 +210,11 @@ export const api = {
       body: JSON.stringify({ yaml }),
     }),
 
-  templates: () => req<Template[]>('/templates'),
+  templates: () => read<Template[]>('templates.list'),
 
   // ---- 模型 Profile 与原生 Managed Models（ADR-0028） ----
-  models: () => req<ModelProfile[]>('/models'),
-  managedModels: () => req<{ models: ManagedModel[] }>('/managed-models'),
+  models: () => read<ModelProfile[]>('models.list'),
+  managedModels: () => read<{ models: ManagedModel[] }>('models.managed_list'),
   managedModelSave: (config: ManagedModelInput, expectedRevision: string | null) =>
     req<ManagedModel>('/managed-models', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -221,10 +227,10 @@ export const api = {
     }),
 
   // ---- FAP PAT 管理（ADR-0011 H6，Console 设置页） ----
-  opsCredential: () => req<OpsCredentialStatus>('/ops/credential'),
+  opsCredential: () => read<OpsCredentialStatus>('ops.credential_status'),
   opsCredentialRotate: () =>
     req<OpsCredentialStatus>('/ops/credential/rotate', { method: 'POST' }),
-  pats: () => req<Pat[]>('/pats'),
+  pats: () => read<Pat[]>('pats.list'),
   patCreate: (name: string, scope: 'read' | 'write', expiresInDays?: number) =>
     req<Pat & { token: string }>('/pats', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

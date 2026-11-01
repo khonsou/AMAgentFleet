@@ -1,18 +1,18 @@
 # 协议化收尾与 RuntimeAdapter 分阶段实施拆解
 
-- **状态**：评审中，未开工
+- **状态**：实施中
 - **日期**：2026-11-01
 - **分支**：`feat/protocol-runtime-adapter`
-- **决策依据**：[ADR-0031](../adr/0031-unified-protocol-playground-and-task-conversation.md)（已接受）、[ADR-0032](../adr/0032-runtime-adapter-and-cold-switch.md)（提议中）
+- **决策依据**：[ADR-0031](../adr/0031-unified-protocol-playground-and-task-conversation.md)（已接受）、[ADR-0032](../adr/0032-runtime-adapter-and-cold-switch.md)（已接受）
 
 ## 0. 目标与开工门槛
 
 把两项高风险工作拆成可独立评审、独立验收、独立回滚的小 PR：
 
 - **工作包 A**：旧 Console GUI 全部改用共享 Protocol Client，完成 ADR-0031 的既有决策。
-- **工作包 B**：先用 `DeerFlowAdapter` 隔离现有运行时，再评估第二套 Harness，落实 ADR-0032 的提案边界。
+- **工作包 B**：先用 `DeerFlowAdapter` 隔离现有运行时，再按 ADR-0002 Option B 接入 DeepSeek OpenAI 兼容薄 Runner 参考实现。
 
-本文件与 ADR 评审通过前不改运行代码。工作包 A 可在评审后独立开始；工作包 B 必须先把 ADR-0032 转为“已接受”。第二套 Harness 未点名前，只做到 DeerFlow 行为等价与契约测试，不预先编写猜测性的适配实现。
+ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段仍须独立验收和提交。第二套 Harness 只在测试环境显式启用，不授权生产切换。
 
 ## 1. 不可突破的范围
 
@@ -44,9 +44,11 @@
 
 ### A2．迁移只读调用，保留页面结构
 
+**状态**：✅ 已完成（2026-11-01）
+
 **改动**
 
-- 新增 `useFleetApi()` 作为短期兼容层，尽量保持现有 `api.xxx()` 返回类型，内部只调用 operation ID。
+- 在 `lib/api.ts` 保留现有 `api.xxx()` 签名，只读方法内部统一调用 operation ID，页面无需改动。
 - 分批迁移 Home、Registry、Threads、ThreadDetail、AgentDetail、TaskDetail、Settings 的读操作。
 - Agent 专属任务查询统一为 `tasks.list(query.agent=...)`；类型定义与 HTTP 实现分离。
 - 保留 `console/backend/operations.py` 的服务端 operation 解析、真实 actor 覆盖与受信转发。
