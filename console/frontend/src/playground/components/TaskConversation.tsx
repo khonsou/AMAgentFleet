@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentView, TaskConversation as Conversation } from '../core/types'
-import { useOperations } from '../protocol/useOperations'
+import { useOperations } from '@/protocol/useOperations'
 import TaskClaimPanel from './TaskClaimPanel'
 
 interface Props {

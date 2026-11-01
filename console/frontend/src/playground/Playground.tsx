@@ -3,8 +3,7 @@ import { createWorld } from './renderers/diorama'
 import { toDioramaSnapshot } from './renderers/model'
 import { buildSceneViewModel } from './core/model'
 import type { AgentView, FleetTask, SceneViewModel } from './core/types'
-import { OperationProvider } from './protocol/OperationProvider'
-import { useOperations } from './protocol/useOperations'
+import { useOperations } from '@/protocol/useOperations'
 import TaskConversation from './components/TaskConversation'
 import OperationsCenter from './components/OperationsCenter'
 import TaskCreateForm from './components/TaskCreateForm'
@@ -186,5 +185,5 @@ function AgentsDrawer({ agents, onClose, onAgent }: { agents: AgentView[]; onClo
 }
 
 export default function Playground() {
-  return <OperationProvider><PlaygroundContent /></OperationProvider>
+  return <PlaygroundContent />
 }

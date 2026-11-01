@@ -78,10 +78,10 @@ test('真实 3D 场景、Task 群聊与协议写确认', async ({ page }) => {
   await page.getByLabel('群聊消息').fill('请补充风险说明')
   await page.getByRole('button', { name: '确认并发送' }).click()
   await expect(page.getByRole('alertdialog')).toBeVisible()
-  await expect(page.locator('.confirm-dialog .operation-json')).toHaveCount(0)
+  await expect(page.locator('.operation-confirm-dialog .operation-json')).toHaveCount(0)
   const confirmStyle = await page.getByRole('alertdialog').evaluate((element) => {
     const title = getComputedStyle(element.querySelector('h2'))
-    const buttonElements = [...element.querySelectorAll('.drawer-action')]
+    const buttonElements = [...element.querySelectorAll('.operation-confirm-action')]
     const buttons = buttonElements.map((buttonElement) => {
       const style = getComputedStyle(buttonElement)
       return { color: style.color, disabled: buttonElement.disabled, background: style.backgroundColor, opacity: style.opacity, fontSize: style.fontSize, fontFamily: style.fontFamily, height: style.height, borderRadius: style.borderRadius, marginTop: style.marginTop }

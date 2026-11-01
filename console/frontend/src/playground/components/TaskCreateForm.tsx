@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AgentView } from '../core/types'
-import { useOperations } from '../protocol/useOperations'
+import { useOperations } from '@/protocol/useOperations'
 
 export default function TaskCreateForm({ agents, onCreated }: { agents: AgentView[]; onCreated: (taskId: number) => void }) {
   const { execute, busy } = useOperations()

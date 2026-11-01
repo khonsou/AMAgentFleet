@@ -1,0 +1,15 @@
+/* Shared operation confirmation UI; independent of Playground drawer styles. */
+.operation-confirm-backdrop { position: fixed; z-index: 40; inset: 0; background: rgba(42,46,39,.12); backdrop-filter: blur(1px); }
+.operation-confirm-dialog { position: absolute; z-index: 41; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(460px,calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; border: 1px solid rgba(255,255,255,.7); border-radius: 6px; background: #f6f4ed; color: #222620; color-scheme: light; padding: 20px; box-shadow: 0 20px 70px rgba(30,35,28,.22); }
+.operation-confirm-dialog h2 { margin: 14px 0 6px; color: #222620; font-size: 22px; line-height: 1.2; letter-spacing: -.03em; }
+.operation-confirm-dialog p, .operation-confirm-dialog pre, .operation-confirm-dialog b { color: #222620; }
+.operation-confirm-kicker { color: #ef5b2a; font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 9px; letter-spacing: .08em; }
+.operation-confirm-subtitle { margin: 0; color: #737a70; font-size: 12px; line-height: 1.6; }
+.operation-confirm-summary { margin-top: 14px; padding: 12px; border: 1px solid rgba(239,91,42,.35); background: rgba(239,91,42,.06); border-radius: 4px; font-size: 11px; line-height: 1.6; }
+.operation-confirm-summary p { margin: 0; font-size: 11px; line-height: 1.6; }
+.operation-confirm-summary p + p { margin-top: 8px; }
+.operation-confirm-action { display: block; width: 100%; height: 38px; margin: 0; padding: 0 12px; border: 0; border-radius: 4px; background-color: #ef5b2a; color: #fff8ef; font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 9px; font-weight: 500; line-height: 38px; cursor: pointer; }
+.operation-confirm-action.secondary { background-color: #343b32; color: #f2f0e8; }
+.operation-confirm-action:disabled { background-color: #8b8f86; color: #f2f0e8; opacity: .72; }
+.operation-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.operation-confirm-error { padding: 10px; border-left: 3px solid #d54c3f; background: rgba(213,76,63,.07); color: #a83d33; font-size: 11px; white-space: pre-wrap; word-break: break-word; }

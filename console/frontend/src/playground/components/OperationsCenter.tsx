@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useOperations } from '../protocol/useOperations'
-import { downloadArtifact, type OperationDefinition } from '../protocol/client'
+import { useOperations } from '@/protocol/useOperations'
+import { downloadArtifact, type OperationDefinition } from '@/protocol/client'
 
 function paramsFor(operation: OperationDefinition) {
   const path = Object.fromEntries([...operation.path.matchAll(/\{([^}]+)\}/g)].map((match) => [match[1], match[1].endsWith('id') || match[1].endsWith('_id') ? 0 : '']))

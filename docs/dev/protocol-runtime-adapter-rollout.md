@@ -27,6 +27,8 @@
 
 ### A1．抽共享 Protocol Client，无行为变化
 
+**状态**：✅ 已完成（2026-11-01）
+
 **改动**
 
 - 将 `console/frontend/src/playground/protocol/` 的 client、provider、context、hook 移到 `console/frontend/src/protocol/`。

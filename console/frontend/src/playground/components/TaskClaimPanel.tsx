@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AgentView } from '../core/types'
-import { useOperations } from '../protocol/useOperations'
+import { useOperations } from '@/protocol/useOperations'
 
 export default function TaskClaimPanel({ agents, onClaim }: { agents: AgentView[]; onClaim: (agentId: string) => Promise<void> }) {
   const { busy } = useOperations()

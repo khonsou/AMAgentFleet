@@ -11,6 +11,7 @@ import TaskDetailPage from './pages/TaskDetail'
 import SettingsPage from './pages/Settings'
 import AuthCallbackPage from './pages/AuthCallback'
 import FleetOpsWidget from './components/console/FleetOpsWidget'
+import { OperationProvider } from './protocol/OperationProvider'
 
 const PlaygroundPage = lazy(() => import('./playground/Playground'))
 
@@ -24,17 +25,19 @@ export default function App() {
         <Route path="/oauth/callback" element={<AuthCallbackPage />} />
         <Route path="/*" element={
           <AuthGate>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/playground" element={<Suspense fallback={<div className="p-7 font-mono text-xs">Loading Playground…</div>}><PlaygroundPage /></Suspense>} />
-              <Route path="/registry" element={<RegistryPage />} />
-              <Route path="/threads" element={<ThreadsPage />} />
-              <Route path="/agents/:name" element={<AgentDetailPage />} />
-              <Route path="/tasks/:tid" element={<TaskDetailPage />} />
-              <Route path="/threads/:tid" element={<ThreadDetailPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-            {!location.pathname.startsWith('/playground') && <FleetOpsWidget />}
+            <OperationProvider>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/playground" element={<Suspense fallback={<div className="p-7 font-mono text-xs">Loading Playground…</div>}><PlaygroundPage /></Suspense>} />
+                <Route path="/registry" element={<RegistryPage />} />
+                <Route path="/threads" element={<ThreadsPage />} />
+                <Route path="/agents/:name" element={<AgentDetailPage />} />
+                <Route path="/tasks/:tid" element={<TaskDetailPage />} />
+                <Route path="/threads/:tid" element={<ThreadDetailPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
+              {!location.pathname.startsWith('/playground') && <FleetOpsWidget />}
+            </OperationProvider>
           </AuthGate>
         } />
       </Routes>

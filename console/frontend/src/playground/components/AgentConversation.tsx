@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentView } from '../core/types'
-import { useOperations } from '../protocol/useOperations'
+import { useOperations } from '@/protocol/useOperations'
 
 interface ChatMessage { id: string; role: 'human' | 'ai'; content: string }
 interface ThreadDetail { thread: { assistant_id?: string; agent_name?: string } }

@@ -220,21 +220,8 @@ h1 span { font-weight: 400; color: #7c8177; }
 .chat-composer { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .chat-recipients { display: flex; gap: 8px; margin-bottom: 8px; }
 .chat-recipients select { flex: 1; }
-.confirm-summary { padding: 12px; border: 1px solid rgba(239,91,42,.35); background: rgba(239,91,42,.06); border-radius: 4px; font-size: 11px; line-height: 1.6; }
 .sensitive-result { border-color: rgba(239,91,42,.45); background: #efe5d9; }
 @media (max-width: 760px) { .operation-grid { grid-template-columns: 1fr; } }
-.confirm-dialog { position: absolute; z-index: 41; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(460px,calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; border: 1px solid rgba(255,255,255,.7); border-radius: 6px; background: #f6f4ed; color: #222620; color-scheme: light; padding: 20px; box-shadow: 0 20px 70px rgba(30,35,28,.22); }
-.confirm-dialog h2 { margin: 14px 0 6px; color: #222620; font-size: 22px; line-height: 1.2; letter-spacing: -.03em; }
-.confirm-dialog p, .confirm-dialog pre, .confirm-dialog b { color: #222620; }
-.confirm-dialog .drawer-kicker { color: #ef5b2a; font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 9px; letter-spacing: .08em; }
-.confirm-dialog .drawer-subtitle { margin: 0; color: #737a70; font-size: 12px; line-height: 1.6; }
-.confirm-dialog .confirm-summary { margin-top: 14px; padding: 12px; }
-.confirm-dialog .confirm-summary p { margin: 0; font-size: 11px; line-height: 1.6; }
-.confirm-dialog .confirm-summary p + p { margin-top: 8px; }
-.confirm-dialog .drawer-action { height: 38px; margin: 0; padding: 0 12px; border-radius: 4px; background-color: #ef5b2a; color: #fff8ef; font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 9px; font-weight: 500; line-height: 38px; }
-.confirm-dialog .drawer-action.secondary { background-color: #343b32; color: #f2f0e8; }
-.confirm-dialog .drawer-action:disabled { background-color: #8b8f86; color: #f2f0e8; opacity: .72; }
-.confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
 .operation-error { padding: 10px; border-left: 3px solid #d54c3f; background: rgba(213,76,63,.07); color: #a83d33; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
 .operation-search { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: rgba(255,255,255,.35); padding: 10px; font-size: 11px; }
 .participant-list { max-height: 190px; overflow-y: auto; }

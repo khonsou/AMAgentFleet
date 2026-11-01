@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OperationProvider } from './OperationProvider'
 import { useOperations } from './useOperations'
 
@@ -12,8 +12,16 @@ function WriteButton() {
   return <button onClick={() => void execute('tasks.close', { path_params: { task_id: 1 } })}>关闭 Task</button>
 }
 
-describe('统一写操作确认', () => {
+describe('共享 Protocol Provider', () => {
+  beforeEach(() => { vi.clearAllMocks() })
   afterEach(cleanup)
+
+  it('挂载时不预取协议，保持旧页面请求不变', () => {
+    render(<OperationProvider><div>Legacy Console</div></OperationProvider>)
+    expect(screen.getByText('Legacy Console')).toBeInTheDocument()
+    expect(mocks.getProtocol).not.toHaveBeenCalled()
+  })
+
   it('确认前不发送，确认后复用同一幂等键', async () => {
     mocks.getProtocol.mockResolvedValue({ operations: [{ id: 'tasks.close', method: 'POST', path: '/api/tasks/{task_id}/close', surface: 'control-plane', write: true, description: '关闭任务' }] })
     mocks.executeOperation.mockResolvedValue({ operation_id: 'tasks.close', status: 200, result: {}, truncated: false })
