@@ -99,6 +99,21 @@ class RuntimeApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.model_profile, "reasoner")
         self.assertEqual(result["messages"][0]["content"], "done")
 
+    async def test_run_messages_omits_null_cursors(self):
+        runtime = type("Runtime", (), {"get_run_messages": AsyncMock(return_value={"data": []})})()
+        with patch("app.runtime_api.get_runtime", return_value=runtime):
+            await runtime_api.run_messages("run-1", limit=50, before_seq=None, after_seq=None)
+        query = runtime.get_run_messages.await_args.args[1]
+        self.assertEqual(query, {"limit": 50})
+
+    async def test_cancel_preserves_native_status_and_wait(self):
+        runtime = type("Runtime", (), {"cancel_run": AsyncMock(return_value=(202, {"status": "cancelled"}))})()
+        with patch("app.runtime_api.get_runtime", return_value=runtime):
+            response = await runtime_api.run_cancel("thread-1", "run-1", wait=True)
+        self.assertEqual(response.status_code, 202)
+        self.assertIn(b"cancelled", response.body)
+        self.assertEqual(runtime.cancel_run.await_args.kwargs["wait"], True)
+
 
 class ObservationBoundaryTests(unittest.TestCase):
     def test_protocol_runtime_operations_use_control_plane(self):

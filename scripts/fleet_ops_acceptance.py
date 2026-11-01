@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fleet Operations Protocol 72 项在线验收（ADR-0017）。
+"""Fleet Operations Protocol 全量在线验收（ADR-0017/0031/0032）。
 
 只使用协议 operation ID 驱动请求；测试资源带唯一前缀，凭证仅保存在进程内存。
 退出码非零即存在未通过操作。报告只记录状态与断言，不保存响应正文或秘密。
@@ -28,11 +28,23 @@ BASES = {"control-plane": CP, "console": CONSOLE, "gateway": GATEWAY}
 ACTOR = "fleet-ops-acceptance"
 
 
+def assert_no_api_key(value: Any) -> None:
+    """允许 has_api_key 布尔标记，但禁止任何真实 api_key 字段或嵌套值。"""
+    if isinstance(value, dict):
+        assert "api_key" not in value
+        for nested in value.values():
+            assert_no_api_key(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            assert_no_api_key(nested)
+
+
 class Acceptance:
     def __init__(self, report_path: Path):
         self.protocol = json.loads((ROOT / "fleet-ops-protocol.json").read_text(encoding="utf-8"))
         self.operations = {op["id"]: op for op in self.protocol["operations"]}
-        assert len(self.operations) == 72, "协议操作数应为 72"
+        self.operation_count = len(self.operations)
+        assert self.operation_count >= 72, "协议操作数不得少于 72"
         self.report_path = report_path
         self.results: list[dict[str, Any]] = []
         self.seen: set[str] = set()
@@ -109,9 +121,10 @@ class Acceptance:
     async def system_and_templates(self):
         await self.call("system.meta", check=lambda p, _: (_ for _ in ()).throw(AssertionError("缺少协议入口")) if p.get("operations_protocol") != "/api/ops/protocol" else None)
         await self.call("system.agent_doc", check=lambda p, r: (_ for _ in ()).throw(AssertionError("文档为空或协议头缺失")) if not p.strip() or r.headers.get("x-protocol-version") != "1.0" else None)
-        await self.call("system.protocol", check=lambda p, _: (_ for _ in ()).throw(AssertionError("在线协议不是 72 项")) if len(p.get("operations", [])) != 72 else None)
+        await self.call("system.protocol", check=lambda p, _: (_ for _ in ()).throw(AssertionError("在线协议数量不一致")) if len(p.get("operations", [])) != self.operation_count else None)
         await self.call("system.openapi", check=lambda p, _: (_ for _ in ()).throw(AssertionError("OpenAPI 无路径")) if not p.get("paths") else None)
         await self.call("system.health", check=lambda p, _: (_ for _ in ()).throw(AssertionError("控制面不健康")) if p.get("status") != "ok" else None)
+        await self.call("system.runtime_capabilities", check=lambda p, _: (_ for _ in ()).throw(AssertionError("Runtime 能力自发现缺失")) if not p.get("runtime") or not isinstance(p.get("capabilities"), dict) else None)
         await self.call("console.health", check=lambda p, _: (_ for _ in ()).throw(AssertionError("Console 不健康")) if p.get("console") != "ok" else None)
         await self.call("overview.get", check=lambda p, _: (_ for _ in ()).throw(AssertionError("概览字段缺失")) if "threads" not in p or "tokens_total" not in p else None)
         await self.call("fleet.threads", check=lambda p, _: (_ for _ in ()).throw(AssertionError("fleet 非列表")) if not isinstance(p, list) else None)
@@ -129,10 +142,11 @@ class Acceptance:
     async def model_protocol(self):
         public_models = await self.call("models.list")
         assert isinstance(public_models, list) and public_models
-        assert "api_key" not in json.dumps(public_models) and "base_url" not in json.dumps(public_models)
+        assert_no_api_key(public_models)
+        assert "base_url" not in json.dumps(public_models)
         catalog = await self.call("models.managed_list")
         assert isinstance(catalog.get("models"), list)
-        assert "api_key" not in json.dumps(catalog)
+        assert_no_api_key(catalog)
 
         # 固定保留一个禁用 Profile，避免每次验收累积测试模型或影响实例选模。
         # 连接测试走明确的失败路径；真实provider正向调用由Thread/Run验收覆盖。
@@ -198,6 +212,7 @@ class Acceptance:
         data = detail.json()
         assert data["task"]["accepted_loop_id"] == loop_id and data["loops"][0]["status"] == "accepted"
         assert any(c["content"] == "请补充第二版" for c in data["comments"])
+        await self.call("tasks.conversation", path={"task_id": task_id}, check=lambda p, _: (_ for _ in ()).throw(AssertionError("Task 群聊投影缺少交付或参与者")) if p.get("task", {}).get("id") != task_id or not p.get("outputs") or not p.get("participants") else None)
 
         # 批量验收必须一次调用闭环，不能由 Agent 逐项循环及额外分页统计。
         batch_created = await self.raw("POST", f"{CP}/api/tasks", json={

@@ -1,6 +1,6 @@
 /* Shared operation confirmation UI; independent of Playground drawer styles. */
-.operation-confirm-backdrop { position: fixed; z-index: 40; inset: 0; background: rgba(42,46,39,.12); backdrop-filter: blur(1px); }
-.operation-confirm-dialog { position: absolute; z-index: 41; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(460px,calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; border: 1px solid rgba(255,255,255,.7); border-radius: 6px; background: #f6f4ed; color: #222620; color-scheme: light; padding: 20px; box-shadow: 0 20px 70px rgba(30,35,28,.22); }
+.operation-confirm-backdrop { position: fixed; z-index: 1000; inset: 0; background: rgba(42,46,39,.12); backdrop-filter: blur(1px); }
+.operation-confirm-dialog { position: absolute; z-index: 1001; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(460px,calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; border: 1px solid rgba(255,255,255,.7); border-radius: 6px; background: #f6f4ed; color: #222620; color-scheme: light; padding: 20px; box-shadow: 0 20px 70px rgba(30,35,28,.22); }
 .operation-confirm-dialog h2 { margin: 14px 0 6px; color: #222620; font-size: 22px; line-height: 1.2; letter-spacing: -.03em; }
 .operation-confirm-dialog p, .operation-confirm-dialog pre, .operation-confirm-dialog b { color: #222620; }
 .operation-confirm-kicker { color: #ef5b2a; font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 9px; letter-spacing: .08em; }

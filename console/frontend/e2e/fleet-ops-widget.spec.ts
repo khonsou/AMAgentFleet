@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+
+const protocol = readFileSync(new URL('../../../fleet-ops-protocol.json', import.meta.url), 'utf8')
 
 async function mockConsole(page: Page) {
   let messages: unknown[] = []
@@ -9,28 +12,34 @@ async function mockConsole(page: Page) {
     const url = new URL(request.url())
     const path = url.pathname
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
-    if (path === '/api/console/tasks' && request.method() === 'GET') return json([])
-    if (path === '/api/console/tasks' && request.method() === 'POST') {
-      taskCreates += 1
-      return json({ task_id: 99 })
-    }
-    if (path === '/api/console/agents' && request.method() === 'GET') return json([])
-    if (path === '/api/console/models' && request.method() === 'GET') return json([])
-    if (path === '/api/console/threads' && request.method() === 'POST') {
-      created.push(request.postDataJSON())
-      return json({ thread_id: 'browser-ops-thread' })
-    }
-    if (path === '/api/console/threads/browser-ops-thread' && request.method() === 'GET') {
-      return json({ thread: { thread_id: 'browser-ops-thread', assistant_id: 'fleet-ops-01' }, runs: [], checkpoints: 0 })
-    }
-    if (path === '/api/console/threads/browser-ops-thread/messages' && request.method() === 'GET') return json(messages)
-    if (path === '/api/console/threads/browser-ops-thread/messages' && request.method() === 'POST') {
-      const content = request.postDataJSON().content as string
-      messages = [
-        { content: { type: 'human', content } },
-        { content: { type: 'ai', content: `已收到：${content}` } },
-      ]
-      return json({ status: 'ok' })
+    if (path === '/api/console/operations/protocol') return route.fulfill({ contentType: 'application/json', body: protocol })
+    if (path === '/api/console/operations/execute') {
+      const payload = request.postDataJSON()
+      const operation = payload.operation_id as string
+      let result: unknown = {}
+      if (operation === 'tasks.list' || operation === 'agents.list' || operation === 'models.list') result = []
+      if (operation === 'tasks.create') {
+        taskCreates += 1
+        result = { task_id: 99 }
+      }
+      if (operation === 'threads.create') {
+        created.push(payload.body)
+        result = { thread_id: 'browser-ops-thread' }
+      }
+      if (operation === 'threads.get') {
+        result = { thread: { thread_id: 'browser-ops-thread', assistant_id: 'fleet-ops-01' }, runs: [], checkpoints: 0 }
+      }
+      if (operation === 'threads.send') {
+        const content = payload.body.content as string
+        messages = [
+          { content: { type: 'human', content } },
+          { content: { type: 'ai', content: `已收到：${content}` } },
+        ]
+        result = { status: 'ok' }
+      } else if (operation === 'threads.messages') {
+        result = messages
+      }
+      return json({ operation_id: operation, status: 200, result, truncated: false })
     }
     return json({})
   })
@@ -42,11 +51,15 @@ test('首页浮窗真实渲染、发送、关闭及刷新恢复', async ({ page 
   await page.goto('/')
   await page.getByRole('button', { name: '打开舰队操作助手' }).click()
   await expect(page.getByRole('region', { name: '舰队操作助手' })).toBeVisible()
+  await expect(page.getByRole('alertdialog')).toBeVisible()
+  await page.getByRole('button', { name: '确认执行', exact: true }).click()
   await expect.poll(() => mock.created.length).toBe(1)
   expect(mock.created[0]).toEqual({ assistant_id: 'fleet-ops-01' })
 
   await page.getByLabel('给舰队操作助手的指令').fill('你好，查询舰队状态')
   await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toBeVisible()
+  await page.getByRole('button', { name: '确认执行', exact: true }).click()
   await expect(page.getByText('已收到：你好，查询舰队状态')).toBeVisible()
   expect(mock.getTaskCreates()).toBe(0)
 
@@ -68,6 +81,8 @@ test('移动视口下浮窗不溢出且仍可操作', async ({ page }) => {
   await page.getByRole('button', { name: '打开舰队操作助手' }).click()
   const panel = page.getByRole('region', { name: '舰队操作助手' })
   await expect(panel).toBeVisible()
+  await expect(page.getByRole('alertdialog')).toBeVisible()
+  await page.getByRole('button', { name: '确认执行', exact: true }).click()
   const box = await panel.boundingBox()
   expect(box).not.toBeNull()
   expect(box!.x).toBeGreaterThanOrEqual(0)

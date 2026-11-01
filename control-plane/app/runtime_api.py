@@ -127,9 +127,12 @@ async def run_detail(thread_id: str, run_id: str):
 
 @router.get("/api/runs/{run_id}/messages")
 async def run_messages(run_id: str, limit: int = 50, before_seq: int | None = None, after_seq: int | None = None):
-    return await _invoke(get_runtime().get_run_messages(run_id, {
-        "limit": limit, "before_seq": before_seq, "after_seq": after_seq,
-    }))
+    query = {"limit": limit}
+    if before_seq is not None:
+        query["before_seq"] = before_seq
+    if after_seq is not None:
+        query["after_seq"] = after_seq
+    return await _invoke(get_runtime().get_run_messages(run_id, query))
 
 
 @router.get("/api/threads/{thread_id}/runs/{run_id}/events")
@@ -138,8 +141,12 @@ async def run_events(thread_id: str, run_id: str):
 
 
 @router.post("/api/threads/{thread_id}/runs/{run_id}/cancel")
-async def run_cancel(thread_id: str, run_id: str):
-    return await _invoke(get_runtime().cancel_run(thread_id, run_id))
+async def run_cancel(thread_id: str, run_id: str, wait: bool | None = None):
+    status, payload = await _invoke(get_runtime().cancel_run(thread_id, run_id, wait=wait))
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False) if payload is not None else None,
+        status_code=status, media_type="application/json" if payload is not None else None,
+    )
 
 
 @router.put("/api/threads/{thread_id}/runs/{run_id}/feedback")

@@ -25,7 +25,7 @@ console/backend/.venv/bin/python scripts/fleet_ops_activate.py
 bash scripts/test_fleet_ops_all.sh
 ```
 
-72 项在线矩阵报告位于 `artifacts/fleet-ops-acceptance.json`。系统 Agent 配置只读，本地与第三方统一 PAT 鉴权，系统凭证只支持人工轮换（ADR-0018）。详见[协议设计](docs/design/fleet-operations-protocol.md)。
+74 项在线矩阵报告位于 `artifacts/fleet-ops-acceptance.json`。系统 Agent 配置只读，本地与第三方统一 PAT 鉴权，系统凭证只支持人工轮换（ADR-0018）。详见[协议设计](docs/design/fleet-operations-protocol.md)。
 
 **协议化与 RuntimeAdapter（ADR-0031/0032，2026-11-01）**：旧 Console、Playground、操作助手与第三方 Agent 统一按 operation ID 读写，写操作统一确认与幂等，human-only 秘密仍只走人工表单。Thread／Run 由 Control Plane 的稳定 Runtime surface 提供，Console 不再直读 DeerFlow 表。`FLEET_RUNTIME` 默认 `deerflow`；`deepseek-thin` 为 OpenAI 兼容测试参考实现，支持注册、执行、消息与 requeue，不支持 Checkpoint resume、SSE、反馈、产物或 subagent 工具编排。`GET /api/runtime/capabilities` 自发现能力；冷切换与回滚只读预检见 `scripts/runtime_cold_switch_check.py` 和 `deploy/DEPLOY.md` §8，生产未切换。
 

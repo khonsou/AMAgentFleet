@@ -319,8 +319,14 @@ class DeerFlowAdapter(RuntimeAdapter):
     async def get_run_events(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
         return await self._json_request("GET", f"/api/threads/{thread_id}/runs/{run_id}/events", client_factory=client_factory)
 
-    async def cancel_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
-        return await self._json_request("POST", f"/api/threads/{thread_id}/runs/{run_id}/cancel", client_factory=client_factory)
+    async def cancel_run(self, thread_id: str, run_id: str, *, wait: bool | None = None, client_factory=None) -> Any:
+        query = {"wait": str(wait).lower()} if wait is not None else None
+        async with self._client(client_factory, 600) as client:
+            response = await client.post(
+                f"/api/threads/{thread_id}/runs/{run_id}/cancel", params=query)
+        if response.status_code >= 400:
+            raise RuntimeServiceError(response.status_code, response.text[:500])
+        return response.status_code, response.json() if response.content else None
 
     async def feedback(self, method: str, thread_id: str, run_id: str, *,
                        body=None, feedback_id: str | None = None, client_factory=None) -> Any:

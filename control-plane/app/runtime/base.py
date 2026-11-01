@@ -160,7 +160,7 @@ class RuntimeAdapter(ABC):
     async def get_run_events(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
         self._unsupported("run_events")
 
-    async def cancel_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+    async def cancel_run(self, thread_id: str, run_id: str, *, wait: bool | None = None, client_factory=None) -> Any:
         self._unsupported("cancel")
 
     async def feedback(self, method: str, thread_id: str, run_id: str, *,
