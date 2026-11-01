@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 
-const mocks = vi.hoisted(() => ({ executeOperation: vi.fn() }))
+const mocks = vi.hoisted(() => ({ executeOperation: vi.fn(), executeGuiOperation: vi.fn() }))
 vi.mock('@/protocol/client', () => ({ executeOperation: mocks.executeOperation }))
+vi.mock('@/protocol/guiExecutor', () => ({ executeGuiOperation: mocks.executeGuiOperation }))
 
-describe('旧 Console 只读协议迁移', () => {
+describe('旧 Console 协议迁移', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.executeOperation.mockImplementation((operation_id: string) => Promise.resolve({ operation_id, status: 200, result: [], truncated: false }))
+    mocks.executeGuiOperation.mockImplementation((operation_id: string) => Promise.resolve({ operation_id, status: 200, result: { task_id: 91, yaml: {} }, truncated: false }))
   })
 
   it('Registry 与总览读取使用 operation ID', async () => {
@@ -23,11 +25,17 @@ describe('旧 Console 只读协议迁移', () => {
     expect(mocks.executeOperation).toHaveBeenCalledWith('tasks.list', { query: { agent: 'worker-01', limit: 200 } })
   })
 
-  it('A2 阶段写操作仍走原有 Console 通道', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ task_id: 91 }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(api.createTask('只读迁移期间保持写路径')).resolves.toEqual({ task_id: 91 })
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/console/tasks')
+  it('写操作通过共享 GUI 确认桥并保持业务参数', async () => {
+    await expect(api.createTask('统一写确认')).resolves.toEqual({ task_id: 91, yaml: {} })
+    expect(mocks.executeGuiOperation).toHaveBeenCalledWith('tasks.create', { body: {
+      input: '统一写确认', assignee: undefined, model_profile: null, subagent_model_policy: 'auto',
+    } })
     expect(mocks.executeOperation).not.toHaveBeenCalled()
+  })
+
+  it('模板渲染和 human-only 写操作使用协议 operation', async () => {
+    await api.templateRender({ templateId: 'website-reader' })
+    await api.opsCredentialRotate()
+    expect(mocks.executeGuiOperation.mock.calls.map((call) => call[0])).toEqual(['templates.render', 'ops.credential_rotate'])
   })
 })

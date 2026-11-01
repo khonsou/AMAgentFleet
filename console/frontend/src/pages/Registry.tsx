@@ -50,11 +50,7 @@ export default function RegistryPage() {
       const name = reg.name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')
       let doc: Record<string, unknown>
       if (templateId) {
-        const t = await fetch('/api/console/templates/render', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ templateId, name, displayName: reg.displayName.trim(), owner: reg.owner.trim(), costCenter: reg.costCenter.trim(), egressDomain: reg.egressDomain.trim() }),
-        }).then((r) => { if (!r.ok) throw new Error(`${r.status}: template render failed`); return r.json() })
+        const t = await api.templateRender({ templateId, name, displayName: reg.displayName.trim(), owner: reg.owner.trim(), costCenter: reg.costCenter.trim(), egressDomain: reg.egressDomain.trim() })
         doc = t.yaml as Record<string, unknown>
       } else {
       doc = {

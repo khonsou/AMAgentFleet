@@ -62,9 +62,11 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ### A3．迁移写操作与 human-only 表单
 
+**状态**：✅ 已完成（2026-11-01）
+
 **改动**
 
-- 迁移 Agent、Task、Loop、Thread、Inbox、MCP、模板、模型和 PAT 相关写操作。
+- 通过 App 级 Provider 注册的 `guiExecutor` 写桥迁移 Agent、Task、Loop、Thread、Inbox、MCP、模板、模型和 PAT 写操作，保留既有页面调用签名。
 - 所有写调用经过统一确认与 `Idempotency-Key`；actor 仍由服务端覆盖，不能信任浏览器自报。
 - 校正清单中 human-only 状态变更操作的 `write` 语义，至少覆盖 `models.managed_save`、`pats.issue`、`ops.credential_rotate`；human-only 继续禁止 Agent 执行。
 - `Registry.tsx` 的模板渲染直连改为 `templates.render`。

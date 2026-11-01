@@ -89,13 +89,13 @@
     {"id":"templates.render","method":"POST","path":"/api/templates/render","surface":"control-plane","write":true,"description":"Render an Agent YAML template without deploying it","query":{"actor":"fleet-ops-01"},"body":{"templateId":"website-reader","name":"<agent-name>","displayName":"","owner":"","costCenter":"","egressDomain":""}},
 
     {"id":"models.managed_list","method":"GET","path":"/api/console/managed-models","surface":"console","confirmation":"human_only","description":"List config and managed model Profiles without API keys"},
-    {"id":"models.managed_save","method":"PUT","path":"/api/console/managed-models","surface":"console","confirmation":"human_only","description":"Create or rotate a managed model Profile and its encrypted API key","secret_fields":["api_key"],"body":{"config":{"name":"<profile>","display_name":"","model":"<provider model>","base_url":"<configured OpenAI-compatible endpoint>","api_key":"<write-only secret>"},"expected_revision":null}},
-    {"id":"models.managed_test","method":"POST","path":"/api/console/managed-models/test","surface":"console","confirmation":"human_only","description":"Test a managed model connection without saving or exposing its API key","secret_fields":["api_key"]},
+    {"id":"models.managed_save","method":"PUT","path":"/api/console/managed-models","surface":"console","write":true,"confirmation":"human_only","description":"Create or rotate a managed model Profile and its encrypted API key","secret_fields":["api_key"],"body":{"config":{"name":"<profile>","display_name":"","model":"<provider model>","base_url":"<configured OpenAI-compatible endpoint>","api_key":"<write-only secret>"},"expected_revision":null}},
+    {"id":"models.managed_test","method":"POST","path":"/api/console/managed-models/test","surface":"console","write":true,"confirmation":"human_only","description":"Test a managed model connection without saving or exposing its API key","secret_fields":["api_key"]},
 
     {"id":"pats.list","method":"GET","path":"/api/pats","surface":"control-plane","description":"List PAT metadata without token values"},
-    {"id":"pats.issue","method":"POST","path":"/api/pats","surface":"control-plane","confirmation":"human_only","description":"Issue a PAT in Settings; its one-time token must not enter the Thread","body":{"name":"<credential name>","scopes":["read"],"expires_in_days":null}},
+    {"id":"pats.issue","method":"POST","path":"/api/pats","surface":"control-plane","write":true,"confirmation":"human_only","description":"Issue a PAT in Settings; its one-time token must not enter the Thread","body":{"name":"<credential name>","scopes":["read"],"expires_in_days":null}},
     {"id":"pats.revoke","method":"DELETE","path":"/api/pats/{pat_id}","surface":"control-plane","write":true,"description":"Revoke a PAT by ID","query":{"author":"fleet-ops-01"}},
     {"id":"ops.credential_status","method":"GET","path":"/api/ops/credential","surface":"control-plane","description":"Read system Fleet Ops credential status without secrets"},
-    {"id":"ops.credential_rotate","method":"POST","path":"/api/ops/credential/rotate","surface":"control-plane","confirmation":"human_only","description":"Rotate the system Fleet Ops PAT in Settings without revealing the token"}
+    {"id":"ops.credential_rotate","method":"POST","path":"/api/ops/credential/rotate","surface":"control-plane","write":true,"confirmation":"human_only","description":"Rotate the system Fleet Ops PAT in Settings without revealing the token"}
   ]
 }

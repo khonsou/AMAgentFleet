@@ -68,6 +68,17 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(op["description"])
                 self.assertIn(op.get("confirmation", "standard"), {"standard", "human_only"})
 
+    def test_human_only_state_changes_require_gui_write_confirmation(self):
+        operations = {op["id"]: op for op in load_protocol()["operations"]}
+        for operation_id in (
+            "models.managed_save", "models.managed_test",
+            "pats.issue", "ops.credential_rotate",
+        ):
+            with self.subTest(operation=operation_id):
+                operation = operations[operation_id]
+                self.assertTrue(operation["write"])
+                self.assertEqual(operation["confirmation"], "human_only")
+
     def test_every_control_plane_api_route_is_registered(self):
         actual = {
             (method, route.path)

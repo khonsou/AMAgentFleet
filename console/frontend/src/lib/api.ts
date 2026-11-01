@@ -1,5 +1,6 @@
 import { getOauthSession, notifySessionExpired } from '@/lib/auth'
 import { executeOperation, type OperationRequest } from '@/protocol/client'
+import { executeGuiOperation } from '@/protocol/guiExecutor'
 
 const BASE = '/api/console'
 
@@ -8,15 +9,9 @@ async function read<T>(operationId: string, request: OperationRequest = {}): Pro
   return response.result
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = authHeaders(init?.headers)
-  const resp = await fetch(`${BASE}${path}`, { ...init, headers })
-  if (resp.status === 401) notifySessionExpired() // 令牌过期 → 回登录门
-  if (!resp.ok) {
-    const text = await resp.text()
-    throw new Error(`${resp.status}: ${text.slice(0, 300)}`)
-  }
-  return resp.json()
+async function write<T>(operationId: string, request: OperationRequest = {}): Promise<T> {
+  const response = await executeGuiOperation<T>(operationId, request)
+  return response.result
 }
 
 function authHeaders(init?: HeadersInit): Headers {
@@ -113,131 +108,80 @@ export const api = {
     ),
   messages: (tid: string) => read<unknown>('threads.messages', { path_params: { tid } }),
   send: (tid: string, content: string, assistantId?: string) =>
-    req<unknown>(`/threads/${tid}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, ...(assistantId ? { assistant_id: assistantId } : {}) }),
-    }),
+    write<unknown>('threads.send', { path_params: { tid }, body: { content, ...(assistantId ? { assistant_id: assistantId } : {}) } }),
   create: (instruction?: string, assistantId?: string) =>
-    req<{ thread_id: string }>('/threads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(instruction?.trim() ? { instruction } : {}),
-        ...(assistantId ? { assistant_id: assistantId } : {}),
-      }),
-    }),
-  destroy: (tid: string) => req<{ deleted: string }>(`/threads/${tid}`, { method: 'DELETE' }),
+    write<{ thread_id: string }>('threads.create', { body: {
+      ...(instruction?.trim() ? { instruction } : {}),
+      ...(assistantId ? { assistant_id: assistantId } : {}),
+    } }),
+  destroy: (tid: string) => write<{ deleted: string }>('threads.destroy', { path_params: { tid } }),
 
   // ---- Registry（control-plane 代理，P2） ----
   agents: () => read<RegistryAgent[]>('agents.list'),
   agent: (name: string) => read<AgentDetail>('agents.get', { path_params: { name } }),
   agentUpdate: (name: string, yaml: unknown) =>
-    req<RegistryAgent>(`/agents/${name}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ yaml }),
-    }),
+    write<RegistryAgent>('agents.update', { path_params: { name }, body: { yaml } }),
   agentDispatch: (name: string, input: string, modelProfile?: string, subagentModelPolicy = 'auto') =>
-    req<{ task_id: number }>(`/agents/${name}/dispatch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input, source: 'web', model_profile: modelProfile || null,
-        subagent_model_policy: subagentModelPolicy,
-      }),
-    }),
+    write<{ task_id: number }>('agents.dispatch', { path_params: { name }, body: {
+      input, source: 'web', model_profile: modelProfile || null,
+      subagent_model_policy: subagentModelPolicy,
+    } }),
   agentTasks: (name: string) => read<AgentTask[]>('tasks.list', { query: { agent: name, limit: 200 } }),
   allTasks: (limit = 200) => read<AgentTask[]>('tasks.list', { query: { limit } }),
   taskDetail: (id: number) => read<TaskDetail>('tasks.get', { path_params: { task_id: id } }),
   createTask: (input: string, assignee?: string, modelProfile?: string, subagentModelPolicy = 'auto') =>
-    req<{ task_id: number }>('/tasks', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input, assignee, model_profile: modelProfile || null,
-        subagent_model_policy: subagentModelPolicy,
-      }),
-    }),
+    write<{ task_id: number }>('tasks.create', { body: {
+      input, assignee, model_profile: modelProfile || null,
+      subagent_model_policy: subagentModelPolicy,
+    } }),
   taskClaim: (id: number, claimantType: string, claimant: string) =>
-    req<{ loop_id: number }>(`/tasks/${id}/loops`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ claimant_type: claimantType, claimant }),
-    }),
+    write<{ loop_id: number }>('loops.claim', { path_params: { task_id: id }, body: { claimant_type: claimantType, claimant } }),
   taskAccept: (id: number, loopId: number, author = 'human') =>
-    req<{ pool_status: string }>(`/tasks/${id}/accept`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loop_id: loopId, author }),
-    }),
+    write<{ pool_status: string }>('tasks.accept', { path_params: { task_id: id }, body: { loop_id: loopId, author } }),
   taskClose: (id: number, author = 'human') =>
-    req<{ pool_status: string }>(`/tasks/${id}/close`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ author }),
-    }),
+    write<{ pool_status: string }>('tasks.close', { path_params: { task_id: id }, query: { author } }),
   loopDeliver: (loopId: number, content: string, author = 'me') =>
-    req<{ status: string }>(`/loops/${loopId}/deliver`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, author }),
-    }),
+    write<{ status: string }>('loops.deliver', { path_params: { loop_id: loopId }, body: { content, author } }),
   reviewContext: (threadId: string) =>
     read<ReviewContext>('threads.review_context', { path_params: { tid: threadId } }),
   loopRequeue: (loopId: number) =>
-    req<{ status: string }>(`/loops/${loopId}/requeue`, { method: 'POST' }),
+    write<{ status: string }>('loops.requeue', { path_params: { loop_id: loopId } }),
   loopResume: (loopId: number) =>
-    req<{ status: string }>(`/loops/${loopId}/resume`, { method: 'POST' }),
+    write<{ status: string }>('loops.resume', { path_params: { loop_id: loopId } }),
   loopReturn: (loopId: number, comment: string, author = 'human') =>
-    req<{ status: string }>(`/loops/${loopId}/return`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment, author }),
-    }),
+    write<{ status: string }>('loops.return', { path_params: { loop_id: loopId }, body: { comment, author } }),
   agentInbox: (name: string, payload: string) =>
-    req<{ inbox_id: number }>(`/agents/${name}/inbox`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload, source: 'web' }),
-    }),
+    write<{ inbox_id: number }>('inbox.post', { path_params: { name }, body: { payload, source: 'web' } }),
   agentStop: (name: string) =>
-    req<{ status: string; paused_crons: string[] }>(`/agents/${name}/stop`, { method: 'POST' }),
+    write<{ status: string; paused_crons: string[] }>('agents.stop', { path_params: { name } }),
   agentStart: (name: string) =>
-    req<{ status: string; resumed_crons: string[] }>(`/agents/${name}/start`, { method: 'POST' }),
+    write<{ status: string; resumed_crons: string[] }>('agents.start', { path_params: { name } }),
   agentDestroy: (name: string) =>
-    fetch(`${BASE}/agents/${name}`, { method: 'DELETE' }).then((r) => {
-      if (!r.ok) throw new Error(`${r.status}: destroy failed`)
-    }),
+    write<void>('agents.destroy', { path_params: { name } }).then(() => undefined),
   agentCreate: (yaml: unknown) =>
-    req<RegistryAgent>('/agents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ yaml }),
-    }),
+    write<RegistryAgent>('agents.create', { body: { yaml } }),
 
   templates: () => read<Template[]>('templates.list'),
+  templateRender: (body: Record<string, unknown>) =>
+    write<{ yaml: Record<string, unknown> }>('templates.render', { body }),
 
   // ---- 模型 Profile 与原生 Managed Models（ADR-0028） ----
   models: () => read<ModelProfile[]>('models.list'),
   managedModels: () => read<{ models: ManagedModel[] }>('models.managed_list'),
   managedModelSave: (config: ManagedModelInput, expectedRevision: string | null) =>
-    req<ManagedModel>('/managed-models', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config, expected_revision: expectedRevision }),
-    }),
+    write<ManagedModel>('models.managed_save', { body: { config, expected_revision: expectedRevision } }),
   managedModelTest: (config: ManagedModelInput, expectedRevision: string | null) =>
-    req<{ ok: boolean; message: string }>('/managed-models/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config, expected_revision: expectedRevision }),
-    }),
+    write<{ ok: boolean; message: string }>('models.managed_test', { body: { config, expected_revision: expectedRevision } }),
 
   // ---- FAP PAT 管理（ADR-0011 H6，Console 设置页） ----
   opsCredential: () => read<OpsCredentialStatus>('ops.credential_status'),
   opsCredentialRotate: () =>
-    req<OpsCredentialStatus>('/ops/credential/rotate', { method: 'POST' }),
+    write<OpsCredentialStatus>('ops.credential_rotate'),
   pats: () => read<Pat[]>('pats.list'),
   patCreate: (name: string, scope: 'read' | 'write', expiresInDays?: number) =>
-    req<Pat & { token: string }>('/pats', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, scopes: [scope], expires_in_days: expiresInDays ?? null }),
-    }),
+    write<Pat & { token: string }>('pats.issue', { body: { name, scopes: [scope], expires_in_days: expiresInDays ?? null } }),
   patRevoke: (id: string) =>
-    req<{ status: string }>(`/pats/${id}`, { method: 'DELETE' }),
+    write<{ status: string }>('pats.revoke', { path_params: { pat_id: id } }),
 }
 
 export interface ModelProfile {

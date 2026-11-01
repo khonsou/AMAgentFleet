@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { executeOperation, getProtocol, operationKey, type OperationDefinition, type OperationRequest, type OperationResult, type ProtocolDocument } from './client'
 import { OperationContext } from './context'
+import { registerOperationExecutor } from './guiExecutor'
 import './operations.css'
 
 interface PendingOperation {
@@ -43,6 +44,8 @@ export function OperationProvider({ children }: { children: ReactNode }) {
     }
     return perform<T>(definition, request)
   }, [perform, protocol])
+
+  useEffect(() => registerOperationExecutor(execute), [execute])
 
   const value = useMemo(() => ({ protocol, busy, execute }), [protocol, busy, execute])
   const close = () => { if (!busy) { pending?.reject(new Error('操作已取消')); setPending(null) } }
