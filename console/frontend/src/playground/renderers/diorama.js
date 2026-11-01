@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { createWanderState, updateWander } from './wander'
 
 const ACCENT = '#ef5b2a'
 const STATUS = { working: '#ef5b2a', waiting: '#e7ad4a', error: '#d54c3f', delivered: '#ef5b2a', done: '#7a9c88', queued: '#8d928a', idle: '#7a9c88', offline: '#8d928a' }
@@ -184,7 +185,7 @@ export function createWorld(canvas, labelRoot, callbacks = {}) {
     selectable.push(group)
     const nameLabel = htmlLabel('agent-label', '', () => callbacks.onSelect?.('agent', agent.id))
     const taskLabel = htmlLabel('task-label', '', () => {})
-    agentObjects.set(agent.id, { group, visual, body, head, leftArm, rightArm, leftLeg, rightLeg, leftFoot, rightFoot, baseRing, antenna, base: new THREE.Vector3(...agent.position), target: null, pulse: 0, bubbleUntil: 0, currentTasks: '', currentStatus: '' })
+    agentObjects.set(agent.id, { group, visual, body, head, leftArm, rightArm, leftLeg, rightLeg, leftFoot, rightFoot, baseRing, antenna, base: new THREE.Vector3(...agent.position), target: null, wander: createWanderState(agentObjects.size), pulse: 0, bubbleUntil: 0, currentTasks: '', currentStatus: '' })
     agentLabels.set(agent.id, { nameLabel, taskLabel })
   }
 
@@ -284,6 +285,8 @@ export function createWorld(canvas, labelRoot, callbacks = {}) {
   let snapshot = null
   const layers = { tasks: true, names: true, links: false, ambience: true }
   let cameraGoal = null
+  let focusedAgentId = null
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   let eventAnimations = []
   let lastPoolKey = ''
   let tourEnabled = true
@@ -378,6 +381,7 @@ export function createWorld(canvas, labelRoot, callbacks = {}) {
   resize()
 
   function setView(view) {
+    focusedAgentId = null
     const views = {
       overview: { position: [14, 13, 16], target: [0, 0.3, 0], zoom: 1 },
       agents: { position: [12, 15, 13], target: [0, 0.2, 0.8], zoom: 1.18 },
@@ -387,6 +391,7 @@ export function createWorld(canvas, labelRoot, callbacks = {}) {
     cameraGoal = { position: new THREE.Vector3(...next.position), target: new THREE.Vector3(...next.target), zoom: next.zoom }
   }
   function focus(type, id) {
+    focusedAgentId = type === 'agent' && agentObjects.has(id) ? id : null
     if (type === 'project' && projectObjects.has(id)) {
       const point = projectObjects.get(id).group.position
       cameraGoal = { position: point.clone().add(new THREE.Vector3(8, 9, 10)), target: point.clone().add(new THREE.Vector3(0, 0.7, 0)), zoom: 1.65 }
@@ -414,14 +419,58 @@ export function createWorld(canvas, labelRoot, callbacks = {}) {
     }
     controls.update()
     if (snapshot) {
+      const idleCount = snapshot.agents.filter((agent) => agent.status === 'idle').length
+      const maxWanderers = Math.max(1, Math.floor(idleCount / 3))
+      let wanderingCount = snapshot.agents.filter((agent) => {
+        const object = agentObjects.get(agent.id)
+        return agent.status === 'idle' && object.wander.phase === 'walk' && !object.target && focusedAgentId !== agent.id
+      }).length
+      const occupied = snapshot.agents.map((agent) => ({ id: agent.id, position: agentObjects.get(agent.id).group.position }))
       snapshot.agents.forEach((agent, index) => {
         const object = agentObjects.get(agent.id)
-        const base = object.target || object.base
-        object.group.position.lerp(base, 0.025)
-        object.visual.position.y = Math.sin(elapsed * 2 + index * 1.3) * (agent.status === 'idle' ? 0.012 : 0.035)
+        const scriptedTarget = object.target || (agent.status !== 'idle' ? object.base : null)
+        const wander = updateWander(object.wander, {
+          enabled: !reducedMotion.matches && agent.status === 'idle' && !object.target && focusedAgentId !== agent.id,
+          mayStart: wanderingCount < maxWanderers,
+          position: { x: object.group.position.x, z: object.group.position.z },
+          home: { x: object.base.x, z: object.base.z },
+          others: occupied.filter((item) => item.id !== agent.id).map((item) => item.position),
+          elapsed,
+          delta,
+        })
+        if (wander.moving) wanderingCount += 1
+
+        let heading = wander.heading
+        let scriptedMoving = false
+        if (scriptedTarget) {
+          const dx = scriptedTarget.x - object.group.position.x
+          const dz = scriptedTarget.z - object.group.position.z
+          scriptedMoving = Math.hypot(dx, dz) > 0.08
+          if (scriptedMoving) heading = Math.atan2(dx, dz)
+          object.group.position.lerp(scriptedTarget, 1 - Math.exp(-delta * 3.4))
+        } else {
+          object.group.position.set(wander.position.x, object.base.y, wander.position.z)
+        }
+
+        const moving = wander.moving || scriptedMoving
+        if (scriptedMoving) object.wander.walkPhase += delta * 8.5
+        if (heading !== null) {
+          const turn = Math.atan2(Math.sin(heading - object.group.rotation.y), Math.cos(heading - object.group.rotation.y))
+          object.group.rotation.y += turn * (1 - Math.exp(-delta * 10))
+        }
+        const stepSwing = moving ? Math.sin(object.wander.walkPhase) : 0
+        const limbEase = 1 - Math.exp(-delta * 12)
         const motion = agent.status === 'working' ? 0.22 : agent.status === 'error' ? 0.03 : 0.08
-        object.leftArm.rotation.x = Math.sin(elapsed * 3.1 + index) * motion
-        object.rightArm.rotation.x = -Math.sin(elapsed * 3.1 + index) * motion
+        const idleSwing = Math.sin(elapsed * 3.1 + index) * motion
+        object.leftArm.rotation.x = THREE.MathUtils.lerp(object.leftArm.rotation.x, moving ? -stepSwing * 0.34 : idleSwing, limbEase)
+        object.rightArm.rotation.x = THREE.MathUtils.lerp(object.rightArm.rotation.x, moving ? stepSwing * 0.34 : -idleSwing, limbEase)
+        object.leftLeg.rotation.x = THREE.MathUtils.lerp(object.leftLeg.rotation.x, stepSwing * 0.42, limbEase)
+        object.rightLeg.rotation.x = THREE.MathUtils.lerp(object.rightLeg.rotation.x, -stepSwing * 0.42, limbEase)
+        object.leftFoot.rotation.x = THREE.MathUtils.lerp(object.leftFoot.rotation.x, -stepSwing * 0.12, limbEase)
+        object.rightFoot.rotation.x = THREE.MathUtils.lerp(object.rightFoot.rotation.x, stepSwing * 0.12, limbEase)
+        object.visual.position.y = moving
+          ? Math.abs(Math.sin(object.wander.walkPhase)) * 0.045
+          : Math.sin(elapsed * 2 + index * 1.3) * (agent.status === 'idle' ? 0.012 : 0.035)
         object.head.rotation.y = Math.sin(elapsed * 0.7 + index) * 0.09
         object.antenna.material.emissiveIntensity = agent.status === 'error' ? 1.2 + Math.sin(elapsed * 7) * 0.8 : 1.5
         object.baseRing.material.opacity = 0.45 + Math.sin(elapsed * 2.2 + index) * 0.16
