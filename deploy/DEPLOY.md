@@ -199,3 +199,35 @@ docker compose restart control-plane   # 配置热更无效时重启 CP（老坑
 docker compose down                    # 全停（数据卷保留）
 docker compose down -v                 # 全停并清数据（危险）
 ```
+
+## 8. Runtime 冷切换与回滚（ADR-0032）
+
+默认 `FLEET_RUNTIME=deerflow`。`deepseek-thin` 是测试参考实现，不支持 Checkpoint resume、SSE、取消、反馈、产物、Managed Models、旧 cron 或 subagent 工具编排；不得把这些限制理解为与 DeerFlow 等价。切换只影响新任务，旧 Thread／Checkpoint 不跨 Runtime 续跑。
+
+### 8.1 共同前置门
+
+1. 评审目标 Runtime 与 `GET /api/runtime/capabilities` 的能力矩阵，确认业务可以接受降级。
+2. 停止 Console 新提交，但保持 Control Plane 运行以排干既有 Loop：
+   - Compose：`docker compose stop console-frontend console-backend`；
+   - ACK：将 Console frontend/backend 副本降为 0，不调整 control-plane。
+3. 等待 `claimed/running/returned` Loop 全部终结。预检使用只读 SQL 和 HTTP，不修改服务或数据：
+
+   ```bash
+   # Compose 在 control-plane 容器内执行；DSN 只从环境读取，不打印
+   docker compose exec control-plane \
+     python /app/scripts/runtime_cold_switch_check.py \
+       --expected-runtime deerflow
+   ```
+
+   切到薄 Runner 前把 `--expected-runtime` 改为 `deepseek-thin`。若仍有活动 Loop、目标 Runtime 不符或协议缺项，预检失败，禁止继续。
+4. 按现有 PostgreSQL 备份策略创建快照并记录 Git commit、镜像 tag、Profile 映射和原 `FLEET_RUNTIME`。不要跨 Runtime 搬运 Checkpoint。
+
+### 8.2 切换
+
+- Compose：在 `deploy/.env` 设置目标 `FLEET_RUNTIME`，执行 `docker compose up -d --build control-plane gateway`，再运行 §8.1 预检；成功后 `docker compose start console-backend console-frontend`。
+- ACK：在 `deploy/k8s/core.yaml` 设置目标 `FLEET_RUNTIME`，按正常镜像发布流程部署，预检通过后恢复 Console 副本。GitOps 环境同步修改 `deploy/gitops/base/core.yaml`。
+- 首次只执行最小任务闭环：注册 → 创建 Task → 执行 → 交付 → 验收；薄 Runner 打回后只验证 requeue，不验证 checkpoint resume。
+
+### 8.3 回滚
+
+再次停止 Console 新提交并排干新 Runtime 的活动 Loop，恢复原 Git／镜像 tag、`FLEET_RUNTIME` 和 Profile 配置，重建后重复预检，再恢复 Console。不得在回滚时把薄 Runner 的消息历史当作 DeerFlow Checkpoint 导入；历史会话按原 Runtime 只读保留或归档。只有数据恢复演练明确批准时才恢复数据库快照，默认不覆盖现有数据。

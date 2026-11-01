@@ -1,6 +1,6 @@
 # 协议化收尾与 RuntimeAdapter 分阶段实施拆解
 
-- **状态**：实施中
+- **状态**：A／B 实施完成；生产保持 DeerFlow，未执行真实切换
 - **日期**：2026-11-01
 - **分支**：`feat/protocol-runtime-adapter`
 - **决策依据**：[ADR-0031](../adr/0031-unified-protocol-playground-and-task-conversation.md)（已接受）、[ADR-0032](../adr/0032-runtime-adapter-and-cold-switch.md)（已接受）
@@ -171,6 +171,8 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ### B5．整站冷切换演练，不默认执行生产切换
 
+**状态**：✅ 切换与回滚资产已完成（2026-11-01）；未执行真实生产切换
+
 1. 暂停新 Task／Loop 投递并等待活动 Loop 全部终结。
 2. 备份配置与数据库，记录当前 Runtime、Profile 映射和部署版本。
 3. 确认旧 Thread／Checkpoint 的 DeerFlow 只读保留或归档方式。
@@ -192,9 +194,9 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ## 5. 评审门与暂缓事项
 
-- **G0（当前）**：只评审 ADR 与本拆解，不代表任何功能已实现。
-- **G1**：旧 GUI 协议化完成，业务 API 与数据库未变。
-- **G2**：DeerFlowAdapter 行为等价，第二套 Harness 垂直切片仅在测试环境通过。
-- **G3**：具体 Harness、历史只读方案和冷切换窗口评审完成后，才允许切换演练。
+- **G0**：✅ ADR 与拆解已评审接受。
+- **G1**：✅ 旧 GUI 协议化完成，业务 API 与数据库未变。
+- **G2**：✅ DeerFlowAdapter 行为等价，第二套 Harness 垂直切片仅在测试环境通过。
+- **G3**：切换与回滚资产已就绪；真实切换仍须另行安排维护窗口并执行只读预检，本分支未执行。
 
 评审需明确接受的默认值：整站单 Runtime、冷切换、旧状态不迁移、Runtime 专属 YAML 不保证移植、第一轮不做 per-Agent 混跑。任何一项要改变，都先新增 ADR 并重新评估工作量。

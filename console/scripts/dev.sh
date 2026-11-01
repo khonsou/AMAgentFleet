@@ -113,7 +113,10 @@ if ! curl --noproxy '*' -s --max-time 2 http://127.0.0.1:8003/api/agents >/dev/n
   echo "[dev] 启动 Control Plane…"
   (
     cd "$REPO_ROOT/control-plane"
-    ../console/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 \
+    FLEET_RUNTIME="${FLEET_RUNTIME:-deerflow}" \
+    DEEPSEEK_THIN_BASE_URL="${DEEPSEEK_THIN_BASE_URL:-https://api.deepseek.com}" \
+    DEEPSEEK_THIN_MODEL="${DEEPSEEK_THIN_MODEL:-deepseek-flash}" \
+      ../console/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 \
       > "$LOGS/control-plane.log" 2>&1 &
     echo $! > "$LOGS/control-plane.pid"
   )

@@ -275,6 +275,26 @@ class DeploymentConfigTests(unittest.TestCase):
         self.assertIn("../fleet-ops-protocol.json:/app/fleet-ops-protocol.json:ro", gateway["volumes"])
         self.assertIn("../deploy/prepare_gateway_config.py:/app/prepare_gateway_config.py:ro", gateway["volumes"])
 
+    def test_runtime_selection_defaults_to_deerflow_in_all_deployments(self):
+        with (ROOT / "deploy/docker-compose.yml").open(encoding="utf-8") as f:
+            compose = yaml.safe_load(f)
+        environment = compose["services"]["control-plane"]["environment"]
+        self.assertEqual(environment["FLEET_RUNTIME"], "${FLEET_RUNTIME:-deerflow}")
+        self.assertEqual(environment["DEEPSEEK_THIN_BASE_URL"], "${DEEPSEEK_THIN_BASE_URL:-https://api.deepseek.com}")
+        self.assertEqual(environment["DEEPSEEK_THIN_MODEL"], "${DEEPSEEK_THIN_MODEL:-deepseek-flash}")
+
+        for relative in ("deploy/k8s/core.yaml", "deploy/gitops/base/core.yaml"):
+            with self.subTest(file=relative):
+                documents = yaml.safe_load_all((ROOT / relative).read_text(encoding="utf-8"))
+                deployment = next(doc for doc in documents if doc and doc.get("kind") == "Deployment")
+                container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "control-plane")
+                env = {item["name"]: item.get("value") for item in container["env"]}
+                self.assertEqual(env["FLEET_RUNTIME"], "deerflow")
+                self.assertEqual(env["DEEPSEEK_THIN_BASE_URL"], "https://api.deepseek.com")
+                self.assertEqual(env["DEEPSEEK_THIN_MODEL"], "deepseek-flash")
+                self.assertIn("DEEPSEEK_API_KEY", env)
+        self.assertTrue((ROOT / "scripts/runtime_cold_switch_check.py").is_file())
+
     def test_control_plane_internal_http_clients_bypass_ambient_proxy(self):
         import ast
 

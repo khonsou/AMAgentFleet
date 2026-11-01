@@ -85,6 +85,10 @@ services:
     environment:
       FLEET_PG_DSN: *pg-dsn
       FLEET_GATEWAY_URL: http://gateway:8001
+      FLEET_RUNTIME: ${FLEET_RUNTIME:-deerflow}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?请在 .env 设置 DEEPSEEK_API_KEY}
+      DEEPSEEK_THIN_BASE_URL: ${DEEPSEEK_THIN_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_THIN_MODEL: ${DEEPSEEK_THIN_MODEL:-deepseek-flash}
       FLEET_RUN_RECURSION_LIMIT: ${FLEET_RUN_RECURSION_LIMIT:-300}
       FLEET_DEERFLOW_ROOT: /etc/deerflow
       # FAP 同源暴露的 XFF 信任链：可信 proxy = 本机 + compose 内网网段

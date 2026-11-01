@@ -138,6 +138,17 @@ spec:
                   key: DATABASE_URL
             - name: FLEET_GATEWAY_URL
               value: http://127.0.0.1:8001
+            - name: FLEET_RUNTIME
+              value: deerflow
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: am-agent-fleet-secrets
+                  key: DEEPSEEK_API_KEY
+            - name: DEEPSEEK_THIN_BASE_URL
+              value: https://api.deepseek.com
+            - name: DEEPSEEK_THIN_MODEL
+              value: deepseek-flash
             - name: FLEET_CONTROL_PLANE_SELF_URL
               value: http://127.0.0.1:8003
             - name: FLEET_CONSOLE_URL
