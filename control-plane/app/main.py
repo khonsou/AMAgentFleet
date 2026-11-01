@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
-from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation
+from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation, runtime_api
 from .db import audit, init_db, pool
 from .runtime import get_runtime
 
@@ -38,6 +38,7 @@ app.include_router(fap_pats.router)
 app.include_router(fleet_ops.router)
 app.include_router(ops_credentials.router)
 app.include_router(conversation.router)
+app.include_router(runtime_api.router)
 fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 

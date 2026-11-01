@@ -383,7 +383,7 @@ FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户�
 
 ### 7.12 RuntimeAdapter 与整站冷切换（2026-11-01，ADR-0032）
 
-内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
+内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。Thread／Run 的 FAP operation ID 和路径保持不变，统一由 Control Plane 的稳定 Runtime surface 提供；Console 旧端点只做兼容代理，不再直读 DeerFlow 表，SSE 暂保留原生兼容通道。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
 
 ---
 

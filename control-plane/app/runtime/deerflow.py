@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
-from ..db import GATEWAY
+from ..db import GATEWAY, pool as db_pool
 from .base import (
     RunRequest, RunResult, RuntimeAdapter, RuntimeCapabilities,
     RuntimeServiceError, classify_runtime_failure,
@@ -170,3 +171,168 @@ class DeerFlowAdapter(RuntimeAdapter):
         async with self._client(client_factory, 30) as client:
             response = await client.delete(f"/api/scheduled-tasks/{cron_id}")
         return response.status_code in (200, 204)
+
+    @staticmethod
+    def _ser(row) -> dict[str, Any]:
+        value = dict(row)
+        for key, item in value.items():
+            if isinstance(item, datetime):
+                value[key] = item.astimezone(timezone.utc).isoformat()
+        return value
+
+    async def get_overview(self, *, client_factory=None) -> dict[str, Any]:
+        async with (await db_pool()).acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                  (SELECT count(*) FROM threads_meta) AS threads,
+                  (SELECT count(*) FROM runs) AS runs,
+                  (SELECT count(*) FROM runs WHERE status = 'running') AS running,
+                  (SELECT count(*) FROM runs WHERE status = 'error') AS errored,
+                  (SELECT coalesce(sum(total_tokens), 0) FROM runs
+                    WHERE created_at::date = current_date) AS tokens_today,
+                  (SELECT coalesce(sum(total_tokens), 0) FROM runs) AS tokens_total,
+                  (SELECT count(*) FROM checkpoints) AS checkpoints
+                """
+            )
+        return self._ser(row)
+
+    async def list_threads(self, *, client_factory=None) -> list[dict[str, Any]]:
+        async with (await db_pool()).acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                  t.thread_id, t.display_name, t.assistant_id,
+                  t.status AS thread_status, t.created_at, t.updated_at,
+                  COALESCE(s.run_count, 0) AS run_count,
+                  COALESCE(s.total_tokens, 0) AS total_tokens,
+                  COALESCE(s.total_input, 0) AS total_input_tokens,
+                  COALESCE(s.total_output, 0) AS total_output_tokens,
+                  COALESCE(s.llm_calls, 0) AS llm_call_count,
+                  s.last_run_status, s.last_run_at, s.first_message,
+                  COALESCE(c.checkpoint_count, 0) AS checkpoint_count
+                FROM threads_meta t
+                LEFT JOIN LATERAL (
+                  SELECT count(*) AS run_count,
+                    sum(r.total_tokens) AS total_tokens,
+                    sum(r.total_input_tokens) AS total_input,
+                    sum(r.total_output_tokens) AS total_output,
+                    sum(r.llm_call_count) AS llm_calls,
+                    (SELECT r2.status FROM runs r2
+                      WHERE r2.thread_id = t.thread_id
+                      ORDER BY r2.created_at DESC LIMIT 1) AS last_run_status,
+                    max(r.updated_at) AS last_run_at,
+                    (SELECT r3.first_human_message FROM runs r3
+                      WHERE r3.thread_id = t.thread_id
+                      ORDER BY r3.created_at ASC LIMIT 1) AS first_message
+                  FROM runs r WHERE r.thread_id = t.thread_id
+                ) s ON true
+                LEFT JOIN LATERAL (
+                  SELECT count(*) AS checkpoint_count
+                  FROM checkpoints c WHERE c.thread_id = t.thread_id
+                ) c ON true
+                ORDER BY t.updated_at DESC
+                """
+            )
+        return [self._ser(row) for row in rows]
+
+    async def get_thread(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        async with (await db_pool()).acquire() as conn:
+            thread = await conn.fetchrow("SELECT * FROM threads_meta WHERE thread_id=$1", thread_id)
+            if not thread:
+                raise RuntimeServiceError(404, "thread not found")
+            runs = await conn.fetch(
+                """SELECT run_id, status, model_name, created_at, updated_at,
+                       total_input_tokens, total_output_tokens, total_tokens,
+                       llm_call_count, message_count, error, stop_reason,
+                       first_human_message, last_ai_message
+                   FROM runs WHERE thread_id=$1 ORDER BY created_at DESC""",
+                thread_id,
+            )
+            checkpoints = await conn.fetchval(
+                "SELECT count(*) FROM checkpoints WHERE thread_id=$1", thread_id)
+        return {
+            "thread": self._ser(thread),
+            "runs": [self._ser(run) for run in runs],
+            "checkpoints": checkpoints,
+        }
+
+    async def _json_request(self, method: str, path: str, *, client_factory=None,
+                            query: dict[str, Any] | None = None, body=None,
+                            timeout: float = 30) -> Any:
+        async with self._client(client_factory, timeout) as client:
+            response = await client.request(method, path, params=query, json=body)
+        if response.status_code >= 400:
+            raise RuntimeServiceError(response.status_code, response.text[:500])
+        return response.json() if response.text else None
+
+    async def get_messages(self, thread_id: str, *, client_factory=None) -> Any:
+        return await self._json_request("GET", f"/api/threads/{thread_id}/messages", client_factory=client_factory)
+
+    async def create_thread(self, assistant_id: str, instruction: str | None = None,
+                            recursion_limit: int = 300, *, client_factory=None) -> dict[str, Any]:
+        async with self._client(client_factory, 30) as client:
+            response = await client.post("/api/threads", json={"assistant_id": assistant_id})
+        if response.status_code != 200:
+            raise RuntimeServiceError(response.status_code, response.text[:500])
+        thread_id = response.json()["thread_id"]
+        if instruction and instruction.strip():
+            await self.execute_run(RunRequest(
+                agent_name=assistant_id, thread_id=thread_id, loop_id=0,
+                input_text=instruction.strip(), recursion_limit=recursion_limit,
+            ), client_factory=client_factory)
+        return {"thread_id": thread_id}
+
+    async def send_message(self, thread_id: str, content: str, assistant_id: str | None = None,
+                           recursion_limit: int = 300, *, client_factory=None) -> dict[str, Any]:
+        async with (await db_pool()).acquire() as conn:
+            stored = await conn.fetchval(
+                "SELECT assistant_id FROM threads_meta WHERE thread_id=$1", thread_id)
+        if assistant_id and stored and stored != assistant_id:
+            raise RuntimeServiceError(409, "thread assistant_id conflicts with requested assistant_id")
+        agent = assistant_id or stored or "lead_agent"
+        result = await self.execute_run(RunRequest(
+            agent_name=agent, thread_id=thread_id, loop_id=0,
+            input_text=content, recursion_limit=recursion_limit,
+        ), client_factory=client_factory)
+        return {
+            "status": result.status, "messages": result.messages,
+            "run_id": result.run_id, "checkpoint_id": result.checkpoint_ref,
+        }
+
+    async def delete_thread(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        await self._json_request("DELETE", f"/api/threads/{thread_id}", client_factory=client_factory)
+        return {"deleted": thread_id}
+
+    async def get_thread_state(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        return await self._json_request("GET", f"/api/threads/{thread_id}/state", client_factory=client_factory)
+
+    async def get_token_usage(self, thread_id: str, *, client_factory=None) -> Any:
+        return await self._json_request("GET", f"/api/threads/{thread_id}/token-usage", client_factory=client_factory)
+
+    async def get_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        return await self._json_request("GET", f"/api/threads/{thread_id}/runs/{run_id}", client_factory=client_factory)
+
+    async def get_run_messages(self, run_id: str, query: dict[str, Any], *, client_factory=None) -> Any:
+        return await self._json_request("GET", f"/api/runs/{run_id}/messages", client_factory=client_factory, query=query)
+
+    async def get_run_events(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        return await self._json_request("GET", f"/api/threads/{thread_id}/runs/{run_id}/events", client_factory=client_factory)
+
+    async def cancel_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        return await self._json_request("POST", f"/api/threads/{thread_id}/runs/{run_id}/cancel", client_factory=client_factory)
+
+    async def feedback(self, method: str, thread_id: str, run_id: str, *,
+                       body=None, feedback_id: str | None = None, client_factory=None) -> Any:
+        suffix = f"/{feedback_id}" if feedback_id else ""
+        return await self._json_request(
+            method, f"/api/threads/{thread_id}/runs/{run_id}/feedback{suffix}",
+            client_factory=client_factory, body=body,
+        )
+
+    async def get_artifact(self, thread_id: str, path: str, *, client_factory=None) -> tuple[bytes, str]:
+        async with self._client(client_factory, 60) as client:
+            response = await client.get(f"/api/threads/{thread_id}/artifacts/{path}")
+        if response.status_code != 200:
+            raise RuntimeServiceError(response.status_code, response.text[:500])
+        return response.content, response.headers.get("content-type", "application/octet-stream")

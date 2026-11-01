@@ -81,7 +81,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     def test_every_control_plane_api_route_is_registered(self):
         actual = {
-            (method, route.path)
+            (method, route.path.replace(":path}", "}"))
             for route in app.routes
             for method in getattr(route, "methods", set())
             if route.path.startswith("/api/")

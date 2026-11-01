@@ -1,17 +1,12 @@
-"""Agent Fleet Console 后端（spike 阶段版）。
+"""Agent Fleet Console 后端：DAO 身份、Control Plane 代理与兼容传输。
 
-数据来源：
-- PostgreSQL（DeerFlow 落库：threads_meta / runs / checkpoints）——只读查询
-- DeerFlow Gateway（http://127.0.0.1:8001）——消息读取与续跑转发
-
-对应设计文档 §7.8 的极简实现；P2 阶段 Agent Registry 建成后，
-fleet 数据源将从 threads_meta 切换为 Registry 的 agents 表。
+Thread／Run 观测和执行统一由 Control Plane 的 RuntimeAdapter 提供；
+Console 不直接读取 DeerFlow 数据表，也不包含运行时业务状态逻辑。
 """
 
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 
 import asyncpg
 import httpx
@@ -47,14 +42,6 @@ async def pool() -> asyncpg.Pool:
     return _pool
 
 
-def ser(row: asyncpg.Record) -> dict:
-    d = dict(row)
-    for k, v in d.items():
-        if isinstance(v, datetime):
-            d[k] = v.astimezone(timezone.utc).isoformat()
-    return d
-
-
 @app.get("/api/console/health")
 async def health():
     p = await pool()
@@ -70,106 +57,22 @@ async def health():
 
 @app.get("/api/console/overview")
 async def overview():
-    p = await pool()
-    async with p.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT
-              (SELECT count(*) FROM threads_meta)                                AS threads,
-              (SELECT count(*) FROM runs)                                        AS runs,
-              (SELECT count(*) FROM runs WHERE status = 'running')               AS running,
-              (SELECT count(*) FROM runs WHERE status = 'error')                 AS errored,
-              (SELECT coalesce(sum(total_tokens), 0) FROM runs
-                WHERE created_at::date = current_date)                           AS tokens_today,
-              (SELECT coalesce(sum(total_tokens), 0) FROM runs)                  AS tokens_total,
-              (SELECT count(*) FROM checkpoints)                                 AS checkpoints
-            """
-        )
-    return ser(row)
+    return await _cp("/console/overview")
 
 
 @app.get("/api/console/fleet")
 async def fleet():
-    """fleet 看板：每行一个 agent 会话（thread）。
-
-    P2 Registry 落地前，以 thread 作为 agent 运行实例的最小观测单元。
-    """
-    p = await pool()
-    async with p.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT
-              t.thread_id,
-              t.display_name,
-              t.assistant_id,
-              t.status        AS thread_status,
-              t.created_at,
-              t.updated_at,
-              COALESCE(s.run_count, 0)        AS run_count,
-              COALESCE(s.total_tokens, 0)     AS total_tokens,
-              COALESCE(s.total_input, 0)      AS total_input_tokens,
-              COALESCE(s.total_output, 0)     AS total_output_tokens,
-              COALESCE(s.llm_calls, 0)        AS llm_call_count,
-              s.last_run_status,
-              s.last_run_at,
-              s.first_message,
-              COALESCE(c.checkpoint_count, 0) AS checkpoint_count
-            FROM threads_meta t
-            LEFT JOIN LATERAL (
-              SELECT count(*) AS run_count,
-                     sum(r.total_tokens) AS total_tokens,
-                     sum(r.total_input_tokens) AS total_input,
-                     sum(r.total_output_tokens) AS total_output,
-                     sum(r.llm_call_count) AS llm_calls,
-                     (SELECT r2.status FROM runs r2
-                       WHERE r2.thread_id = t.thread_id
-                       ORDER BY r2.created_at DESC LIMIT 1) AS last_run_status,
-                     max(r.updated_at) AS last_run_at,
-                     (SELECT r3.first_human_message FROM runs r3
-                       WHERE r3.thread_id = t.thread_id
-                       ORDER BY r3.created_at ASC LIMIT 1) AS first_message
-              FROM runs r WHERE r.thread_id = t.thread_id
-            ) s ON true
-            LEFT JOIN LATERAL (
-              SELECT count(*) AS checkpoint_count
-              FROM checkpoints c WHERE c.thread_id = t.thread_id
-            ) c ON true
-            ORDER BY t.updated_at DESC
-            """
-        )
-    return [ser(r) for r in rows]
+    return await _cp("/console/fleet")
 
 
 @app.get("/api/console/threads/{tid}")
 async def thread_detail(tid: str):
-    p = await pool()
-    async with p.acquire() as conn:
-        t = await conn.fetchrow("SELECT * FROM threads_meta WHERE thread_id=$1", tid)
-        if not t:
-            raise HTTPException(404, "thread not found")
-        runs = await conn.fetch(
-            """
-            SELECT run_id, status, model_name, created_at, updated_at,
-                   total_input_tokens, total_output_tokens, total_tokens,
-                   llm_call_count, message_count, error, stop_reason,
-                   first_human_message, last_ai_message
-            FROM runs WHERE thread_id=$1 ORDER BY created_at DESC
-            """,
-            tid,
-        )
-        cps = await conn.fetchval(
-            "SELECT count(*) FROM checkpoints WHERE thread_id=$1", tid
-        )
-    return {"thread": ser(t), "runs": [ser(r) for r in runs], "checkpoints": cps}
+    return await _cp(f"/console/threads/{tid}")
 
 
 @app.get("/api/console/threads/{tid}/messages")
 async def thread_messages(tid: str):
-    async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
-        resp = await client.get(f"{GATEWAY}/api/threads/{tid}/messages")
-    if resp.status_code != 200:
-        raise HTTPException(resp.status_code, resp.text[:500])
-    return resp.json()
+    return await _cp(f"/console/threads/{tid}/messages")
 
 
 class MessageIn(BaseModel):
@@ -184,79 +87,19 @@ class CreateThreadIn(BaseModel):
     recursion_limit: int = 300
 
 
-def _run_payload(resp: httpx.Response) -> dict:
-    """Gateway 对 Run 失败也可能返回 HTTP 200；必须把业务失败透传为可见错误。"""
-    if resp.status_code != 200:
-        raise HTTPException(resp.status_code, resp.text[:500])
-    payload = resp.json()
-    if payload.get("status") == "error":
-        detail = str(payload.get("error") or "Agent 未返回错误详情")[:800]
-        raise HTTPException(502, f"Agent 执行失败：{detail}")
-    return payload
-
-
 @app.post("/api/console/threads")
 async def create_thread(body: CreateThreadIn):
-    """拉起一个新 agent 会话；带 instruction 时直接跑第一轮（阻塞至完成）。"""
-    async with httpx.AsyncClient(trust_env=False, timeout=600) as client:
-        resp = await client.post(
-            f"{GATEWAY}/api/threads", json={"assistant_id": body.assistant_id}
-        )
-        if resp.status_code != 200:
-            raise HTTPException(resp.status_code, resp.text[:500])
-        tid = resp.json()["thread_id"]
-        if body.instruction and body.instruction.strip():
-            payload = {
-                "assistant_id": body.assistant_id,
-                "input": {"messages": [{"role": "user", "content": body.instruction.strip()}]},
-                "config": {
-                    "configurable": {"thread_id": tid},
-                    "recursion_limit": body.recursion_limit,
-                },
-            }
-            run = await client.post(f"{GATEWAY}/api/runs/wait", json=payload)
-            _run_payload(run)
-    return {"thread_id": tid}
+    return await _cp("/console/threads", "POST", body.model_dump(), timeout=600)
 
 
 @app.delete("/api/console/threads/{tid}")
 async def delete_thread(tid: str):
-    """销毁：删除线程及其全部持久化状态（checkpoint / run / 消息）。"""
-    async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
-        resp = await client.delete(f"{GATEWAY}/api/threads/{tid}")
-    if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, resp.text[:500])
-    return {"deleted": tid}
+    return await _cp(f"/console/threads/{tid}", "DELETE")
 
 
 @app.post("/api/console/threads/{tid}/messages")
 async def send_message(tid: str, msg: MessageIn):
-    """续跑：向同一线程投递新消息（runs/wait 阻塞至完成）。
-
-    即 ADR-0001「唤醒 = 重新投递 + 水合断点」的人工触发路径。
-    assistant_id 取该线程实际所属的 agent（threads_meta 记录）。调用方可携带
-    预期身份：旧空绑定会话按预期身份修复，已有绑定若冲突则拒绝，不得静默换 Agent。
-    """
-    p = await pool()
-    async with p.acquire() as conn:
-        stored_assistant_id = await conn.fetchval(
-            "SELECT assistant_id FROM threads_meta WHERE thread_id=$1", tid
-        )
-    if (msg.assistant_id and stored_assistant_id
-            and stored_assistant_id != msg.assistant_id):
-        raise HTTPException(409, "thread assistant_id conflicts with requested assistant_id")
-    assistant_id = msg.assistant_id or stored_assistant_id or "lead_agent"
-    payload = {
-        "assistant_id": assistant_id,
-        "input": {"messages": [{"role": "user", "content": msg.content}]},
-        "config": {
-            "configurable": {"thread_id": tid},
-            "recursion_limit": msg.recursion_limit,
-        },
-    }
-    async with httpx.AsyncClient(trust_env=False, timeout=600) as client:
-        resp = await client.post(f"{GATEWAY}/api/runs/wait", json=payload)
-    return _run_payload(resp)
+    return await _cp(f"/console/threads/{tid}/messages", "POST", msg.model_dump(), timeout=600)
 
 
 # ---------------------------------------------------------------------------
@@ -415,9 +258,9 @@ async def cp_loop_resume(lid: int):
 @app.get("/api/console/threads/{tid}/artifacts/{path:path}")
 async def cp_thread_artifact(tid: str, path: str):
     """产物下载代理（agent 交付物链接走 Console，生产中网关不出 VPC）。"""
-    async with httpx.AsyncClient(trust_env=False, base_url=GATEWAY, timeout=60) as client:
+    async with httpx.AsyncClient(trust_env=False, base_url=CONTROL_PLANE, timeout=60) as client:
         resp = await client.get(
-            f"/api/threads/{tid}/artifacts/{path}",
+            f"/api/console/threads/{tid}/artifacts/{path}",
             follow_redirects=True,
         )
     from fastapi import Response

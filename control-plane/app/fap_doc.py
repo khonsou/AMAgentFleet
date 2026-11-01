@@ -19,9 +19,8 @@ FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
   以稳定 operation ID 声明系统、Agent、Task、Loop、Thread、Run、验收、cron、
   MCP、模板、审计和 PAT 的全部操作及其 surface/method/path/确认级别。
 - **能力归属**：`tasks / loops / agents_registry / scheduled_tasks / feedback /
-  fleet_operations / idempotency / pat_auth` 在本控制面；`threads`（会话执行面，D 域）为
-  DeerFlow 网关原生能力，控制面不代理——公网部署时其入口由部署方另行提供，
-  见 §4。
+  fleet_operations / idempotency / pat_auth / threads` 均在本控制面；Thread／Run
+  由当前 RuntimeAdapter 提供，第三方不直接依赖 DeerFlow 网关，见 §4。
 - **鉴权**：`Authorization: Bearer <PAT>`（PAT 由员工在 Console 设置页签发，
   scope 仅 `read`/`write`，不做数据隔离）。未启用 PAT 的实例所有端点仅内网可达。
 - **组织作用域**：单一共享组织，全员可见所有 agent 与任务（QA-5）。
@@ -130,18 +129,18 @@ POST /api/loops/{id}/requeue    重新执行 agent loop（新指令续接 Thread
 POST /api/loops/{id}/resume     从最新 checkpoint 断点续跑（不重复原始输入）
 ```
 
-## 4. Thread 执行与对话（网关原生，🦌 不经控制面）
+## 4. Thread 执行与对话（Control Plane 稳定 Runtime 面）
 
-执行面端点在**网关**上（DeerFlow 原生，`run_events.backend=db`），
-协议头/幂等/限速由网关侧未来版本补齐（当前仅内网可达）：
+Thread／Run 端点与控制面同源，由当前 RuntimeAdapter 执行；协议头、鉴权、
+幂等和限速复用 FAP。`runs.stream` 暂保留部署方提供的原生兼容通道：
 
 ```
-POST {GATEWAY}/api/runs/wait|stream     发起执行（阻塞/SSE），body 见 langgraph 约定
-GET  {GATEWAY}/api/threads/{tid}/state  thread 状态快照
-GET  {GATEWAY}/api/threads/{tid}/messages  对话消息流
-POST {GATEWAY}/api/threads/{tid}/runs/{rid}/cancel  run 取消
-GET  {GATEWAY}/api/threads/{tid}/token-usage  token 用量
-DELETE {GATEWAY}/api/threads/{tid}      thread 销毁（级联）
+POST {BASE_URL}/api/runs/wait           发起执行（阻塞），body 见协议清单
+GET  {BASE_URL}/api/threads/{tid}/state  thread 状态快照
+GET  {BASE_URL}/api/threads/{tid}/messages  对话消息流
+POST {BASE_URL}/api/threads/{tid}/runs/{rid}/cancel  run 取消
+GET  {BASE_URL}/api/threads/{tid}/token-usage  token 用量
+DELETE {BASE_URL}/api/threads/{tid}      thread 销毁（级联）
 ```
 
 第三方 agent 典型用法：经 §3 领取 loop 后在**自己侧**执行，

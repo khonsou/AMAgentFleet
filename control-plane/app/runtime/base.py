@@ -117,3 +117,55 @@ class RuntimeAdapter(ABC):
 
     async def delete_legacy_cron(self, cron_id: str, *, client_factory=None) -> bool:
         raise RuntimeServiceError(409, f"Runtime '{self.name}' 不支持旧网关 cron", kind="capability")
+
+    def _unsupported(self, capability: str):
+        raise RuntimeServiceError(
+            409, f"capability_not_supported: {self.name}.{capability}", kind="capability")
+
+    async def get_overview(self, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("overview")
+
+    async def list_threads(self, *, client_factory=None) -> list[dict[str, Any]]:
+        self._unsupported("threads")
+
+    async def get_thread(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("thread_detail")
+
+    async def get_messages(self, thread_id: str, *, client_factory=None) -> Any:
+        self._unsupported("messages")
+
+    async def create_thread(self, assistant_id: str, instruction: str | None = None,
+                            recursion_limit: int = 300, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("create_thread")
+
+    async def send_message(self, thread_id: str, content: str, assistant_id: str | None = None,
+                           recursion_limit: int = 300, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("send_message")
+
+    async def delete_thread(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("delete_thread")
+
+    async def get_thread_state(self, thread_id: str, *, client_factory=None) -> dict[str, Any]:
+        self._unsupported("thread_state")
+
+    async def get_token_usage(self, thread_id: str, *, client_factory=None) -> Any:
+        self._unsupported("token_usage")
+
+    async def get_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        self._unsupported("run_detail")
+
+    async def get_run_messages(self, run_id: str, query: dict[str, Any], *, client_factory=None) -> Any:
+        self._unsupported("run_messages")
+
+    async def get_run_events(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        self._unsupported("run_events")
+
+    async def cancel_run(self, thread_id: str, run_id: str, *, client_factory=None) -> Any:
+        self._unsupported("cancel")
+
+    async def feedback(self, method: str, thread_id: str, run_id: str, *,
+                       body=None, feedback_id: str | None = None, client_factory=None) -> Any:
+        self._unsupported("feedback")
+
+    async def get_artifact(self, thread_id: str, path: str, *, client_factory=None) -> tuple[bytes, str]:
+        self._unsupported("artifacts")
