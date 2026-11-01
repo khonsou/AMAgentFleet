@@ -81,14 +81,16 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ### A4．特殊传输、清理与防回退
 
+**状态**：✅ 已完成（2026-11-01）
+
 **改动**
 
-- 产物下载保留二进制 adapter；`runs.stream` 如需接入，新增使用同一 operation ID 的 SSE adapter，不经过缓冲式 JSON executor。
+- 产物下载统一复用 Protocol Client 二进制 adapter；旧 GUI 当前未使用 `runs.stream`，本阶段不新增 SSE 调用。
 - OAuth 仍属身份基础设施，不纳入 Fleet 业务 operation。
-- `lib/api.ts` 最终只保留类型，或迁移类型后删除；增加前端静态检查，禁止页面新增业务直连 `fetch`。
-- 补齐 Console／Control Plane／Runtime surface 的契约测试和旧 GUI 浏览器回归。
+- `lib/api.ts` 保留类型与协议兼容 façade；新增静态测试，禁止页面新增业务直连 `fetch`，并校验全部 operation ID 与读写属性。
+- 补齐 Console／Control Plane 契约测试和旧 GUI 浏览器回归。
 
-**完成门 G1**
+**完成门 G1**：✅ 已达到
 
 - 旧 Console 前端业务读写均使用 operation ID；仅 OAuth、二进制和 SSE 使用明确的专用传输。
 - 现有离线协议验收、前端单测和全栈任务闭环全部通过。

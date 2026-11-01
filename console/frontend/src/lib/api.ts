@@ -1,5 +1,4 @@
-import { getOauthSession, notifySessionExpired } from '@/lib/auth'
-import { executeOperation, type OperationRequest } from '@/protocol/client'
+import { downloadArtifact as downloadProtocolArtifact, executeOperation, type OperationRequest } from '@/protocol/client'
 import { executeGuiOperation } from '@/protocol/guiExecutor'
 
 const BASE = '/api/console'
@@ -12,29 +11,6 @@ async function read<T>(operationId: string, request: OperationRequest = {}): Pro
 async function write<T>(operationId: string, request: OperationRequest = {}): Promise<T> {
   const response = await executeGuiOperation<T>(operationId, request)
   return response.result
-}
-
-function authHeaders(init?: HeadersInit): Headers {
-  const headers = new Headers(init)
-  // 员工身份（DAO JWT）随请求附带；认证未启用时 session 恒为 null，零影响
-  const s = getOauthSession()
-  if (s) headers.set('Authorization', `Bearer ${s.accessToken}`)
-  return headers
-}
-
-async function download(url: string, filename: string): Promise<void> {
-  const resp = await fetch(url, { headers: authHeaders() })
-  if (resp.status === 401) {
-    notifySessionExpired()
-    return
-  }
-  if (!resp.ok) throw new Error(`产物下载失败（HTTP ${resp.status}）`)
-  const objectUrl = URL.createObjectURL(await resp.blob())
-  const link = document.createElement('a')
-  link.href = objectUrl
-  link.download = filename
-  link.click()
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
 export interface Overview {
@@ -102,10 +78,7 @@ export const api = {
   artifactUrl: (tid: string, path: string) =>
     `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
   downloadArtifact: (tid: string, path: string) =>
-    download(
-      `${BASE}/threads/${tid}/artifacts/${path.split('/').map(encodeURIComponent).join('/')}`,
-      path.split('/').pop() || 'artifact',
-    ),
+    downloadProtocolArtifact({ tid, path }),
   messages: (tid: string) => read<unknown>('threads.messages', { path_params: { tid } }),
   send: (tid: string, content: string, assistantId?: string) =>
     write<unknown>('threads.send', { path_params: { tid }, body: { content, ...(assistantId ? { assistant_id: assistantId } : {}) } }),

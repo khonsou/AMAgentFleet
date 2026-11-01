@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 
-const mocks = vi.hoisted(() => ({ executeOperation: vi.fn(), executeGuiOperation: vi.fn() }))
-vi.mock('@/protocol/client', () => ({ executeOperation: mocks.executeOperation }))
+const mocks = vi.hoisted(() => ({ executeOperation: vi.fn(), executeGuiOperation: vi.fn(), downloadArtifact: vi.fn() }))
+vi.mock('@/protocol/client', () => ({ executeOperation: mocks.executeOperation, downloadArtifact: mocks.downloadArtifact }))
 vi.mock('@/protocol/guiExecutor', () => ({ executeGuiOperation: mocks.executeGuiOperation }))
 
 describe('旧 Console 协议迁移', () => {
@@ -37,5 +37,10 @@ describe('旧 Console 协议迁移', () => {
     await api.templateRender({ templateId: 'website-reader' })
     await api.opsCredentialRotate()
     expect(mocks.executeGuiOperation.mock.calls.map((call) => call[0])).toEqual(['templates.render', 'ops.credential_rotate'])
+  })
+
+  it('产物下载复用共享二进制传输', async () => {
+    await api.downloadArtifact('thread-1', 'reports/result.txt')
+    expect(mocks.downloadArtifact).toHaveBeenCalledWith({ tid: 'thread-1', path: 'reports/result.txt' })
   })
 })
