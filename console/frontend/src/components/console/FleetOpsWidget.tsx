@@ -126,14 +126,14 @@ export default function FleetOpsWidget() {
           </header>
 
           <div className="border-b border-hairline-soft px-4 py-2.5 text-[11px] leading-relaxed text-ink-3">
-            查询或操作舰队；涉及写操作时，助手会先请你确认。
+            查询或操作舰队；只有高风险操作才需要额外确认。
           </div>
 
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3" aria-live="polite">
             {loading && <div className="py-8 text-center font-mono text-xs text-ink-3">正在连接操作助手…</div>}
             {!loading && messages.length === 0 && !error && (
               <div className="rounded-[2px] border border-hairline-soft bg-inset/60 px-3.5 py-3 text-xs leading-relaxed text-ink-2">
-                可以问“当前有哪些待验收任务”，也可以说“创建一个任务”。涉及变更时，助手会先向你确认。
+                可以问“当前有哪些待验收任务”，也可以说“创建一个任务”。只有高风险变更才需要额外确认。
               </div>
             )}
             {messages.map((message, index) => (

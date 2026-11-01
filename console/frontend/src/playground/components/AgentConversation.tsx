@@ -98,7 +98,7 @@ export default function AgentConversation({ agent, onChanged }: { agent: AgentVi
           void send()
         }
       }} placeholder={`发送给 ${agent.name}…`} />
-      <div className="composer-hint">Ctrl / ⌘ + Enter 发送；写操作会先展示确认窗口。</div>
+      <div className="composer-hint">Ctrl / ⌘ + Enter 发送；仅高风险操作需要额外确认。</div>
       <button className="drawer-action" disabled={sending || busy || !input.trim()} onClick={() => void send()}>{sending || busy ? '等待确认或 Agent 执行…' : threadId ? '确认并发送' : '确认并开始对话'}</button>
       {error && <p role="alert" className="operation-error">{error}</p>}
     </div>

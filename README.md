@@ -16,7 +16,7 @@
 
 **P3b 已落地（2026-10-10）**：FAP v1 第三方 agent 接入面（[ADR-0011](docs/adr/0011-third-party-agent-access-protocol.md)，协议清单 [agent-api.md](docs/design/agent-api.md)）——`GET /api/meta` 免鉴权自发现 + `GET /api/agent-doc` 机器可读文档 + 全响应 `X-Protocol-Version`；写操作 `Idempotency-Key` 幂等（`fap_idempotency_keys` 表 24h 窗口，同键同 actor 回放、跨 actor 409）；per-PAT/IP 令牌桶限速（`429 + retry_after`，60/min 可配）；写操作 `source`/`actor` 自报字段透传 `audit_events.detail`；PAT 鉴权（复用 DeerFlow 原生 `personal_access_tokens` 同库表，scope 仅 read/write，控制面自校验；Console 新增 SETTINGS 页签发/吊销）。参考客户端 `examples/fap-quickstart.mjs`（零依赖 Node≥22，自发现→发起→领取→交付→轮询验收全链路实测通过，含幂等回放 demo）。**边界**：FAP 端点仅内网绑定，公网暴露待 P4 OIDC/PAT 全链路（ADR-0011 第 5 条）；loopback 无 PAT 放行仅限 Console 本机代理。
 
-**Fleet 全量操作协议（ADR-0017）**：[`fleet-ops-protocol.json`](fleet-ops-protocol.json) 是唯一机器可读操作清单，`GET /api/ops/protocol` 自发现全部操作；默认操作 Agent `fleet-ops-01` 通过专属 `fleet:ops` 工具组按 operation ID 执行，读操作可直接执行，写操作必须明确确认，PAT 签发、产物下载和非空秘密配置保持人工操作。首页右下角浮窗提供该 Agent 的持久自然语言会话，不为每次聊天创建业务 Task。激活与统一验收：
+**Fleet 全量操作协议（ADR-0017）**：[`fleet-ops-protocol.json`](fleet-ops-protocol.json) 是唯一机器可读操作清单，`GET /api/ops/protocol` 自发现全部操作；默认操作 Agent `fleet-ops-01` 通过专属 `fleet:ops` 工具组按 operation ID 执行，读操作可直接执行；普通写操作直接发送并保留幂等校验，高风险操作需额外确认且确认后立即关闭弹窗（ADR-0033）。PAT 签发、产物下载和非空秘密配置保持人工操作。首页右下角浮窗提供该 Agent 的持久自然语言会话，不为每次聊天创建业务 Task。激活与统一验收：
 
 ```bash
 # 服务启动后：幂等注册并做真实只读调用
@@ -27,7 +27,7 @@ bash scripts/test_fleet_ops_all.sh
 
 74 项在线矩阵报告位于 `artifacts/fleet-ops-acceptance.json`。系统 Agent 配置只读，本地与第三方统一 PAT 鉴权，系统凭证只支持人工轮换（ADR-0018）。详见[协议设计](docs/design/fleet-operations-protocol.md)。
 
-**协议化与 RuntimeAdapter（ADR-0031/0032，2026-11-01）**：旧 Console、Playground、操作助手与第三方 Agent 统一按 operation ID 读写，写操作统一确认与幂等，human-only 秘密仍只走人工表单。Thread／Run 由 Control Plane 的稳定 Runtime surface 提供，Console 不再直读 DeerFlow 表。`FLEET_RUNTIME` 默认 `deerflow`；`deepseek-thin` 为 OpenAI 兼容测试参考实现，支持注册、执行、消息与 requeue，不支持 Checkpoint resume、SSE、反馈、产物或 subagent 工具编排。`GET /api/runtime/capabilities` 自发现能力；冷切换与回滚只读预检见 `scripts/runtime_cold_switch_check.py` 和 `deploy/DEPLOY.md` §8，生产未切换。
+**协议化与 RuntimeAdapter（ADR-0031/0032/0033，2026-11-01）**：旧 Console、Playground、操作助手与第三方 Agent 统一按 operation ID 读写；普通写操作直接发送并保留幂等校验，高风险操作需额外确认且确认后立即关闭弹窗，human-only 秘密仍只走人工表单。Thread／Run 由 Control Plane 的稳定 Runtime surface 提供，Console 不再直读 DeerFlow 表。`FLEET_RUNTIME` 默认 `deerflow`；`deepseek-thin` 为 OpenAI 兼容测试参考实现，支持注册、执行、消息与 requeue，不支持 Checkpoint resume、SSE、反馈、产物或 subagent 工具编排。`GET /api/runtime/capabilities` 自发现能力；冷切换与回滚只读预检见 `scripts/runtime_cold_switch_check.py` 和 `deploy/DEPLOY.md` §8，生产未切换。
 
 **待办**：~~fork DeerFlow 锁版本~~ ✅ QA-8 已完成（[khonsou/deer-flow](https://github.com/khonsou/deer-flow) 已锁 tag；当前部署基线为 `am-fleet-base-v2`）；阿里云首次部署实测（ECS 购买后按 DEPLOY.md §4）；P2 规模化验收（10 agent）、P4（OIDC + 成本台账）。
 
@@ -93,6 +93,7 @@ bash scripts/test_fleet_ops_all.sh
 | [0018](docs/adr/0018-system-fleet-ops-and-pat.md) | 系统内置 Fleet 操作 Agent 与统一 PAT 鉴权 | 已接受 |
 | [0031](docs/adr/0031-unified-protocol-playground-and-task-conversation.md) | 统一协议客户端、Task 群聊投影与可替换 Playground 表现层 | 已接受 |
 | [0032](docs/adr/0032-runtime-adapter-and-cold-switch.md) | RuntimeAdapter 边界与整站冷切换 | 已接受 |
+| [0033](docs/adr/0033-risk-based-operation-confirmation.md) | 风险分级确认与确认后立即释放界面 | 已接受 |
 
 ## 关键输入（已确认的 QA 结论）
 

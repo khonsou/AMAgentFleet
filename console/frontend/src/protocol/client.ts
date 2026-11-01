@@ -7,7 +7,7 @@ export interface OperationDefinition {
   surface: 'control-plane' | 'console' | 'gateway'
   description: string
   write?: boolean
-  confirmation?: 'standard' | 'human_only'
+  confirmation?: 'standard' | 'high_risk' | 'human_only'
   query?: Record<string, unknown>
   body?: Record<string, unknown>
   secret_fields?: string[]

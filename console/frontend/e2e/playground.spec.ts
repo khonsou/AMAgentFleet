@@ -31,8 +31,9 @@ function conversationFor99(claimed: boolean) {
   }
 }
 
-async function mockProtocol(page: Page) {
+async function mockProtocol(page: Page, slowOperation = '') {
   const writes: Array<Record<string, unknown>> = []
+  const completedOperations: string[] = []
   let agentReads = 0
   let claimed99 = false
   await page.route('**/api/console/operations/protocol', (route) => route.fulfill({ contentType: 'application/json', body: protocol }))
@@ -51,16 +52,18 @@ async function mockProtocol(page: Page) {
       : operation === 'threads.get' ? { thread: { assistant_id: 'commander' }, runs: [], checkpoints: 0 }
       : operation === 'threads.messages' ? [{ content: { type: 'ai', content: '收到，我会继续处理。' } }]
       : { status: 'ok' }
+    if (operation === slowOperation) await new Promise((resolve) => setTimeout(resolve, 2000))
+    if (request.confirmed) completedOperations.push(operation)
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ operation_id: operation, status: 200, result, truncated: false }) })
   })
   await page.route('**/api/console/threads**', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ thread: {}, runs: [], checkpoints: 0 }) }))
-  return Object.assign(writes, { agentReads: () => agentReads })
+  return Object.assign(writes, { agentReads: () => agentReads, completedOperations })
 }
 
-test('真实 3D 场景、Task 群聊与协议写确认', async ({ page }) => {
+test('真实 3D 场景、普通操作免确认与高风险即时关闭', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const writes = await mockProtocol(page)
+  const writes = await mockProtocol(page, 'agents.destroy')
   await page.goto('/playground')
   await expect(page.locator('#world')).toBeVisible()
   await expect(page.locator('.agent-row')).toHaveCount(2)
@@ -77,6 +80,23 @@ test('真实 3D 场景、Task 群聊与协议写确认', async ({ page }) => {
   await page.getByLabel('群聊收件人').selectOption('group')
   await page.getByLabel('群聊消息').fill('请补充风险说明')
   await page.getByRole('button', { name: '确认并发送' }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  expect(writes[0].operation_id).toBe('tasks.comment')
+  expect(writes[0].confirmed).toBe(true)
+  expect(writes[0].idempotency_key).toBeTruthy()
+
+  await page.getByRole('button', { name: '采纳', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  await expect.poll(() => writes.length).toBe(2)
+  expect(writes[1].operation_id).toBe('tasks.accept')
+  expect(writes[1].body.loop_id).toBe(21)
+
+  await page.getByRole('button', { name: '关闭群聊' }).click()
+  await page.getByRole('button', { name: 'OPERATIONS' }).click()
+  await page.getByLabel('搜索操作').fill('agents.destroy')
+  await expect(page.locator('.operation-card')).toHaveCount(1)
+  await page.locator('.operation-card').click()
+  await page.getByRole('button', { name: '检查参数并确认执行' }).click()
   await expect(page.getByRole('alertdialog')).toBeVisible()
   await expect(page.locator('.operation-confirm-dialog .operation-json')).toHaveCount(0)
   const confirmStyle = await page.getByRole('alertdialog').evaluate((element) => {
@@ -95,26 +115,12 @@ test('真实 3D 场景、Task 群聊与协议写确认', async ({ page }) => {
   expect(confirmStyle.buttons[1]).toMatchObject({ color: 'rgb(255, 248, 239)', disabled: false, background: 'rgb(239, 91, 42)', fontSize: '9px', height: '38px', borderRadius: '4px', marginTop: '0px' })
   expect(confirmStyle.buttons[1].fontFamily).toContain('IBM Plex Mono')
   await page.screenshot({ path: 'test-results/confirmation-window-repro.png' })
-  expect(writes).toHaveLength(0)
+  expect(writes).toHaveLength(2)
   await page.getByRole('button', { name: '确认执行', exact: true }).click()
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
-  expect(writes[0].operation_id).toBe('tasks.comment')
-  expect(writes[0].confirmed).toBe(true)
-  expect(writes[0].idempotency_key).toBeTruthy()
-
-  await page.getByRole('button', { name: '采纳', exact: true }).click()
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
-  await expect(page.getByRole('alertdialog')).toHaveCount(0)
-  await expect.poll(() => writes.length).toBe(2)
-  expect(writes[1].operation_id).toBe('tasks.accept')
-  expect(writes[1].body.loop_id).toBe(21)
-
-  await page.getByRole('button', { name: '关闭群聊' }).click()
-  await page.getByRole('button', { name: 'OPERATIONS' }).click()
-  await page.getByLabel('搜索操作').fill('agents.stop')
-  await expect(page.locator('.operation-card')).toHaveCount(1)
-  await page.locator('.operation-card').click()
-  await expect(page.getByText('agents.stop / control-plane')).toBeVisible()
+  expect(writes.completedOperations).not.toContain('agents.destroy')
+  await expect.poll(() => writes.completedOperations.length).toBe(3)
+  expect(writes[2].operation_id).toBe('agents.destroy')
   expect(errors).toEqual([])
 })
 
@@ -129,8 +135,7 @@ test('Overview 滚动、Task Pool 创建与 Agent 直接对话', async ({ page }
   await page.getByLabel('新 Task 指令').fill('验证 Task 创建入口')
   await page.getByLabel('新 Task 执行 Agent').selectOption('commander')
   await page.getByLabel('新 Task 指令').press('Control+Enter')
-  await expect(page.getByRole('alertdialog')).toBeVisible()
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   expect(writes[0].operation_id).toBe('tasks.create')
   expect(writes[0].body.input).toBe('验证 Task 创建入口')
   expect(writes[0].body.assignee).toBe('commander')
@@ -140,8 +145,7 @@ test('Overview 滚动、Task Pool 创建与 Agent 直接对话', async ({ page }
   await page.getByRole('tab', { name: 'AGENT CHAT' }).click()
   await page.getByLabel('给 COMMANDER 的消息').fill('请检查当前 Fleet 状态')
   await page.getByLabel('给 COMMANDER 的消息').press('Control+Enter')
-  await expect(page.getByRole('alertdialog')).toBeVisible()
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   expect(writes[1].operation_id).toBe('threads.create')
   expect(writes[1].body.assistant_id).toBe('commander')
   await expect(page.getByText('收到，我会继续处理。')).toBeVisible()
@@ -155,12 +159,12 @@ test('未分配 Task 完成指派、OUTPUT、退回与采纳全流程', async ({
   await page.locator('.pool-label').click({ force: true })
   await page.getByLabel('新 Task 指令').fill('完成一次标准 Task 流程')
   await page.getByLabel('新 Task 指令').press('Control+Enter')
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
 
   await expect(page.getByText('ASSIGN AGENT / START EXECUTION')).toBeVisible()
   await page.getByLabel('领取 Task 的 Agent').selectOption('researcher')
   await page.getByRole('button', { name: '检查并指派 Agent' }).click()
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect(page.getByText('新 Task OUTPUT', { exact: true })).toBeVisible()
   expect(writes[1].operation_id).toBe('loops.claim')
   expect(writes[1].body.claimant).toBe('researcher')
@@ -168,14 +172,11 @@ test('未分配 Task 完成指派、OUTPUT、退回与采纳全流程', async ({
   await page.getByRole('button', { name: '退回', exact: true }).click()
   await page.getByLabel('退回意见').fill('请补充风险数据')
   await page.getByRole('button', { name: '检查并确认退回' }).click()
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   expect(writes[2].operation_id).toBe('loops.return')
   expect(writes[2].body.comment).toBe('请补充风险数据')
-  await expect(page.getByRole('alertdialog')).toHaveCount(0)
 
   await page.getByRole('button', { name: '采纳', exact: true }).click()
-  await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 15000 })
-  await page.getByRole('button', { name: '确认执行', exact: true }).click()
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect.poll(() => writes.length).toBe(4)
   expect(writes[3].operation_id).toBe('tasks.accept')

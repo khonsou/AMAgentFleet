@@ -44,7 +44,7 @@ npm run check:stack
 - 构建成功、单元测试通过或 Vite 页面能打开，都不能证明完整环境可运行。
 - 验收至少覆盖：首页 Task API 200、Registry Agent 列表、Thread 列表、Settings、Playground Agent 数量、Task → Loop → Thread 实际点击，以及操作助手创建／发送／关闭／刷新恢复。
 - 完整在线验收：`bash scripts/test_fleet_ops_all.sh`；离线回归：`bash scripts/test_fleet_ops_all.sh --offline`。
-- 操作助手写操作需要统一确认。确认框层级必须高于浮窗，否则按钮会被遮挡；当前固定为 `z-index: 1000/1001`，并由桌面和移动浏览器用例覆盖。
+- 只有高风险操作需要额外确认，普通 Agent 消息直接发送。高风险确认后立即关闭弹窗，后台继续执行，不等待 Agent 回复。确认框层级必须高于浮窗，当前固定为 `z-index: 1000/1001`，并由桌面、移动端和慢响应用例覆盖（ADR-0033）。
 - 测试结束后如果只停止后端而留下 Vite，页面会再次出现全页失败。重新通过完整预览入口或 `npm run dev` 启动，而不是只恢复前端。
 
 相关回归位于 `console/frontend/src/protocol/client.test.ts`（空错误体与网络失败提示）和 `console/frontend/e2e/fleet-ops-widget.spec.ts`（操作助手完整交互）。

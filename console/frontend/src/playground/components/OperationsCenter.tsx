@@ -44,10 +44,10 @@ export default function OperationsCenter({ onClose }: { onClose: () => void }) {
   return <>
     <div className="drawer-top"><span className="drawer-kicker">FLEET OPERATIONS PROTOCOL</span><button className="drawer-close" onClick={onClose} aria-label="关闭操作中心">×</button></div>
     <h2>Operations Center</h2>
-    <p className="drawer-subtitle">Console、Agent 与 Playground 共用同一份 operation 清单。写操作会先展示参数并要求明确确认。</p>
+    <p className="drawer-subtitle">Console、Agent 与 Playground 共用同一份 operation 清单。普通写操作直接执行，高风险操作需额外确认。</p>
     {!selected ? <>
       <input className="operation-search" aria-label="搜索操作" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="搜索 tasks、agents、models…" />
-      <div className="operation-grid">{operations.map((operation) => <button key={operation.id} className="operation-card" onClick={() => select(operation)}><b>{operation.id}</b><small>{operation.description}</small><small>{operation.confirmation === 'human_only' ? 'HUMAN ONLY' : operation.write ? 'WRITE / CONFIRM' : 'READ'}</small></button>)}</div>
+      <div className="operation-grid">{operations.map((operation) => <button key={operation.id} className="operation-card" onClick={() => select(operation)}><b>{operation.id}</b><small>{operation.description}</small><small>{operation.confirmation === 'human_only' ? 'HUMAN ONLY' : operation.confirmation === 'high_risk' ? 'HIGH RISK / CONFIRM' : operation.write ? 'WRITE' : 'READ'}</small></button>)}</div>
     </> : <>
       <button className="text-action" onClick={() => setSelected(null)}>← ALL OPERATIONS</button>
       <section className="drawer-section"><h3>{selected.id} / {selected.surface}</h3><p className="drawer-subtitle">{selected.description}</p></section>
@@ -55,7 +55,7 @@ export default function OperationsCenter({ onClose }: { onClose: () => void }) {
         <label>PATH PARAMS / JSON<textarea value={pathText} onChange={(event) => setPathText(event.target.value)} /></label>
         <label>QUERY / JSON<textarea value={queryText} onChange={(event) => setQueryText(event.target.value)} /></label>
         <label>BODY / JSON<textarea value={bodyText} onChange={(event) => setBodyText(event.target.value)} /></label>
-        <button className="drawer-action" onClick={() => void run()} disabled={busy}>{selected.id === 'threads.artifact' ? '下载产物' : selected.write ? '检查参数并确认执行' : '执行读取'}</button>
+        <button className="drawer-action" onClick={() => void run()} disabled={busy}>{selected.id === 'threads.artifact' ? '下载产物' : selected.confirmation === 'high_risk' || selected.confirmation === 'human_only' ? '检查参数并确认执行' : selected.write ? '执行写操作' : '执行读取'}</button>
       </div>
       {error && <p role="alert" className="operation-error">{error}</p>}
       {result !== null && <details className="drawer-section" open={selected.confirmation === 'human_only'}><summary className="drawer-kicker">OPERATION RESULT</summary><pre className={`operation-json ${selected.confirmation === 'human_only' ? 'sensitive-result' : ''}`}>{JSON.stringify(result, null, 2)}</pre></details>}

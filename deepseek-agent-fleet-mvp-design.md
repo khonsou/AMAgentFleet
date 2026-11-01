@@ -375,7 +375,7 @@ ADR-0010"3 个并行 loop"措辞澄清为"终身累计 ≤3 个 agent loop"
 
 全局浮窗固定连接系统内置 `fleet-ops-01`，其 Registry 配置和系统 PAT 不允许经日常管理入口修改、停止、删除、吊销或降权；版本化部署与人工确认轮换是仅有的维护路径。浮窗不自动回退到 `lead_agent`。
 
-本地执行代理与第三方 Agent 统一使用 PAT／FAP 鉴权，Agent 名称不再是授权依据。原始系统 PAT 只存服务端 Vault 密文，由控制面执行代理解密并注入 Authorization；Runner 只提交 operation ID 和参数，不能接触 token。operation ID 白名单、写操作明确确认、human-only 与 secrets 隔离继续生效。
+本地执行代理与第三方 Agent 统一使用 PAT／FAP 鉴权，Agent 名称不再是授权依据。原始系统 PAT 只存服务端 Vault 密文，由控制面执行代理解密并注入 Authorization；Runner 只提交 operation ID 和参数，不能接触 token。operation ID 白名单、写操作幂等校验、human-only 与 secrets 隔离继续生效；GUI 按 ADR-0033 只让高风险操作弹确认，确认后立即关闭并后台执行。
 
 ### 7.11 统一协议客户端与 Playground（2026-10-31，ADR-0031）
 
@@ -386,6 +386,10 @@ FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户�
 内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。Thread／Run 的 FAP operation ID 和路径保持不变，统一由 Control Plane 的稳定 Runtime surface 提供；Console 旧端点只做兼容代理，不再直读 DeerFlow 表，SSE 暂保留原生兼容通道。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
 
 第二套参考实现 `DeepSeekThinAdapter` 仅经 OpenAI 兼容 `/chat/completions` 调用 DeepSeek，不使用专有 SDK，不承载任意工具出口。其进程内状态用于测试环境垂直切片，支持 Agent 注册、Run、消息历史、基础观测和 requeue；不支持 Checkpoint resume、SSE、取消、反馈、产物、Managed Models、旧 cron 或 subagent 工具编排。`GET /api/runtime/capabilities` 自发现当前 Runtime 与能力，未支持项返回 `capability_not_supported`，不得伪装成功。生产部署默认仍为 DeerFlow，薄 Runner 不构成生产切换授权。
+
+### 7.13 风险分级确认与异步释放界面（2026-11-01，ADR-0033）
+
+GUI 不再对所有写操作弹确认框。普通 Task／Thread 消息由当前动作直接确认，保留 `confirmed: true`、幂等和服务端 actor 校验；只有 `confirmation: high_risk` 的破坏性、凭证或外部连接操作需要额外确认。确认仅表示同意发送命令，弹窗立即关闭，后台继续执行并独立展示结果，不等待 Agent 回复。风险级别统一登记在 `fleet-ops-protocol.json`，不改变 FAP／Agent 工具的写确认语义。
 
 ---
 

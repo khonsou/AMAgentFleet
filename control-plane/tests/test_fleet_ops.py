@@ -66,7 +66,21 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(op["method"], {"GET", "POST", "PUT", "DELETE", "PATCH"})
                 self.assertTrue(op["path"].startswith("/"))
                 self.assertTrue(op["description"])
-                self.assertIn(op.get("confirmation", "standard"), {"standard", "human_only"})
+                self.assertIn(op.get("confirmation", "standard"), {"standard", "high_risk", "human_only"})
+
+    def test_high_risk_operations_are_explicitly_scoped(self):
+        operations = {op["id"]: op for op in load_protocol()["operations"]}
+        expected = {
+            "agents.update", "agents.destroy", "tasks.close", "loops.requeue", "loops.resume",
+            "threads.destroy", "runs.cancel", "mcp.create", "mcp.update", "mcp.destroy",
+            "mcp.render", "pats.revoke",
+        }
+        for operation_id in expected:
+            with self.subTest(operation=operation_id):
+                self.assertEqual(operations[operation_id]["confirmation"], "high_risk")
+        for operation_id in ("tasks.create", "tasks.comment", "tasks.accept", "loops.claim", "loops.deliver", "threads.create", "threads.send"):
+            with self.subTest(operation=operation_id):
+                self.assertNotIn(operations[operation_id].get("confirmation"), {"high_risk", "human_only"})
 
     def test_human_only_state_changes_require_gui_write_confirmation(self):
         operations = {op["id"]: op for op in load_protocol()["operations"]}

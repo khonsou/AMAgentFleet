@@ -67,13 +67,13 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 **改动**
 
 - 通过 App 级 Provider 注册的 `guiExecutor` 写桥迁移 Agent、Task、Loop、Thread、Inbox、MCP、模板、模型和 PAT 写操作，保留既有页面调用签名。
-- 所有写调用经过统一确认与 `Idempotency-Key`；actor 仍由服务端覆盖，不能信任浏览器自报。
+- 所有写调用保留 `confirmed: true` 与 `Idempotency-Key`，actor 仍由服务端覆盖；GUI 按 ADR-0033 只对高风险操作弹确认，确认后立即关闭并后台执行。
 - 校正清单中 human-only 状态变更操作的 `write` 语义，至少覆盖 `models.managed_save`、`pats.issue`、`ops.credential_rotate`；human-only 继续禁止 Agent 执行。
 - `Registry.tsx` 的模板渲染直连改为 `templates.render`。
 
 **验收**
 
-- 未确认不写；重复提交不重复建 Task、Loop、PAT 或配置版本。
+- 高风险操作未确认不写；普通写操作直接发送但保留幂等，重复提交不重复建 Task、Loop、PAT 或配置版本。
 - DAO 身份、source／actor 审计、409 冲突和 429 退避与现有语义一致。
 - PAT、非空 secrets 和系统凭证只走人类表单，秘密不出现在 Thread、日志和审计正文。
 

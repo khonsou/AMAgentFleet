@@ -118,7 +118,7 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
             void send().catch((reason) => setError(String(reason)))
           }
         }} placeholder="输入指导、评论或交付要求…" />
-        <div className="composer-hint">Ctrl / ⌘ + Enter 发送；写操作会先展示确认窗口。</div>
+        <div className="composer-hint">Ctrl / ⌘ + Enter 发送；仅高风险操作需要额外确认。</div>
         <button className="drawer-action" onClick={() => void send().catch((reason) => setError(String(reason)))} disabled={busy || !input.trim()}>{busy ? '执行中…' : '确认并发送'}</button>
       </div>
     </>}

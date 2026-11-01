@@ -43,7 +43,7 @@ cron 的创建、修改与删除通过 Agent 完整 YAML 的 `triggers.cron` 完
 1. **实体语义**：Agent YAML 是定义；Task 是业务与验收实例；Loop 是执行单元；Thread 是 Agent 运行会话；Run 是一次图执行。
 2. **统一任务模型**：业务执行仍走 Fleet Task／Loop，交付必须进入验收；操作助手聊天本身不创建业务 Task。
 3. **读操作**：`write` 缺省为 `false`，可直接执行。
-4. **写操作**：`write: true`，必须先向用户展示动作和关键参数并获得明确确认，再带 `confirmed: true` 调用。
+4. **写操作**：`write: true` 必须携带 `confirmed: true` 与幂等键。普通写操作由用户当前动作直接确认，不额外弹窗；`confirmation: high_risk` 的破坏性、凭证或外部连接操作必须先展示动作和关键参数并明确确认。确认后立即关闭弹窗，后台继续执行，不等待 Agent 返回（ADR-0033）。
 5. **秘密边界**：`confirmation: human_only` 的操作由人前往页面完成；含非空 `secrets` 的 MCP 请求同样不得经 Agent 执行。PAT token、业务 token 和密钥不得写入 Thread、文件、日志或审计正文。
 6. **幂等与冲突**：外部 FAP 写请求携带唯一 `Idempotency-Key`；409 表示状态冲突，应重读资源而非盲目重试；429 按 `retry_after` 退避。
 7. **不猜测**：ID、状态和配置必须来自实际读取。协议没有登记的操作不得绕过执行器访问。
