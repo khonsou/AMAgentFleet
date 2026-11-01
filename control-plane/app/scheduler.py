@@ -17,9 +17,10 @@ import httpx
 from croniter import croniter
 from zoneinfo import ZoneInfo
 
-from .db import GATEWAY, audit, pool
+from .db import audit, pool
 from .dispatcher import enqueue_loop_run
 from .registry import RegistryError, load_all_yaml
+from .runtime import get_runtime
 
 logger = logging.getLogger("fleet.scheduler")
 
@@ -49,19 +50,17 @@ def _cron_specs(doc: dict) -> list[dict]:
 
 
 async def _retire_gateway_crons() -> int:
-    """删除网关侧 fleet:* scheduled tasks（池化前遗留），返回删除数。"""
+    """由当前 Runtime 清理池化前遗留的 fleet:* scheduled tasks。"""
     global _retired_gateway_crons
     if _retired_gateway_crons:
         return 0
     _retired_gateway_crons = True
     n = 0
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-        tasks = (await client.get("/api/scheduled-tasks")).json()
-        for t in tasks:
-            if str(t.get("title", "")).startswith("fleet:"):
-                r = await client.delete(f"/api/scheduled-tasks/{t['id']}")
-                if r.status_code in (200, 204):
-                    n += 1
+    runtime = get_runtime()
+    for task in await runtime.list_legacy_crons(client_factory=httpx.AsyncClient):
+        if str(task.get("title", "")).startswith("fleet:"):
+            if await runtime.delete_legacy_cron(task["id"], client_factory=httpx.AsyncClient):
+                n += 1
     if n:
         logger.info("retired %s gateway fleet cron(s) (pool-ified)", n)
     return n

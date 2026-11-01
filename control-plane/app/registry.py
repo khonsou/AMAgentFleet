@@ -1,13 +1,12 @@
-"""Registry：agents/ YAML（一等公民）↔ fleet_agents 元数据 ↔ 网关 agents_api。
+"""Registry：agents/ YAML（一等公民）↔ fleet_agents 元数据 ↔ RuntimeAdapter。
 
 YAML 格式（apiVersion: agentfleet/v1）：
     metadata: name/owner/costCenter
     triggers: cron/im/web/agentCallable（平台调度语义）
     identity/budget: 平台侧护栏字段（P3 生效，先落库）
-    spec: deerflow.custom-agent v1 导出包（spike 0002 验证的载体）
+    spec: 当前 Runtime 的 Agent 配置包；既有 DeerFlow 格式保持兼容
 
-部署动作 = 把 spec 经 POST /api/agents/import 导入网关（幂等：同名覆盖语义
-以网关为准，见 spike 0002 遗留项 1）。
+部署动作由当前 Runtime 幂等执行，原生包格式与 API 路径不进入核心层。
 """
 
 from __future__ import annotations
@@ -21,7 +20,8 @@ from typing import Any
 import httpx
 import yaml
 
-from .db import AGENTS_DIR, GATEWAY, audit, pool
+from .db import AGENTS_DIR, audit, pool
+from .runtime import RuntimeServiceError, get_runtime
 
 
 class RegistryError(Exception):
@@ -91,32 +91,26 @@ def sha256_doc(doc: dict[str, Any]) -> str:
 
 
 def _gateway_package(doc: dict[str, Any]) -> dict[str, Any]:
-    spec = doc.get("spec") or {}
-    if spec.get("format") != "deerflow.custom-agent" or spec.get("version") != 1:
-        raise RegistryError(422, "spec must be a deerflow.custom-agent v1 package")
-    return spec
+    """兼容内部调用方；具体 Agent 包格式由当前 Runtime 校验。"""
+    try:
+        return get_runtime().agent_package(doc)
+    except RuntimeServiceError as exc:
+        raise RegistryError(exc.status, str(exc)) from exc
 
 
 async def sync_to_gateway(name: str, doc: dict[str, Any]) -> None:
-    """把 spec 导入网关 agents_api（单服务身份 = 单一组织作用域，spike 0002）。
-
-    幂等：import 遇 409（已存在）时回落 PUT 全量更新（spike 0002 遗留项 1 的
-    工程解：部署动作可重放）。
-    """
-    pkg = _gateway_package(doc)
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-        r = await client.post("/api/agents/import", json=pkg)
-        if r.status_code == 409:
-            r = await client.put(f"/api/agents/{name}", json=pkg["agent"])
-        if r.status_code not in (200, 201):
-            raise RegistryError(502, f"gateway import failed: {r.status_code} {r.text[:300]}")
+    """通过当前 Runtime 幂等部署 Agent，保留旧函数名作为 Registry 内部边界。"""
+    try:
+        await get_runtime().deploy_agent(name, doc, client_factory=httpx.AsyncClient)
+    except RuntimeServiceError as exc:
+        raise RegistryError(exc.status, str(exc)) from exc
 
 
 async def remove_from_gateway(name: str) -> None:
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-        r = await client.delete(f"/api/agents/{name}")
-        if r.status_code not in (204, 404):
-            raise RegistryError(502, f"gateway delete failed: {r.status_code} {r.text[:300]}")
+    try:
+        await get_runtime().remove_agent(name, client_factory=httpx.AsyncClient)
+    except RuntimeServiceError as exc:
+        raise RegistryError(exc.status, str(exc)) from exc
 
 
 async def upsert_registry_row(name: str, doc: dict[str, Any]) -> None:

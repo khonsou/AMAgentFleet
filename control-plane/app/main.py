@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
 from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation
-from .db import GATEWAY, audit, init_db, pool
+from .db import audit, init_db, pool
+from .runtime import get_runtime
 
 log = logging.getLogger("fleet.control-plane")
 
@@ -171,26 +172,20 @@ async def _set_agent_status(name: str, status: str) -> None:
 
 
 async def _cron_tasks_of(name: str) -> list[dict]:
-    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-        tasks = (await client.get("/api/scheduled-tasks")).json()
+    tasks = await get_runtime().list_legacy_crons(client_factory=httpx.AsyncClient)
     return [t for t in tasks
             if t.get("assistant_id") == name and t.get("title", "").startswith("fleet:")]
 
 
 @app.post("/api/agents/{name}/stop")
 async def stop_agent(name: str, actor: str = "admin") -> dict[str, Any]:
-    """停止 = 暂停该 agent 的全部 fleet cron + 状态置 hibernated。
-
-    之后新的 dispatch/inbox 唤醒会被拒绝（dispatcher 校验状态），
-    已跑任务不受影响；配置可继续修改，start 后恢复。
-    """
+    """停止 = 暂停该 agent 的全部 fleet cron + 状态置 hibernated。"""
     _assert_agent_mutable(name)
     paused = []
-    for t in await _cron_tasks_of(name):
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-            r = await client.post(f"/api/scheduled-tasks/{t['id']}/pause")
-        if r.status_code == 200:
-            paused.append(t["title"])
+    runtime = get_runtime()
+    for task in await _cron_tasks_of(name):
+        if await runtime.pause_legacy_cron(task["id"], client_factory=httpx.AsyncClient):
+            paused.append(task["title"])
     await _set_agent_status(name, "hibernated")
     await audit("agent.stopped", agent_name=name, actor=actor, detail={"paused_crons": paused})
     return {"status": "hibernated", "paused_crons": paused}
@@ -198,20 +193,17 @@ async def stop_agent(name: str, actor: str = "admin") -> dict[str, Any]:
 
 @app.post("/api/agents/{name}/start")
 async def start_agent(name: str, actor: str = "admin") -> dict[str, Any]:
-    """拉起 = 恢复 fleet cron + 状态回 registered（幂等，配置为最新已部署版本）。
-
-    配置已销毁（YAML 不存在）时拒绝：拉起不能凭空造出配置，必须重新部署 YAML。"""
+    """拉起 = 恢复 fleet cron + 状态回 registered（幂等，使用最新配置）。"""
     _assert_agent_mutable(name)
     try:
         registry.load_yaml_doc(name)
     except registry.RegistryError as exc:
         raise _reg_err(exc)
     resumed = []
-    for t in await _cron_tasks_of(name):
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=30, trust_env=False) as client:
-            r = await client.post(f"/api/scheduled-tasks/{t['id']}/resume")
-        if r.status_code == 200:
-            resumed.append(t["title"])
+    runtime = get_runtime()
+    for task in await _cron_tasks_of(name):
+        if await runtime.resume_legacy_cron(task["id"], client_factory=httpx.AsyncClient):
+            resumed.append(task["title"])
     await _set_agent_status(name, "registered")
     await audit("agent.started", agent_name=name, actor=actor, detail={"resumed_crons": resumed})
     return {"status": "registered", "resumed_crons": resumed}

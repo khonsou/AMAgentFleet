@@ -100,17 +100,20 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ### B1．先冻结 DeerFlow 行为契约
 
+**状态**：✅ 已完成（2026-11-01）
+
 **前置**：ADR-0032 已接受；不在本任务选择或接入第二套 Harness。
 
 **改动**
 
 - 新增可复用 Runtime Contract Tests，记录当前 Agent 部署、Run 请求／结果、消息、错误、恢复引用、Token、产物和能力行为。
-- 将 `threads.send`、Loop 退回续跑、递归上限恢复、取消和模型 Profile 解析纳入对照夹具。
-- 对 Console 当前 DeerFlow 表查询结果保存运行时无关的预期 DTO，作为后续观测迁移对照。
+- 将 `threads.send`、Loop 退回续跑、递归上限恢复、取消和模型 Profile 解析纳入对照夹具；Console 观测 DTO 对照在 B3 落地。
 
 **验收**：契约测试在当前代码上全绿；任何语义不明处先补文档，不在重构时顺手改行为。
 
 ### B2．引入 Adapter 与 DeerFlowAdapter，默认零切换
+
+**状态**：✅ 已完成（2026-11-01）
 
 **改动**
 

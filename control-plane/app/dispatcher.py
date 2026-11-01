@@ -22,8 +22,9 @@ from datetime import datetime, timezone
 import asyncpg
 import httpx
 
-from .db import GATEWAY, audit, pool
+from .db import audit, pool
 from .recovery import classify_failure, latest_checkpoint
+from .runtime import RunRequest, RuntimeServiceError, get_runtime
 
 logger = logging.getLogger("fleet.dispatcher")
 
@@ -143,44 +144,29 @@ async def _run_loop(loop_id: int) -> None:
             await conn.execute(
                 "UPDATE fleet_task_loops SET thread_id=$2 WHERE id=$1", loop_id, thread_id)
     resuming = recovery_action == "resume" and bool(loop["last_checkpoint_id"])
-    body: dict = {
-        "assistant_id": agent,
-        # checkpoint 续跑不重复原始任务；只追加恢复指令，避免原样重放失控工具循环。
-        "input": {"messages": [{"role": "user", "content": (
-            RECOVERY_INSTRUCTION if resuming else input_text
-        )}]},
-        "on_disconnect": "continue",
-        "metadata": {"fleet_loop_id": loop_id, "fleet_recovery": recovery_action or "initial"},
-        # subagent_enabled：fleet run 默认开 in-thread subagent（task 工具）。
-        # per-agent 开关 = agent YAML allowed_subagents（[] = 硬拒，见 DeerFlow
-        # lead_agent 解析：subagent_enabled = requested and allowed != []）。
-        "config": {
-            "recursion_limit": RUN_RECURSION_LIMIT,
-            "configurable": {"thread_id": thread_id, "subagent_enabled": True},
-        },
-    }
-    # ADR-0028：Loop 创建时已解析并锁定 Profile；旧数据 NULL 保持 Gateway 原默认。
-    if loop.get("model_profile"):
-        body["context"] = {"model_name": loop["model_profile"]}
-    if resuming:
-        body["checkpoint_id"] = loop["last_checkpoint_id"]
+    request = RunRequest(
+        agent_name=agent,
+        thread_id=thread_id,
+        loop_id=loop_id,
+        input_text=input_text,
+        model_profile=loop.get("model_profile"),
+        recovery_action=recovery_action,
+        checkpoint_ref=loop.get("last_checkpoint_id"),
+        recursion_limit=RUN_RECURSION_LIMIT,
+        subagent_enabled=True,
+    )
 
     heartbeat = asyncio.create_task(_heartbeat(loop_id))
     try:
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=RUN_TIMEOUT + 60, trust_env=False) as client:
-            r = await client.post("/api/runs/wait", json=body)
-        if r.status_code != 200:
-            error = f"gateway {r.status_code}: {r.text[:300]}"
-            await _fail_loop(loop_id, error, classify_failure(error, status_code=r.status_code), thread_id)
-            return
-        result = r.json()
-        if result.get("status") == "error":
-            error = str(result.get("error"))[:500]
-            await _fail_loop(loop_id, error, classify_failure(error), thread_id)
-            return
-        tokens = _extract_tokens(result)
-        preview = _extract_preview(result)
-        artifacts = _extract_artifacts(result, thread_id)
+        runtime = get_runtime()
+        execute = runtime.resume_run if resuming else runtime.execute_run
+        result = await execute(
+            request, client_factory=httpx.AsyncClient,
+            recovery_instruction=RECOVERY_INSTRUCTION,
+        )
+        tokens = result.tokens
+        preview = result.text
+        artifacts = _extract_artifacts(result.artifacts, thread_id)
         if artifacts:
             preview = (preview or "") + "\n\n📎 产物：\n" + "\n".join(f"- {a}" for a in artifacts)
         # 交付自动捕获 → task 入 review。状态守卫放在 UPDATE 内，避免
@@ -196,6 +182,9 @@ async def _run_loop(loop_id: int) -> None:
         await audit("loop.completed", agent_name=agent, tokens=tokens,
                     detail={"loop_id": loop_id, "task_id": task_id, "thread_id": thread_id,
                             "resumed": resuming, "recursion_limit": RUN_RECURSION_LIMIT})
+    except RuntimeServiceError as exc:
+        error = str(exc)[:500]
+        await _fail_loop(loop_id, error, exc.kind, thread_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("loop run failed: %s", loop_id)
         error = str(exc)[:500]
@@ -282,17 +271,6 @@ async def _fail_loop(loop_id: int, error: str, failure_kind: str = "permanent",
     await _schedule_recovery(loop_id, row)
 
 
-def _extract_tokens(result: dict) -> int | None:
-    total, found = 0, False
-    for msg in result.get("messages") or []:
-        rm = msg.get("response_metadata") or {}
-        usage = rm.get("token_usage") or rm.get("usage") or {}
-        if usage.get("total_tokens"):
-            total += usage["total_tokens"]
-            found = True
-    return total if found else None
-
-
 def _extract_thread_id(result: dict) -> str | None:
     td = result.get("thread_data") or {}
     for key in ("workspace_path", "uploads_path"):
@@ -302,37 +280,20 @@ def _extract_thread_id(result: dict) -> str | None:
     return None
 
 
-def _extract_artifacts(result: dict, thread_id: str | None) -> list[str]:
-    """产物链接：agent 经 present_files 呈现的文件 → Console artifacts 代理地址。
-
-    默认同源相对路径，本地与阿里云均不写死主机；需要独立下载域名时可用
-    FLEET_ARTIFACT_LINK_BASE 显式覆盖。
-    """
+def _extract_artifacts(result: dict | list[str], thread_id: str | None) -> list[str]:
+    """把 Runtime 返回的产物路径转换为 Console 同源下载链接。"""
     from urllib.parse import quote
     base = os.environ.get("FLEET_ARTIFACT_LINK_BASE", "").rstrip("/")
-    arts = result.get("artifacts") or []
+    arts = result.get("artifacts") or [] if isinstance(result, dict) else result
     links = []
     for p in arts:
         name = str(p).rsplit("/", 1)[-1]
         if thread_id:
-            # 网关 artifacts 是路径段路由（无前导斜杠）：/artifacts/mnt/user-data/outputs/x.md
             seg = quote(str(p).lstrip("/"), safe="/")
             links.append(f"{name}: {base}/api/console/threads/{thread_id}/artifacts/{seg}")
         else:
             links.append(name)
     return links
-
-
-def _extract_preview(result: dict, limit: int = 3900) -> str | None:
-    for msg in reversed(result.get("messages") or []):
-        if msg.get("type") != "ai":
-            continue
-        c = msg.get("content")
-        if isinstance(c, list):
-            c = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
-        if isinstance(c, str) and c.strip():
-            return c.strip()[:limit]
-    return None
 
 
 class RecoveryError(Exception):

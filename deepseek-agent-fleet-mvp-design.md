@@ -381,6 +381,10 @@ ADR-0010"3 个并行 loop"措辞澄清为"终身累计 ≤3 个 agent loop"
 
 FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户端只适配各自既有身份通道，不新增 Playground 特权。Task 群聊通过通用 `tasks.conversation` 只读投影聚合多个 LOOP、Thread、评论与 OUTPUT，不创建新业务实体；写操作仍调用既有 operation。群聊输入默认发给选中的 Agent／LOOP，“全组”只写 Task comment，避免隐式广播收费 RUN。Diorama 3D renderer 与协议客户端解耦，视觉严格沿用团队 review 的 demo。
 
+### 7.12 RuntimeAdapter 与整站冷切换（2026-11-01，ADR-0032）
+
+内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）

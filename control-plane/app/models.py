@@ -10,8 +10,8 @@ from typing import Any
 
 import httpx
 
-from .db import GATEWAY
 from .registry import RegistryError, load_yaml_doc
+from .runtime import RuntimeServiceError, get_runtime
 
 
 class ModelError(Exception):
@@ -21,28 +21,14 @@ class ModelError(Exception):
 
 
 async def list_profiles() -> list[dict[str, Any]]:
-    """读取实时目录（含 Managed Models），不返回 api_key/base_url 等敏感配置。"""
+    """读取当前 Runtime 的实时目录，不返回 api_key/base_url 等敏感配置。"""
     try:
-        async with httpx.AsyncClient(base_url=GATEWAY, timeout=15, trust_env=False) as client:
-            response = await client.get("/api/models")
-    except httpx.HTTPError as exc:
-        raise ModelError(503, "Gateway 模型目录暂不可用") from exc
-    if response.status_code != 200:
-        raise ModelError(502, f"Gateway 模型目录返回 {response.status_code}")
-    models = response.json().get("models") or []
-    if not models:
-        raise ModelError(503, "Gateway 未配置可用模型 Profile")
-    return [
-        {
-            "name": item["name"],
-            "model": item["model"],
-            "display_name": item.get("display_name") or item["name"],
-            "description": item.get("description"),
-            "supports_thinking": bool(item.get("supports_thinking")),
-            "supports_reasoning_effort": bool(item.get("supports_reasoning_effort")),
-        }
-        for item in models
-    ]
+        profiles = await get_runtime().list_model_profiles(client_factory=httpx.AsyncClient)
+    except RuntimeServiceError as exc:
+        raise ModelError(exc.status, str(exc)) from exc
+    if not profiles:
+        raise ModelError(503, "Runtime 未配置可用模型 Profile")
+    return profiles
 
 
 def _agent_policy(agent_name: str) -> tuple[str | None, list[str] | None]:
