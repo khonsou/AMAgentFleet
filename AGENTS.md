@@ -96,6 +96,9 @@ cd control-plane && ../console/backend/.venv/bin/python -m uvicorn app.main:app 
 - 先看 `console/logs/dev.log`：没有本次启动记录，说明预览启动器未进入项目脚本，
   应从最新预览卡片重新启动；有记录再看 gateway / console-backend / control-plane
   对应日志。不要仅凭构建成功判断完整环境可运行。
+- 全页 Task／Agent／Thread／Settings 同时 `Error: null`，优先按“孤立 Vite + 后端未启动”
+  处理，不要逐页改业务代码。运行 `cd console && npm run check:stack`；恢复统一用
+  `cd console && npm run dev`。详细排障见 [local-preview-troubleshooting](docs/dev/local-preview-troubleshooting.md)。
 - 本地健康检查必须绕过代理；Console 的 httpx 本机客户端固定 `trust_env=False`。
   `uv` 使用绝对路径发现，bash 用 `/bin/bash`，避免预览 PATH 与交互 shell 不一致。
 - 停止信号直接交给 Vite PID；各后端只按本次写下的 PID 文件回收。禁止模糊

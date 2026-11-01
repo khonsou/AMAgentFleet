@@ -40,7 +40,7 @@ bash scripts/test_fleet_ops_all.sh
 - **Thread 详情与运行观测**：查看消息流、Runs、Checkpoints、产物和 Token；从 loop 进入工作会话，退回修正复用同一 thread。
 - 架构：`console/backend`（FastAPI:8002，asyncpg 只读 PG + httpx 转发网关）+ `console/frontend`（React+Vite）。
 - 启动：在 `console/` 或 `console/frontend/` 执行 `npm run dev` 均走完整环境（`scripts/dev.sh` 依次拉起 PG→网关:8001→Console 后端:8002→Control Plane:8003→前端，退出全回收）；仅调试 Vite 时在 `console/frontend/` 执行 `npm run dev:vite`。Kimi 预览项目根目录为 `console/frontend/`，CLI host/port 参数会透传给 Vite。
-- 启动排障：统一入口日志为 `console/logs/dev.log`，各服务日志也在该目录。**没有本次启动记录 = 预览启动器未调用项目脚本**，从最新预览卡片重新启动；有记录则按最后一条失败阶段查对应服务日志。`7100/8001/8002/8003` 可用 `lsof -nP -iTCP:<port> -sTCP:LISTEN` 逐个检查；不要用模糊 `pkill -f` 清场。修改控制面后必须重启 8003，Vite 热更新不会更新 Python 进程。
+- 启动排障：统一入口日志为 `console/logs/dev.log`，各服务日志也在该目录。**没有本次启动记录 = 预览启动器未调用项目脚本**，从最新预览卡片重新启动；有记录则按最后一条失败阶段查对应服务日志。`7100/8001/8002/8003` 可用 `lsof -nP -iTCP:<port> -sTCP:LISTEN` 逐个检查；不要用模糊 `pkill -f` 清场。修改控制面后必须重启 8003，Vite 热更新不会更新 Python 进程。全页同时 `Error: null` 时运行 `cd console && npm run check:stack`，详见[本地预览排障](docs/dev/local-preview-troubleshooting.md)。
 - 本机网络：本地健康检查强制 `curl --noproxy '*'`；Console 本机转发使用 `httpx.AsyncClient(trust_env=False)`，避免 shell 代理配置导致 500 / Failed to fetch。不要通过放宽代理或跳过鉴权来掩盖连接问题。
 - 注意：依赖网关 `run_events.backend: db`（spike 期间已从 memory 修正，否则消息只存进程内存，重启即丢）。
 

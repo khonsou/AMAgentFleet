@@ -20,4 +20,16 @@ describe('Shared Protocol Client', () => {
     expect(payload).toMatchObject({ operation_id: 'tasks.comment', confirmed: true, idempotency_key: 'gui-1' })
     expect(payload.path_params.task_id).toBe(11)
   })
+
+  it('空错误响应明确显示 HTTP 状态和后端端口', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('null', { status: 502 }))))
+    await expect(executeOperation('tasks.list')).rejects.toThrow('HTTP 502')
+    await expect(executeOperation('tasks.list')).rejects.toThrow('8001/8002/8003')
+  })
+
+  it('网络连接失败时提示不能只启动 Vite', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+    await expect(getProtocol(true)).rejects.toThrow('8001/8002/8003')
+    await expect(getProtocol(true)).rejects.toThrow('不能只有前端 Vite')
+  })
 })

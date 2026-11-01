@@ -38,12 +38,22 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   const session = getOauthSession()
   if (session) headers.set('Authorization', `Bearer ${session.accessToken}`)
-  const response = await fetch(path, { ...init, headers })
+  let response: Response
+  try {
+    response = await fetch(path, { ...init, headers })
+  } catch (error) {
+    throw new Error('Fleet 后端连接失败：请确认完整开发环境已启动（8001/8002/8003），不能只有前端 Vite。', { cause: error })
+  }
   if (response.status === 401) notifySessionExpired()
   const text = await response.text()
   let payload: unknown = null
   try { payload = text ? JSON.parse(text) : null } catch { payload = text }
-  if (!response.ok) throw new Error(typeof payload === 'string' ? payload : JSON.stringify(payload))
+  if (!response.ok) {
+    const detail = payload === null || payload === undefined || payload === ''
+      ? `Fleet 后端暂不可用（HTTP ${response.status}），请确认 8001/8002/8003 已启动。`
+      : typeof payload === 'string' ? payload : JSON.stringify(payload)
+    throw new Error(detail)
+  }
   return payload as T
 }
 
@@ -64,7 +74,9 @@ export async function executeOperation<T = unknown>(operationId: string, request
     body: JSON.stringify({ operation_id: operationId, ...request }),
   })
   if (envelope.status >= 400) {
-    const detail = typeof envelope.result === 'string' ? envelope.result : JSON.stringify(envelope.result)
+    const detail = envelope.result === null || envelope.result === undefined || envelope.result === ''
+      ? `操作 ${operationId} 失败（HTTP ${envelope.status}），请检查 Fleet 后端状态。`
+      : typeof envelope.result === 'string' ? envelope.result : JSON.stringify(envelope.result)
     throw new Error(`${envelope.status}: ${detail}`)
   }
   return envelope
