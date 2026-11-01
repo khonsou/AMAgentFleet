@@ -301,7 +301,7 @@ export default function Home() {
     <div className="mx-auto max-w-7xl px-7 pb-20 pt-7">
       <header className="mb-6 flex items-end justify-between">
         <div>
-          <div className="silk">MODULE <b>01</b> / FLEET BOARD</div>
+          <div className="silk">MODULE <b>01</b> / TASK BOARD</div>
           <h1 className="mt-1.5 text-2xl font-semibold tracking-tight">Task 看板</h1>
         </div>
         <div className="silk">15S&nbsp;REFRESH</div>

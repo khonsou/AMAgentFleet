@@ -48,7 +48,7 @@ async function mockConsole(page: Page) {
 
 test('首页浮窗真实渲染、发送、关闭及刷新恢复', async ({ page }) => {
   const mock = await mockConsole(page)
-  await page.goto('/')
+  await page.goto('/tasks')
   await page.getByRole('button', { name: '打开舰队操作助手' }).click()
   await expect(page.getByRole('region', { name: '舰队操作助手' })).toBeVisible()
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
@@ -75,7 +75,7 @@ test('首页浮窗真实渲染、发送、关闭及刷新恢复', async ({ page 
 test('移动视口下浮窗不溢出且仍可操作', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await mockConsole(page)
-  await page.goto('/')
+  await page.goto('/tasks')
   await page.getByRole('button', { name: '打开舰队操作助手' }).click()
   const panel = page.getByRole('region', { name: '舰队操作助手' })
   await expect(panel).toBeVisible()

@@ -44,7 +44,7 @@ afterEach(cleanup)
 
 describe('全局舰队操作助手', () => {
   it.each([
-    '/',
+    '/tasks',
     '/registry',
     '/threads',
     '/settings',
@@ -56,10 +56,16 @@ describe('全局舰队操作助手', () => {
     expect(screen.getByRole('button', { name: '打开舰队操作助手' })).toBeInTheDocument()
   })
 
-  it('Playground 使用自己的 Operations Center，不叠加旧浮窗', async () => {
-    renderAt('/playground')
+  it.each(['/', '/playground'])('在 %s 使用 Playground 自己的 Operations Center，不叠加旧浮窗', async (route) => {
+    renderAt(route)
     expect(await screen.findByText('Playground page')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '打开舰队操作助手' })).toBeNull()
+  })
+
+  it('/fleet 保留 Task Board 兼容入口', () => {
+    renderAt('/fleet')
+    expect(screen.getByText('Fleet page')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开舰队操作助手' })).toBeInTheDocument()
   })
 
   it('切换页面时保持浮窗展开状态和同一个持久 Thread', async () => {

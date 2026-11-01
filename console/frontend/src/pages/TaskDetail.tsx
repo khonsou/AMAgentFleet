@@ -131,8 +131,8 @@ export default function TaskDetailPage() {
   return (
     <div className="mx-auto max-w-4xl px-7 pb-20 pt-7">
       <div className="mb-6">
-        <Link to="/" className="link-console font-mono text-xs">← FLEET BOARD</Link>
-        <div className="silk mt-2">MODULE&nbsp;01&nbsp;/&nbsp;FLEET&nbsp;BOARD</div>
+        <Link to="/tasks" className="link-console font-mono text-xs">← TASK BOARD</Link>
+        <div className="silk mt-2">MODULE&nbsp;01&nbsp;/&nbsp;TASK&nbsp;BOARD</div>
         <div className="mt-2 font-mono text-xs text-ink-3">
           {t?.parent_task_id ? (
             <>

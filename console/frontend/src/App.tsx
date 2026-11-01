@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Route, Routes, useLocation } from 'react-router'
+import { Navigate, Route, Routes, useLocation } from 'react-router'
 import Rack from './components/console/Rack'
 import AuthGate from './components/console/AuthGate'
 import Home from './pages/Home'
@@ -17,6 +17,7 @@ const PlaygroundPage = lazy(() => import('./playground/Playground'))
 
 export default function App() {
   const location = useLocation()
+  const isPlayground = location.pathname === '/' || location.pathname.startsWith('/playground')
   return (
     <div className="min-h-screen bg-chassis text-ink">
       <Rack />
@@ -27,8 +28,10 @@ export default function App() {
           <AuthGate>
             <OperationProvider>
               <Routes>
-                <Route path="/" element={<Home />} />
+                <Route path="/" element={<Suspense fallback={<div className="p-7 font-mono text-xs">Loading Playground…</div>}><PlaygroundPage /></Suspense>} />
                 <Route path="/playground" element={<Suspense fallback={<div className="p-7 font-mono text-xs">Loading Playground…</div>}><PlaygroundPage /></Suspense>} />
+                <Route path="/fleet" element={<Navigate to="/tasks" replace />} />
+                <Route path="/tasks" element={<Home />} />
                 <Route path="/registry" element={<RegistryPage />} />
                 <Route path="/threads" element={<ThreadsPage />} />
                 <Route path="/agents/:name" element={<AgentDetailPage />} />
@@ -36,7 +39,7 @@ export default function App() {
                 <Route path="/threads/:tid" element={<ThreadDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>
-              {!location.pathname.startsWith('/playground') && <FleetOpsWidget />}
+              {!isPlayground && <FleetOpsWidget />}
             </OperationProvider>
           </AuthGate>
         } />

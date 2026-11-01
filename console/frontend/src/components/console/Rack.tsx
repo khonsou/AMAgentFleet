@@ -6,8 +6,8 @@ import { Led } from './Status'
 /** 机架顶栏：四个模块的切换排 + 自动刷新指示 + 时钟。
  *  视觉隐喻：机架式仪器的模块选择排，当前模块亮信号橙 LED。 */
 const MODULES = [
-  { to: '/', label: 'FLEET', end: true },
-  { to: '/playground', label: 'PLAYGROUND' },
+  { to: '/', label: 'PLAYGROUND', end: true },
+  { to: '/tasks', label: 'TASK BOARD' },
   { to: '/registry', label: 'REGISTRY' },
   { to: '/threads', label: 'THREADS' },
   { to: '/settings', label: 'SETTINGS' },

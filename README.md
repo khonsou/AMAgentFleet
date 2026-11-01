@@ -35,7 +35,8 @@ bash scripts/test_fleet_ops_all.sh
 
 管理界面 MVP，按「Agent 定义」与「任务执行实例」两条线组织：
 
-- **Fleet 任务实例看板**：发起 task instance，查看父子任务树、领取状态与交付验收；实例层级统一为 task → loop → thread。
+- **Playground（工作主页）**：默认路径 `/`（`/playground` 保留别名），用于 Agent 对话、场景观察与 Operations。
+- **Task Board（任务看板）**：路径 `/tasks`，发起 task instance，查看父子任务树、领取状态与交付验收；实例层级统一为 task → loop → thread。旧 `/fleet` 仅作兼容重定向，不再与 Fleet tab／Fleet Board 混称。
 - **Registry / Agent 详情**：管理 Agent Definition（YAML、配置版本、停止/拉起/销毁）；关联 task instances 只是按定义筛选的横向引用，不属于实例 breadcrumb。
 - **Thread 详情与运行观测**：查看消息流、Runs、Checkpoints、产物和 Token；从 loop 进入工作会话，退回修正复用同一 thread。
 - 架构：`console/backend`（FastAPI:8002，asyncpg 只读 PG + httpx 转发网关）+ `console/frontend`（React+Vite）。
