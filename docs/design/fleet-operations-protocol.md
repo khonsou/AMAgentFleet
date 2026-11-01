@@ -47,6 +47,7 @@ cron 的创建、修改与删除通过 Agent 完整 YAML 的 `triggers.cron` 完
 5. **秘密边界**：`confirmation: human_only` 的操作由人前往页面完成；含非空 `secrets` 的 MCP 请求同样不得经 Agent 执行。PAT token、业务 token 和密钥不得写入 Thread、文件、日志或审计正文。
 6. **幂等与冲突**：外部 FAP 写请求携带唯一 `Idempotency-Key`；409 表示状态冲突，应重读资源而非盲目重试；429 按 `retry_after` 退避。
 7. **不猜测**：ID、状态和配置必须来自实际读取。协议没有登记的操作不得绕过执行器访问。
+8. **对话展示**：人类输入立即上屏，Agent 后台执行，发送按钮不因上一条未完成而禁用。首次 Thread 创建去重，服务端消息与乐观消息合并去重（ADR-0034）。
 
 ## 4. 系统操作 Agent 与统一鉴权
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentView, TaskConversation as Conversation } from '../core/types'
+import type { AgentView, ConversationMessage, TaskConversation as Conversation } from '../core/types'
 import { useOperations } from '@/protocol/useOperations'
 import TaskClaimPanel from './TaskClaimPanel'
 
@@ -9,6 +9,8 @@ interface Props {
   onClose: () => void
   onChanged: () => void
 }
+
+function tempId() { return `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}` }
 
 export default function TaskConversation({ taskId, agents, onClose, onChanged }: Props) {
   const { execute, busy } = useOperations()
@@ -24,7 +26,13 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
     try {
       const response = await execute<Conversation>('tasks.conversation', { path_params: { task_id: taskId } })
       const next = response.result
-      setConversation(next)
+      setConversation((current) => {
+        const pending = current?.messages.filter((message) => message.delivery) || []
+        const missing = pending.filter((optimistic) =>
+          !next.messages.some((server) => server.actor === optimistic.actor && server.content === optimistic.content),
+        )
+        return { ...next, messages: [...next.messages, ...missing] }
+      })
       if (!recipientInitialized.current) {
         const preferred = next.participants.find((item) => item.status === 'running' && item.thread_id) || next.participants.find((item) => item.thread_id)
         setRecipient(preferred ? String(preferred.loop_id) : 'group')
@@ -51,19 +59,36 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
     return [...messages, ...outputs].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
   }, [conversation])
 
-  const send = async () => {
+  const send = () => {
     const content = input.trim()
     if (!content || !conversation) return
-    if (recipient === 'group') {
-      await execute('tasks.comment', { path_params: { task_id: taskId }, body: { content, loop_id: null } })
-    } else {
-      const participant = conversation.participants.find((item) => String(item.loop_id) === recipient)
-      if (!participant?.thread_id) throw new Error('当前执行者尚未启动 Thread，请改用全组评论。')
-      await execute('threads.send', { path_params: { tid: participant.thread_id }, body: { content, recursion_limit: 300 } })
+    const optimistic: ConversationMessage = {
+      id: tempId(), kind: 'message', actor: 'human', content,
+      created_at: new Date().toISOString(), delivery: 'sending',
     }
+    setConversation((current) => current ? { ...current, messages: [...current.messages, optimistic] } : current)
     setInput('')
-    await load()
-    onChanged()
+    setError('')
+    void (async () => {
+      try {
+        if (recipient === 'group') {
+          await execute('tasks.comment', { path_params: { task_id: taskId }, body: { content, loop_id: null } })
+        } else {
+          const participant = conversation.participants.find((item) => String(item.loop_id) === recipient)
+          if (!participant?.thread_id) throw new Error('当前执行者尚未启动 Thread，请改用全组评论。')
+          await execute('threads.send', { path_params: { tid: participant.thread_id }, body: { content, recursion_limit: 300 } })
+        }
+        setConversation((current) => current ? { ...current, messages: current.messages.filter((message) => message.id !== optimistic.id) } : current)
+        await load()
+        onChanged()
+      } catch (reason) {
+        setConversation((current) => current ? {
+          ...current,
+          messages: current.messages.map((message) => message.id === optimistic.id ? { ...message, delivery: 'failed' } : message),
+        } : current)
+        setError(String(reason))
+      }
+    })()
   }
 
   const claim = async (agentId: string) => {
@@ -90,7 +115,7 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
   return <>
     <div className="drawer-top"><span className="drawer-kicker">TASK GROUP CHAT / #{taskId}</span><button className="drawer-close" onClick={onClose} aria-label="关闭群聊">×</button></div>
     <h2>{conversation?.task.input || `Task #${taskId}`}</h2>
-    <p className="drawer-subtitle">所有 Agent、subagent 与人都在同一个 Task 群聊中协作；技术执行细节保留在消息来源中。</p>
+    <p className="drawer-subtitle">消息立即上屏，Agent 在后台执行；可以连续发送，无需等待上一条完成。</p>
     {error && <p role="alert" className="operation-error">{error}</p>}
     {!conversation && !error && <p className="drawer-subtitle">正在聚合 Task 对话…</p>}
     {conversation && <>
@@ -101,7 +126,7 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
       </div></section>
       <section className="chat-timeline" aria-live="polite">
         {timeline.map((item) => <article key={item.id} className={`chat-event ${item.timelineKind === 'output' ? 'output' : item.timelineKind === 'subagent' ? 'subagent' : item.actor === 'human' ? 'human' : ''}`}>
-          <b>{item.timelineKind === 'output' ? `OUTPUT · ${item.actor} · ${item.status}` : item.actor}</b>
+          <b>{item.timelineKind === 'output' ? `OUTPUT · ${item.actor} · ${item.status}` : `${item.actor}${'delivery' in item && item.delivery === 'sending' ? ' · SENDING' : 'delivery' in item && item.delivery === 'failed' ? ' · FAILED' : ''}`}</b>
           <div className="chat-event-content">{item.content}</div>
           {item.timelineKind === 'output' && conversation.task.pool_status === 'review' && item.status === 'delivered' && <>
             <div className="output-actions"><button onClick={() => void acceptOutput(item.loop_id)} disabled={busy}>采纳</button><button onClick={() => setReturnTarget(item.loop_id)} disabled={busy}>退回</button></div>
@@ -115,11 +140,11 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
         <textarea aria-label="群聊消息" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
             event.preventDefault()
-            void send().catch((reason) => setError(String(reason)))
+            send()
           }
         }} placeholder="输入指导、评论或交付要求…" />
-        <div className="composer-hint">Ctrl / ⌘ + Enter 发送；仅高风险操作需要额外确认。</div>
-        <button className="drawer-action" onClick={() => void send().catch((reason) => setError(String(reason)))} disabled={busy || !input.trim()}>{busy ? '执行中…' : '确认并发送'}</button>
+        <div className="composer-hint">Ctrl / ⌘ + Enter 立即发送；Agent 后台执行，可继续输入下一条。</div>
+        <button className="drawer-action" onClick={send} disabled={!input.trim()}>发送</button>
       </div>
     </>}
   </>

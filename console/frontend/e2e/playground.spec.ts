@@ -79,7 +79,7 @@ test('真实 3D 场景、普通操作免确认与高风险即时关闭', async (
 
   await page.getByLabel('群聊收件人').selectOption('group')
   await page.getByLabel('群聊消息').fill('请补充风险说明')
-  await page.getByRole('button', { name: '确认并发送' }).click()
+  await page.getByRole('button', { name: '发送' }).click()
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
   expect(writes[0].operation_id).toBe('tasks.comment')
   expect(writes[0].confirmed).toBe(true)
@@ -125,7 +125,7 @@ test('真实 3D 场景、普通操作免确认与高风险即时关闭', async (
 })
 
 test('Overview 滚动、Task Pool 创建与 Agent 直接对话', async ({ page }) => {
-  const writes = await mockProtocol(page)
+  const writes = await mockProtocol(page, 'threads.send')
   await page.goto('/playground')
   await expect(page.locator('.agent-row')).toHaveCount(2)
   const overflow = await page.locator('.overview-panel').evaluate((element) => getComputedStyle(element).overflowY)
@@ -146,9 +146,15 @@ test('Overview 滚动、Task Pool 创建与 Agent 直接对话', async ({ page }
   await page.getByLabel('给 COMMANDER 的消息').fill('请检查当前 Fleet 状态')
   await page.getByLabel('给 COMMANDER 的消息').press('Control+Enter')
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  await expect(page.getByText('请检查当前 Fleet 状态')).toBeVisible()
+  await page.getByLabel('给 COMMANDER 的消息').fill('请继续执行下一步')
+  await page.getByLabel('给 COMMANDER 的消息').press('Control+Enter')
+  await expect(page.getByText('请继续执行下一步')).toBeVisible()
+  expect(writes.completedOperations).not.toContain('threads.send')
   expect(writes[1].operation_id).toBe('threads.create')
   expect(writes[1].body.assistant_id).toBe('commander')
   await expect(page.getByText('收到，我会继续处理。')).toBeVisible()
+  await expect.poll(() => writes.completedOperations).toContain('threads.send')
   expect(writes.agentReads()).toBeGreaterThan(1)
 })
 

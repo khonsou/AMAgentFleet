@@ -58,6 +58,7 @@ export interface ConversationMessage {
   run_id?: string
   seq?: number
   event_type?: string
+  delivery?: 'sending' | 'failed'
 }
 export interface ConversationOutput {
   id: string

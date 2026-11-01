@@ -391,6 +391,8 @@ FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户�
 
 GUI 不再对所有写操作弹确认框。普通 Task／Thread 消息由当前动作直接确认，保留 `confirmed: true`、幂等和服务端 actor 校验；只有 `confirmation: high_risk` 的破坏性、凭证或外部连接操作需要额外确认。确认仅表示同意发送命令，弹窗立即关闭，后台继续执行并独立展示结果，不等待 Agent 回复。风险级别统一登记在 `fleet-ops-protocol.json`，不改变 FAP／Agent 工具的写确认语义。
 
+Bot 对话与 Task 群聊采用 ADR-0034 的乐观消息模型：人类输入立即上屏并清空输入框，发送按钮不因上一条仍在执行而禁用。首次创建复用同一 Promise 区分创建者与后续发送者，避免重复 Thread；服务端快照与乐观消息合并去重，不覆盖发送中或失败消息。
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）
