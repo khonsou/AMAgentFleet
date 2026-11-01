@@ -20,6 +20,7 @@
     {"id":"system.protocol","method":"GET","path":"/api/ops/protocol","surface":"control-plane","description":"Read this complete operations protocol"},
     {"id":"system.openapi","method":"GET","path":"/openapi.json","surface":"control-plane","description":"Read exact Control Plane request and response schemas"},
     {"id":"system.health","method":"GET","path":"/api/health","surface":"control-plane","description":"Check Control Plane health"},
+    {"id":"system.runtime_capabilities","method":"GET","path":"/api/runtime/capabilities","surface":"control-plane","description":"Discover the active Runtime and its supported execution capabilities"},
     {"id":"console.health","method":"GET","path":"/api/console/health","surface":"console","description":"Check Console, database and Gateway health"},
     {"id":"overview.get","method":"GET","path":"/api/console/overview","surface":"control-plane","description":"Read global thread, run and token totals"},
     {"id":"fleet.threads","method":"GET","path":"/api/console/fleet","surface":"control-plane","description":"List Agent runtime threads, status, runs and token usage"},

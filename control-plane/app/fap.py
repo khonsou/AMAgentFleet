@@ -25,15 +25,16 @@ _FEATURE_FLAGS: dict[str, bool] = {
     "pat_auth": False,      # 任务 5（PAT 中间件上线后置 True）
 }
 
-# 基础能力：v0.1.0 已落地（agent-api.md §2 A/B/C/E 域 + D 域网关原生）。
+# 基础能力：Fleet 控制面与稳定 Runtime surface。
 _BASE_CAPABILITIES = [
     "tasks",
     "loops",
-    "threads",           # D 域：网关原生执行面（meta 只宣告实例具备该能力）
+    "threads",           # D 域：Control Plane 稳定 Runtime 执行面
     "agents_registry",
     "scheduled_tasks",
     "feedback",
     "fleet_operations",  # ADR-0017：全量操作协议与默认操作 Agent
+    "runtime_adapter",   # ADR-0032：Runtime 能力自发现
 ]
 
 _FEATURE_CAPABILITIES = {

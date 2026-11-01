@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -56,6 +57,14 @@ class ThreadIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RuntimeApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_capabilities_are_discoverable(self):
+        capabilities = SimpleNamespace(resume=False, stream=False)
+        runtime = type("Runtime", (), {"name": "deepseek-thin", "capabilities": lambda self: capabilities})()
+        with patch("app.runtime_api.get_runtime", return_value=runtime):
+            result = await runtime_api.runtime_capabilities()
+        self.assertEqual(result["runtime"], "deepseek-thin")
+        self.assertFalse(result["capabilities"]["resume"])
+
     async def test_overview_returns_runtime_dto(self):
         runtime = type("Runtime", (), {"get_overview": AsyncMock(return_value={"threads": 3})})()
         with patch("app.runtime_api.get_runtime", return_value=runtime):

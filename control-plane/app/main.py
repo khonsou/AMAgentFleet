@@ -173,7 +173,10 @@ async def _set_agent_status(name: str, status: str) -> None:
 
 
 async def _cron_tasks_of(name: str) -> list[dict]:
-    tasks = await get_runtime().list_legacy_crons(client_factory=httpx.AsyncClient)
+    runtime = get_runtime()
+    if not runtime.capabilities().legacy_crons:
+        return []
+    tasks = await runtime.list_legacy_crons(client_factory=httpx.AsyncClient)
     return [t for t in tasks
             if t.get("assistant_id") == name and t.get("title", "").startswith("fleet:")]
 

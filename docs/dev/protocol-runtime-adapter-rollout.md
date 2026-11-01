@@ -152,7 +152,9 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 
 ### B4．第二套 Harness 只做垂直切片
 
-**前置**：另行确认具体 Harness、最小 capabilities、模型与工具兼容矩阵；本计划不预设其实现。
+**状态**：✅ 已完成（2026-11-01）
+
+**前置**：采用 ADR-0002 Option B 的 DeepSeek OpenAI 兼容薄 Runner；不支持 Checkpoint、SSE、取消、反馈、产物、Managed Models、旧 cron 或 subagent 工具编排，恢复仅走 requeue。
 
 **最小闭环**
 
@@ -165,7 +167,7 @@ ADR-0032 已接受，A／B 各阶段可在本分支连续实施；每个阶段�
 - Model Profile 与运行时模型配置通过明确映射转换；API Key 仍由受管秘密通道保存。
 - 默认部署保持 DeerFlow，新 Adapter 只能在测试环境显式启用。
 
-**完成门 G2**：同一契约套件在两种 Runtime 上按各自 capabilities 通过；不支持项有明确错误和文档，生产配置未切换。
+**完成门 G2**：✅ 已达到。两种 Runtime 按各自 capabilities 通过契约与 Dispatcher 闭环测试；薄 Runner 不支持项有明确错误和文档，生产配置未切换。
 
 ### B5．整站冷切换演练，不默认执行生产切换
 

@@ -57,6 +57,8 @@ async def _retire_gateway_crons() -> int:
     _retired_gateway_crons = True
     n = 0
     runtime = get_runtime()
+    if not runtime.capabilities().legacy_crons:
+        return 0
     for task in await runtime.list_legacy_crons(client_factory=httpx.AsyncClient):
         if str(task.get("title", "")).startswith("fleet:"):
             if await runtime.delete_legacy_cron(task["id"], client_factory=httpx.AsyncClient):

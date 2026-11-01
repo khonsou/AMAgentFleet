@@ -385,6 +385,8 @@ FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户�
 
 内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。Thread／Run 的 FAP operation ID 和路径保持不变，统一由 Control Plane 的稳定 Runtime surface 提供；Console 旧端点只做兼容代理，不再直读 DeerFlow 表，SSE 暂保留原生兼容通道。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
 
+第二套参考实现 `DeepSeekThinAdapter` 仅经 OpenAI 兼容 `/chat/completions` 调用 DeepSeek，不使用专有 SDK，不承载任意工具出口。其进程内状态用于测试环境垂直切片，支持 Agent 注册、Run、消息历史、基础观测和 requeue；不支持 Checkpoint resume、SSE、取消、反馈、产物、Managed Models、旧 cron 或 subagent 工具编排。`GET /api/runtime/capabilities` 自发现当前 Runtime 与能力，未支持项返回 `capability_not_supported`，不得伪装成功。生产部署默认仍为 DeerFlow，薄 Runner 不构成生产切换授权。
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）

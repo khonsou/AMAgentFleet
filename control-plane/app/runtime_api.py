@@ -32,6 +32,12 @@ class MessageBody(BaseModel):
     assistant_id: str | None = None
 
 
+@router.get("/api/runtime/capabilities")
+async def runtime_capabilities():
+    runtime = get_runtime()
+    return {"runtime": runtime.name, "capabilities": runtime.capabilities().__dict__}
+
+
 @router.get("/api/console/overview")
 async def overview():
     return await _invoke(get_runtime().get_overview())
