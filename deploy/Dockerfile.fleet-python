@@ -13,4 +13,10 @@ COPY agents /app/agents
 COPY control-plane /app/control-plane
 COPY console/backend /app/console/backend
 
+# control-plane imports evals.platform.scorecard; the package lives at the
+# repository root and must be on PYTHONPATH from /app/control-plane.
+COPY evals /app/evals
+ENV PYTHONPATH=/app
+RUN python -c "import evals.platform.scorecard"
+
 EXPOSE 8002 8003
