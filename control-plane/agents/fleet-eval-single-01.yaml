@@ -1,0 +1,41 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: fleet-eval-single-01
+  displayName: 平台评测单 Agent 对照
+  owner: platform
+  costCenter: PLATFORM-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: fleet-eval-single-01
+    display_name: 平台评测单 Agent 对照
+    description: 在相同 core-v1 题面、事实和验收口径下独立完成双源简报，作为技术基线。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.1
+      max_tokens: 8192
+    mcp_plugins: []
+    tool_groups: []
+    skills: []
+    allowed_subagents: []
+    soul: "你是 core-v1 单 Agent 技术对照。只使用当前任务给出的两份受控 fixture，独立完成计算与简报。禁止联网、读取文件、调用工具、派生子任务或寻求人工继续。按任务要求输出 JSON，不读取预期答案，不评价平台，不给自己打分。"
+    memory_enabled: false
+egress: []
+triggers:
+  web: false
+  im: false
+  agentCallable: true
+  cron: []
+identity:
+  mode: obo
+  allowedCallers:
+    - platform
+    - qa-team
+budget:
+  maxTokensPerRun: 80000
+  dailyTokenCap: 500000
+persistence:
+  checkpointTtlDays: 1
+  idleHibernateMinutes: 5

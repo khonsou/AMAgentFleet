@@ -40,12 +40,13 @@ Loop、Thread、Checkpoint、Runner、Profile、PAT、MCP、FAP 是实现细节�
 |---|---|
 | **统一协议层** | 以机器可读 operation ID 暴露 Task、Agent、Thread、Run、Evidence 与平台操作；GUI、第三方 Agent、指挥官、操作助手和评测 Agent 共用契约；浏览器不能绕过鉴权或调用 Runner 特权接口 |
 | **RuntimeAdapter** | 将 Agent 部署、Thread／Run、恢复引用、模型目录与 capabilities 标准化；支持 DeerFlow、DSH、Grok Bots 等执行底座的接入、冷切换与回滚 |
+| **Runtime Capability Plane** | 用户或第三方 Agent 在运行时注册 Provider／operation／Artifact；所有 Agent 默认 `inherit_all` 并继承新能力，通过统一 invoke、共享 Workspace 和 DAG 混合编排；不包含业务网站适配（ADR-0042） |
 | **Playground** | 为上述统一能力提供简单 GUI，不为页面另造特权业务 API |
 
 | 内置 Agent | 职责 | 边界与状态 |
 |---|---|---|
-| **`fleet-cmd-01`（舰队指挥官）** | 发现已注册 Agent、拆解业务 Goal、并行派发、组装与纠错 | 不承担平台管理或平台自我评分；已有 |
-| **`fleet-ops-01`（舰队操作助手）** | 通过统一协议查询和操作 Fleet 平台 | 不做业务 worker，不任意 HTTP，不派生 subagent；已有 |
+| **`fleet-cmd-01`（舰队指挥官）** | 感知 Agent 与能力、拆解 Goal、直接调用或混合编排、共享 Evidence 并恢复 | 平台能力放大器；默认继承全部运行时能力，不限制业务或 subagent |
+| **`fleet-ops-01`（舰队操作助手）** | 处理平台操作与业务 Goal，发现、调用、组合和恢复运行时能力 | 平台能力放大器；与指挥官和普通 Agent 共用 Capability Plane |
 | **`fleet-eval-01`（平台自迭代评估 Agent）** | 发布前执行平台评测并评估开发效率；发布后注册并持续只读监控运行状态，依据项目 Goal 与平台评分总结后续迭代方向 | 不评价第三方业务 KPI，不修改题目／阈值，不自我验收，不自动合入代码；规划新增，分数由确定性评分器计算 |
 
 `fleet-eval-01` 有两种工作模式：**开发评测**在 PR、发布候选或人工触发时运行，比较候选版本与基线，评价功能结果、回归、Token／时间／人类介入和返工等开发效率；**运行监控**在项目发布后持续读取 Task／Loop／Run、错误、延迟、成本、恢复和 Playground 反馈，按周期或异常触发模型总结，形成平台 know-how 与下一轮开发建议。指标采集可以持续，模型分析按需要触发，避免无意义地持续消耗 Token。
@@ -86,6 +87,23 @@ Loop、Thread、Checkpoint、Runner、Profile、PAT、MCP、FAP 是实现细节�
 | 三个内置 Agent | 指挥官负责业务编排，操作助手负责平台操作，评测 Agent 负责平台评估 | 三者权限隔离；操作助手不承接业务，评测 Agent 不评价第三方业务、不自我验收 |
 | 平台自迭代评测 | 固定平台验收面板、技术基线、评分卡、回归历史、组件删减 | 每次候选变更产生可比评分；硬门退化即拒绝；无增益组件删除 |
 
+### 北极星指标：每人类小时交付的已验证 Goal（VGH）
+
+平台自迭代以 **Verified Goals per Human Hour（VGH）** 为北极星，而不是以 Agent／Task／Token 数量或七维评分本身为目标：
+
+```text
+VGH = 60 × 独立验收通过的 Goal 数 ÷ 主动人工分钟
+```
+
+- **已验证 Goal**：执行前冻结结果、约束和停止条件，最终由确定性检查、源系统 Ground Truth 或独立 Evaluator 验收；Agent 自评不计。
+- **主动人工时间**：包括配置、发起、补充提示、人工催促、查证据、修复输出、重新运行、异常恢复和验收；Agent 等待时间只计入墙钟。
+- 失败、超时、未独立验收或只有部分产物的 Goal 不计入分子；同一 Goal 返工多次仍只计一次，子 Task 不得冒充 Goal。
+- 主动人工时间未记录时，VGH 必须为空并标记缺少测量，不得按 0 分钟计算无穷大。
+- 比较必须使用同题、同数据、同模型 Profile、等价预算和相同独立验收口径，防止靠拆小 Goal 或降低难度刷高指标。
+- 七维评分是诊断与发布门，VGH 是价值方向；每次实验必须说明对 VGH 的预期影响，同时不得降低安全、证据和质量护栏。
+
+当前 `core-v1` 只计算平台参考 Goal；真实 GEO Canary 单独记录业务验收、平台执行证据和 VGH，第三方业务 KPI 不混入平台评分。
+
 ### 当前开发切片：第三方可自动执行的最小闭环（ADR-0038）
 
 2026-11-02 的 GEO 第三方真实集成报告证明：注册和单题执行已经打通，但完整多题闭环被接入语义阻塞。平台当前优先修复接入契约，不扩大 GEO 面板、不启用 cron，也不把第三方业务结果计入平台评分。
@@ -119,6 +137,8 @@ Loop、Thread、Checkpoint、Runner、Profile、PAT、MCP、FAP 是实现细节�
 它回答的是“平台是否具备自主多 Agent 编排能力”，不回答任何第三方业务是否成功。`fleet-eval-01` 负责组织测试并生成平台评分卡；确定性评分器负责算分。它不得修改参考面板或验收自己的评测结果。
 
 **首批实现状态**：`core-v1` 场景、受控事实、确定性评分 CLI、建议状态机和专项测试已落地；`fleet-eval-01` 已注册但专用模型执行尚未激活；报告／建议表与统一协议 API 已完成。真实证据报告 `report_id=1` 为 **44 分、未评级**；实现子任务自动唤醒与执行预算后，`report_id=2` 为 **58 分、未评级**，P0 已通过且父 Loop 自动进入 `version=2`。Timeline 访问沿用现有 YAML 配置，不再新增专用代理；生产持续监控和 Evaluations GUI 尚未完成，当前平台评级因此仍为未评级。
+
+**手动启动器实现状态（2026-11-02，ADR-0044）**：`single`／`multi` 启动器、隔离评测 Agent、VGH 测量、手动 `POST /api/eval/runs`、实施与候选报告关联已完成，并通过离线契约测试。当前只证明执行骨架可用；真实单 Agent 对照基线、真实模型解释和候选复测尚未执行，不得据此上调当前 58 分或未评级状态。
 
 `geo-evidence-01` 等第三方 Agent 可作为后续接入 canary：平台只验收注册、执行、恢复、隔离、证据和权限契约是否可复用；其 GEO 目标、事实评分和业务迭代由第三方运营方自行负责，不进入 AMAgentFleet 的项目完成度评分。
 
@@ -188,19 +208,27 @@ Loop、Thread、Checkpoint、Runner、Profile、PAT、MCP、FAP 是实现细节�
 
 ### 4.5 开发时怎样调用，怎样避免无限迭代
 
+离线校验（不连接 Fleet、不调用模型）：
+
+```bash
+PYTHONPATH=. python scripts/fleet_eval_run.py validate
+```
+
+真实授权与单题冒烟完成后，才允许用同一 CLI 的 `run` 或统一 operation `evals.run`（`POST /api/eval/runs`）启动单轮。先用 `mode=single` 生成技术对照，再用 `mode=multi` 引用该基线；`single` 禁止持久化候选报告。真实运行必须记录 `active_human_seconds`，独立 P1／P2 证据只能从测量文件输入。
+
 开发时的循环由维护者控制，一轮只验证一个明确实验：
 
 1. **调用评测**：在 PR、发布候选或人工触发时运行 `fleet-eval-01`，生成评分卡和最弱项证据。
 2. **持久化建议**：建议进入 `fleet_eval_recommendations`，初始状态只能是 `proposed`；它不会自动变成开发 Task。
 3. **维护者决策**：维护者选择 `accepted` 或 `rejected`。只有被接受的建议才允许安排一次有边界的开发改动。
-4. **实现并复测**：完成后由 CI 或维护者再次调用 `fleet-eval-01`，使用同一面板比较基线；建议只能转为 `implemented → verified/closed` 或标记失败，不能自动触发下一轮开发。
+4. **实现并复测**：完成后由 CI 或维护者再次调用 `fleet-eval-01`，使用同一面板比较基线；建议只能转为 `implemented → verified/closed` 或标记失败，不能自动触发下一轮开发。`verify` 必须携带 `candidate_report_id`，且候选报告满足 VGH 相对可比基线**严格大于**、全部硬门与目标分通过、安全／质量／成本护栏不退化；持平不算 improve。
 5. **冻结或继续**：达到当前发布门就冻结范围并发布；只有仍存在高价值、可验证的差距时，才由维护者开启下一轮。
 
 建议状态机为：`proposed → accepted/rejected → implemented → verified/closed`。**没有 `proposed → implemented` 的自动路径，也没有“OUTPUT 一生成就自动重启评测／开发”的路径。**
 
 满足以下任一条件必须停止本轮迭代：
 
-- 当前目标已达到：MVP 阶段是硬门全过且达到 75 分，不是无限追求 100 分。
+- 当前目标已达到：MVP 阶段是硬门全过、达到 75 分且 VGH 相对可比基线严格改善、护栏不退化，不是无限追求 100 分。
 - 连续 2 轮没有净改善，或同一失败假设重复出现。
 - 达到本轮预设的时间、Token 或实验次数上限。
 - 没有新的、能用证据验证的实验假设，或维护者主动停止。
@@ -308,6 +336,9 @@ bash scripts/test_fleet_ops_all.sh
 | [0038](docs/adr/0038-thirdparty-execution-access-semantics.md) | 第三方执行接入：单 PAT、结构化终态、批量读取、确认取消与真实能力发现 | 已接受 |
 | [0039](docs/adr/0039-ops-bounded-task-wait.md) | Ops 长任务的有界服务端等待，消除模型内紧密轮询 | 已接受 |
 | [0040](docs/adr/0040-console-inhouse-only.md) | Console 仅允许 `role=inhouse`，FAP/PAT 通道保持不变 | 已接受 |
+| [0041](docs/adr/0044-vgh-and-bounded-manual-evaluation-runner.md) | VGH 北极星、单 Agent 对照与有界手动评测启动器 | 已接受 |
+| [0042](docs/adr/0042-runtime-capability-plane-awareness-and-orchestration.md) | 运行时 Capability Plane、Agent 感知、共享工作空间与自适应编排 | 已接受 |
+| [0043](docs/adr/0043-effective-agent-config-reconciliation.md) | 版本化 Agent 全量配置对账与 inherit-all 重置 | 已接受 |
 
 ## 关键输入（已确认的 QA 结论）
 

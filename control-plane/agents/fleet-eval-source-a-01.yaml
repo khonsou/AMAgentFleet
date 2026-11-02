@@ -1,0 +1,41 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: fleet-eval-source-a-01
+  displayName: 平台评测只读源 A
+  owner: platform
+  costCenter: PLATFORM-001
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: fleet-eval-source-a-01
+    display_name: 平台评测只读源 A
+    description: 仅计算 core-v1 输入中提供的 Fleet 受控事实，不访问外部系统。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.1
+      max_tokens: 4096
+    mcp_plugins: []
+    tool_groups: []
+    skills: []
+    allowed_subagents: []
+    soul: "你是平台评测只读源 A。只使用当前任务明确给出的 Fleet fixture，禁止联网、读取文件、调用工具或派生子任务。计算池状态与合计，按任务要求输出 JSON；不得读取或猜测预期答案，不得编造来源字段。"
+    memory_enabled: false
+egress: []
+triggers:
+  web: false
+  im: false
+  agentCallable: true
+  cron: []
+identity:
+  mode: obo
+  allowedCallers:
+    - platform
+    - qa-team
+budget:
+  maxTokensPerRun: 80000
+  dailyTokenCap: 500000
+persistence:
+  checkpointTtlDays: 1
+  idleHibernateMinutes: 5

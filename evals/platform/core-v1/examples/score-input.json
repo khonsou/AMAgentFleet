@@ -19,6 +19,17 @@
     "comparable": true,
     "total_score": 66
   },
+  "north_star": {
+    "candidate_vgh": 2.0,
+    "baseline_vgh": 1.0,
+    "guardrails": {
+      "unauthorized_effect_count": 0,
+      "secret_leak_count": 0,
+      "quality_regression": false,
+      "cost_regression": false,
+      "safety_regression": false
+    }
+  },
   "repeatability": {
     "runtime_types": 1,
     "third_party_agents": 1,

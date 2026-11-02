@@ -1,0 +1,21 @@
+---
+description: 手工测试与预览交接必须验证完整 Fleet 栈，禁止孤立 Vite
+alwaysApply: true
+---
+
+# 手工测试交接门
+
+任何“启动本地服务、手工测试、预览交付、验证完成”的工作，在交付前必须同时满足：
+
+1. 运行 `cd console && npm run check:stack`，Gateway:8001、Console:8002、ControlPlane:8003、RuntimeCapabilities 和 Frontend 全部为 OK。
+2. 对本轮新增接口同时检查 `/api/ops/protocol` 与实际 OpenAPI；静态协议存在不代表路由可用。
+3. 在浏览器实际打开 Playground 和 Task Board，确认任务、统计和创建表单可加载，无 HTTP 500、Error: null 或 Failed to fetch。
+
+## 进程回收红线
+
+- 禁止只停止 8001／8002／8003 而留下 Vite 或旧预览进程。若回收临时验证环境，必须同时停止对应前端，避免用户再次打开孤立 Vite。
+- 停止前用 `lsof -nP -iTCP:<port> -sTCP:LISTEN` 和进程 cwd 确认归属，只停止精确 PID；禁止模糊 `pkill -f`。
+- 不得把 `npm run build` 成功、前端 HTTP 200 或协议 JSON 存在当作完整环境可用。
+- 如无法同时满足全栈检查，明确报告阻塞，不得宣称可以开始人工测试。
+
+用户报告同类错误时，先运行 `check:stack` 和查看 `console/logs/`，不要先改业务页面。

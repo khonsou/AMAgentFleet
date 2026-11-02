@@ -64,3 +64,47 @@ fixtures:
   fleet_status: fixtures/fleet-status.json
   timeline_boards: fixtures/timeline-boards.json
 expected_facts: expected/facts.json
+runner:
+  prompt_version: core-v1-runner-v1
+  model_profile: deepseek-default
+  single_agent: fleet-eval-single-01
+  orchestrator: fleet-cmd-01
+  workers:
+    fleet_status: fleet-eval-source-a-01
+    timeline_boards: fleet-eval-source-b-01
+  poll_seconds: 5
+measurement_protocol:
+  north_star: verified_goals_per_human_hour
+  goal_unit: 一次完整的 core-v1 参考工作流计为一个 Goal；子 Task 不单独计数
+  accepted_goal: 确定性事实、来源、模式专属编排证据与停止条件全部通过
+  vgh_formula: 60 * accepted_goals / active_human_minutes
+  missing_human_time: VGH 返回 null 并记录 human_time_missing，不按零分钟计算
+  human_time_includes:
+    - 配置与发起
+    - 补充提示与人工催促
+    - 查证据与修复输出
+    - 重新运行与异常恢复
+    - 独立验收
+  wall_time_separate: true
+  single_agent_control:
+    same_question: true
+    same_fixtures: true
+    same_model_profile: true
+    same_acceptance: true
+    allow_child_tasks: false
+    persist_platform_candidate_report: false
+  independent_gates:
+    P1: 只能由协议、Runtime Contract 与安全证据输入确认，缺省 false
+    P2: 只能由非工程用户核心路径验收输入确认，缺省 false
+    playground: 缺省等级 0，不得由 Agent 自评
+  baseline:
+    required_fields:
+      - scenario_id
+      - prompt_version
+      - model_profile
+      - fixtures_sha256
+      - accepted_goal
+      - active_human_seconds
+      - vgh
+    reject_incompatible: true
+  recommendation_flow: proposed -> accepted -> implemented -> verified/closed 或 failed；禁止自动开发

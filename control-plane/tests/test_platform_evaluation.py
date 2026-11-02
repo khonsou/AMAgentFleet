@@ -78,6 +78,34 @@ class PlatformEvaluationTests(unittest.TestCase):
         }
         result = calculate_scorecard(measurement, self.scenario)
         self.assertEqual(result["rating"], "可复用平台")
+        self.assertTrue(result["release_allowed"])
+
+    def test_north_star_requires_strict_improvement(self):
+        measurement = copy.deepcopy(self.measurement)
+        measurement["dimensions"] = {key: 5 for key in measurement["dimensions"]}
+        measurement["north_star"]["candidate_vgh"] = 1.0
+        result = calculate_scorecard(measurement, self.scenario)
+        self.assertEqual(result["north_star"]["status"], "not_improved")
+        self.assertFalse(result["release_allowed"])
+        self.assertNotIn("target_reached", result["stop_reasons"])
+        measurement["north_star"]["candidate_vgh"] = 1.1
+        result = calculate_scorecard(measurement, self.scenario)
+        self.assertEqual(result["north_star"]["status"], "improved")
+        self.assertTrue(result["release_allowed"])
+
+    def test_north_star_missing_or_guardrail_regression_blocks_release(self):
+        measurement = copy.deepcopy(self.measurement)
+        measurement["dimensions"] = {key: 5 for key in measurement["dimensions"]}
+        del measurement["north_star"]
+        result = calculate_scorecard(measurement, self.scenario)
+        self.assertEqual(result["north_star"]["status"], "unmeasured")
+        self.assertFalse(result["release_allowed"])
+        measurement = copy.deepcopy(self.measurement)
+        measurement["dimensions"] = {key: 5 for key in measurement["dimensions"]}
+        measurement["north_star"]["guardrails"]["cost_regression"] = True
+        result = calculate_scorecard(measurement, self.scenario)
+        self.assertEqual(result["north_star"]["status"], "guardrail_regression")
+        self.assertFalse(result["release_allowed"])
 
     def test_stop_conditions_cover_stagnation_budget_and_human_stop(self):
         measurement = copy.deepcopy(self.measurement)
