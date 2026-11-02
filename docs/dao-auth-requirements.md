@@ -13,14 +13,16 @@
 ```text
 员工浏览器 → DAO 授权页登录（PKCE）→ 前端内存持 access token（JWT）
           → 调 fleet Console API 带 Authorization: Bearer <JWT>
-          → Console 后端本地验签（RSA 公钥 + issuer 比对，不 introspection 回源）
+          → Console 后端本地验签（RSA 公钥 + issuer 比对，不回源 DAO introspection）
+          → 用同一 token 查 coin 分组，ids 含员工组 2 才放行
 ```
 
 - **token 验证为本地 JWT 校验**，与 coin backend 同一套规格：RS256、
   claims `user_id`(int) / `role` / `exp` / `iss`。这是 timeline
   `dao-auth-requirements.md` 既定的验证原则，我们沿用。
-- **Console 仅对员工开放**：DAO 必须在 access token 中携带 `role=inhouse`；
-  Fleet 后端拒绝角色缺失或其他角色的 token，不只依赖前端隐藏页面。
+- **Console 仅对员工开放**：JWT 验签通过后，Console 后端用同一 access token 调
+  coin 分组接口 `GET /api/group/current-user`，返回 `ids` 含员工组 `2` 才放行
+  （ADR-0041）。不看 `role` claim，也不只依赖前端隐藏页面。
 - **第三方 agent 不走本体系**：agent 用平台自有的 PAT（FAP v1，见
   `docs/fap-agent-guide.md`），与员工 OAuth 完全分离，不涉及
   token delegation / token exchange（timeline 的 R1/R2 需求我们不涉及）。
