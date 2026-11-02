@@ -236,6 +236,40 @@ CREATE TABLE IF NOT EXISTS fleet_eval_recommendations (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_eval_recommendations_status ON fleet_eval_recommendations(status, updated_at);
+-- ADR-0042：运行时 Provider／Capability 与共享 Workspace；秘密只保存 auth_handle 引用。
+CREATE TABLE IF NOT EXISTS fleet_capability_providers (
+    id              BIGSERIAL PRIMARY KEY,
+    provider_id     TEXT NOT NULL UNIQUE,
+    provider_type   TEXT NOT NULL,
+    manifest        JSONB NOT NULL,
+    health          JSONB NOT NULL DEFAULT '{}',
+    config_version  INTEGER NOT NULL DEFAULT 1,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_capability_providers_type ON fleet_capability_providers(provider_type);
+CREATE TABLE IF NOT EXISTS fleet_capability_invocations (
+    id              BIGSERIAL PRIMARY KEY,
+    provider_id     TEXT NOT NULL,
+    capability_id   TEXT NOT NULL,
+    args_digest     TEXT NOT NULL,
+    result_digest   TEXT,
+    status          TEXT NOT NULL CHECK (status IN ('succeeded','failed')),
+    error           TEXT,
+    duration_ms     INTEGER NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_capability_invocations_provider ON fleet_capability_invocations(provider_id, id);
+CREATE INDEX IF NOT EXISTS idx_capability_invocations_capability ON fleet_capability_invocations(capability_id, id);
+CREATE TABLE IF NOT EXISTS fleet_workspaces (
+    id              BIGSERIAL PRIMARY KEY,
+    context         JSONB NOT NULL,
+    version         INTEGER NOT NULL DEFAULT 1,
+    status          TEXT NOT NULL DEFAULT 'draft',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_workspaces_status ON fleet_workspaces(status, updated_at);
 """
 
 

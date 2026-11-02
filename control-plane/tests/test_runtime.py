@@ -68,6 +68,21 @@ class DeerFlowContractTests(unittest.IsolatedAsyncioTestCase):
             DeerFlowAdapter().agent_package({"spec": {"format": "other", "version": 1}})
         self.assertEqual(raised.exception.status, 422)
 
+    def test_agent_package_normalizes_missing_capability_fields_to_inherit_all(self):
+        document = {
+            "spec": {
+                "format": "deerflow.custom-agent",
+                "version": 1,
+                "agent": {"name": "worker", "model": "deepseek-default"},
+            }
+        }
+        package = DeerFlowAdapter().agent_package(document)
+        for field in ("tool_groups", "mcp_plugins", "allowed_subagents", "skills"):
+            self.assertIsNone(package["agent"][field])
+        document["spec"]["agent"]["tool_groups"] = []
+        package = DeerFlowAdapter().agent_package(document)
+        self.assertEqual(package["agent"]["tool_groups"], [])
+
     async def test_run_body_and_result_match_legacy_semantics(self):
         client = FakeClient({
             "messages": [{

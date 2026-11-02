@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
-from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation, runtime_api, evaluation, execution
+from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation, runtime_api, evaluation, execution, capabilities
 from .db import audit, init_db, pool
 from .runtime import get_runtime
 
@@ -40,6 +40,7 @@ app.include_router(ops_credentials.router)
 app.include_router(conversation.router)
 app.include_router(runtime_api.router)
 app.include_router(evaluation.router)
+app.include_router(capabilities.router)
 fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
@@ -70,6 +71,9 @@ async def startup() -> None:
     # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
     await ops_credentials.ensure_system_credential()
     await ops_credentials.check_system_credential_readable()
+    # 全量版本化 Agent 对账，修复 YAML／Registry／Gateway／MCP 配置漂移。
+    await _ensure_agent_with_retry("versioned-agent-catalog", registry.ensure_versioned_agents)
+    await mcpservers.render_and_reload(actor="startup")
     # API 与初始化不受门闩限制；只有持锁实例可启动后台循环。
     leader = await singleton.acquire()
     dispatcher.set_background_enabled(leader)

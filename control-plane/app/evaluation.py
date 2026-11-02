@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -20,6 +23,7 @@ from evals.platform.scorecard import (
 from .db import audit, pool
 
 ROOT = Path(__file__).resolve().parents[2]
+EVAL_RUN_ROOT = ROOT / "artifacts/platform-evals/core-v1/runs"
 router = APIRouter(tags=["platform-evaluation"])
 SCENARIO_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
@@ -38,6 +42,21 @@ class ReportInput(BaseModel):
 
 class TransitionInput(BaseModel):
     action: str = Field(min_length=1, max_length=32)
+    implementation_commit: str | None = Field(default=None, max_length=64)
+    candidate_report_id: int | None = Field(default=None, ge=1)
+    change_summary: str | None = Field(default=None, max_length=2000)
+
+
+class EvaluationRunInput(BaseModel):
+    scenario_id: str = "core-v1"
+    mode: Literal["single", "multi"]
+    run_id: str | None = Field(default=None, max_length=64)
+    active_human_seconds: float = Field(default=0, ge=0)
+    baseline_run_id: str | None = Field(default=None, max_length=64)
+    independent_evidence_path: str | None = Field(default=None, max_length=256)
+    persist: bool = False
+    interpret: bool = True
+    prepare: bool = True
 
 
 def _scenario(scenario_id: str) -> dict[str, Any]:
@@ -161,6 +180,28 @@ async def list_recommendations(
     return [_report(dict(row)) for row in rows]
 
 
+async def _assert_candidate_release(conn, body: TransitionInput) -> None:
+    if body.action != "verify":
+        return
+    if body.candidate_report_id is None:
+        raise HTTPException(409, {
+            "code": "CANDIDATE_REPORT_REQUIRED",
+            "message": "verify 必须携带 candidate_report_id 并通过 VGH improve 验收门",
+        })
+    report = await conn.fetchrow(
+        "SELECT id,scorecard FROM fleet_eval_reports WHERE id=$1", body.candidate_report_id)
+    if report is None:
+        raise HTTPException(404, f"candidate report {body.candidate_report_id} not found")
+    scorecard = _json(report["scorecard"]) or {}
+    gate = scorecard.get("north_star") or {}
+    if not gate.get("release_allowed"):
+        raise HTTPException(409, {
+            "code": "NORTH_STAR_NOT_IMPROVED",
+            "message": "候选报告未满足 VGH 严格改善、硬门、评分与护栏要求",
+            "details": gate,
+        })
+
+
 @router.post("/api/eval/recommendations/{recommendation_id}/transition")
 async def transition_recommendation_endpoint(recommendation_id: int, body: TransitionInput, request: Request) -> dict[str, Any]:
     actor = getattr(request.state, "fap_actor", None) or "human"
@@ -174,15 +215,129 @@ async def transition_recommendation_endpoint(recommendation_id: int, body: Trans
                 status = transition_recommendation(row["status"], body.action)
             except EvaluationError as exc:
                 raise HTTPException(409, str(exc)) from exc
+            await _assert_candidate_release(conn, body)
+            evidence = _json(row.get("evidence")) or {}
+            links = {
+                key: value for key, value in {
+                    "implementation_commit": body.implementation_commit,
+                    "candidate_report_id": body.candidate_report_id,
+                    "change_summary": body.change_summary,
+                }.items() if value is not None
+            }
+            evidence.update(links)
             updated = await conn.fetchrow(
-                """UPDATE fleet_eval_recommendations SET status=$2, updated_at=now()
+                """UPDATE fleet_eval_recommendations
+                   SET status=$2, evidence=$3, updated_at=now()
                    WHERE id=$1 RETURNING *""",
-                recommendation_id, status,
+                recommendation_id, status, json.dumps(evidence),
             )
     await audit(
         "eval.recommendation_transition",
         agent_name="fleet-eval-01",
         actor=actor,
-        detail={"recommendation_id": recommendation_id, "from": row["status"], "to": status},
+        detail={
+            "recommendation_id": recommendation_id,
+            "from": row["status"],
+            "to": status,
+            "implementation_commit": body.implementation_commit,
+            "candidate_report_id": body.candidate_report_id,
+        },
     )
     return _report(dict(updated))
+
+
+def _evaluation_run_locations(body: EvaluationRunInput) -> tuple[Path, dict[str, Any] | None, dict[str, Any] | None]:
+    from evals.platform.execution import ExecutionError, artifact_path, read_json
+
+    if body.scenario_id != "core-v1":
+        raise HTTPException(422, "当前手动启动器只支持 core-v1")
+    run_id = body.run_id or f"core-{uuid.uuid4().hex[:12]}"
+    for value in (run_id, body.baseline_run_id):
+        if value is not None and not SCENARIO_ID.fullmatch(value):
+            raise HTTPException(422, "run_id 只能包含小写字母、数字和连字符")
+    try:
+        output = artifact_path(EVAL_RUN_ROOT, f"{run_id}-{body.mode}")
+        baseline = None
+        if body.baseline_run_id:
+            baseline = read_json(artifact_path(EVAL_RUN_ROOT, body.baseline_run_id) / "run.json")
+        independent = None
+        if body.independent_evidence_path:
+            independent = read_json(artifact_path(EVAL_RUN_ROOT, body.independent_evidence_path))
+    except (ExecutionError, OSError, ValueError) as exc:
+        raise HTTPException(422, f"评测产物路径或内容无效：{exc}") from exc
+    return output, baseline, independent
+
+
+def _run_evaluation_sync(
+    body: EvaluationRunInput,
+    output: Path,
+    baseline: dict[str, Any] | None,
+    independent: dict[str, Any] | None,
+    authorization: str,
+) -> dict[str, Any]:
+    from evals.platform.core_runner import DEFAULT_SCENARIO, run_core_evaluation
+    from evals.platform.execution import FleetClient
+
+    pat = authorization[7:].strip() if authorization.startswith("Bearer ") else None
+    client = FleetClient(
+        os.environ.get("FLEET_CONTROL_PLANE_SELF_URL")
+        or os.environ.get("FLEET_API")
+        or "http://127.0.0.1:8003",
+        pat,
+    )
+    return run_core_evaluation(
+        client,
+        output,
+        body.mode,
+        scenario_path=DEFAULT_SCENARIO,
+        active_human_seconds=body.active_human_seconds,
+        independent_evidence=independent,
+        baseline=baseline,
+        persist=body.persist,
+        interpret=body.interpret and body.mode == "multi",
+        prepare=body.prepare,
+    )
+
+
+async def _execute_evaluation_run(
+    body: EvaluationRunInput,
+    output: Path,
+    baseline: dict[str, Any] | None,
+    independent: dict[str, Any] | None,
+    authorization: str,
+) -> dict[str, Any]:
+    # 手动同步入口：真实模型执行发生在线程中，不阻塞 Control Plane 事件循环。
+    return await asyncio.to_thread(
+        _run_evaluation_sync, body, output, baseline, independent, authorization)
+
+
+@router.post("/api/eval/runs", status_code=201)
+async def create_evaluation_run(body: EvaluationRunInput, request: Request) -> dict[str, Any]:
+    """维护者显式触发一轮；绝不自动接受建议或启动下一轮开发。"""
+    if body.persist and body.mode != "multi":
+        raise HTTPException(422, "single 技术对照不得持久化为平台候选报告")
+    if body.baseline_run_id and body.mode != "multi":
+        raise HTTPException(422, "single 技术对照不能再引用候选基线")
+    output, baseline, independent = _evaluation_run_locations(body)
+    authorization = request.headers.get("Authorization", "")
+    result = await _execute_evaluation_run(body, output, baseline, independent, authorization)
+    actor = getattr(request.state, "fap_actor", None) or "human"
+    await audit(
+        "eval.run.completed",
+        agent_name="fleet-eval-01",
+        actor=actor,
+        detail={
+            "run_id": result["run_id"],
+            "mode": body.mode,
+            "status": result["status"],
+            "accepted_goal": result["accepted_goal"],
+            "report_id": (result.get("report") or {}).get("report_id"),
+            "auto_development_allowed": False,
+        },
+    )
+    return {
+        **result,
+        "output_dir": str(output),
+        "auto_development_allowed": False,
+        "next_experiment_requires": "maintainer_accept",
+    }

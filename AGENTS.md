@@ -78,6 +78,14 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
   修复：在 backend 目录执行
   `uv pip install --python .venv/bin/python --no-deps -e ./packages/extension-api -e ./packages/harness`
   然后重启网关。控制台/控制面两个 venv 已检查无此问题。
+- **配置对账必须覆盖 YAML／Registry／Gateway／MCP 四层**（ADR-0043）：Control Plane
+  启动时全量同步版本化 Agent，不能只确保系统 Agent；动态 Provider 不被该目录对账覆盖。
+  `tool_groups`／`mcp_plugins`／`allowed_subagents`／`skills` 的缺省与 `null` 均为
+  inherit all，`[]` 才是显式零能力。部署包必须显式归一化缺省，禁止旧白名单因字段删除而残留。
+- **外部调用前验证生效配置而非仅看 YAML**：先核对 Registry 哈希、Gateway 实际字段与
+  MCP 配置，再分别做协议级和 Agent 实例级最小只读验证。修改 Python 后必须确认目标
+  进程已真正重启；仅执行对账脚本不会替代进程重启。MCP stdio 的非敏感 `env` 必须透传，
+  秘密正文仍只允许 Gateway／Vault 内存注入。
 
 ## 常用命令
 

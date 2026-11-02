@@ -254,4 +254,36 @@ curl -s -X POST $BASE/api/loops/$(echo $LOOP|jq .loop_id)/deliver \
 curl -s "$BASE/api/tasks/$(echo $TASK|jq .task_id)" -H "Authorization: Bearer $PAT"
 # pool_status: review → done（采纳）| 打回则同 thread 续跑后再 deliver
 ```
+
+## 7. 平台开发评测（维护者手动触发）
+
+`POST /api/eval/runs` 是 `core-v1` 的单轮手动入口，需要 write scope，并在操作协议中
+标记 `human_only`。`mode=single` 只生成技术对照产物，不能持久化为平台候选报告；
+`mode=multi` 可携带同协议 single 基线、独立 P1／P2 证据并选择持久化报告。
+
+每次调用只执行一轮，返回真实 Task／Loop／Thread、Token、墙钟、人工时间、VGH、
+确定性评分和 `proposed` 建议。响应中的 `auto_development_allowed=false`；后续开发
+必须由维护者通过既有建议 transition 显式 `accept`，不会因报告生成而自动启动。
+
+## 8. 运行时 Capability Plane
+
+用户或第三方 Agent 可以在运行时通过 `POST /api/capability-providers` 注册 Provider
+Manifest。Manifest 声明 provider 自定义 operation、输入输出 Schema、Artifact、风险、
+资源引用和授权句柄；平台不包含任何特定业务网站或系统的适配器。新 Agent 默认
+`capability_policy=inherit_all` 与 `inherit_new_capabilities=true`，显式受限配置仅作例外。
+
+当前 Adapter 支持本地 Fleet Agent、`remote_agent`（FAP／通用 HTTP operation）和 MCP
+（stdio／HTTP JSON-RPC）。私有或回环地址只允许显式测试策略；`auth_handle` 尚未由
+Gateway 注入时返回 `AUTH_REQUIRED`，不会读取秘密或把调用方 PAT 转发给远端。
+
+- `GET /api/capabilities`：发现全部运行时能力及健康、Artifact 和调用表现。
+- `POST /api/capabilities/resolve`：按 operation、Artifact、风险与运行表现解析候选。
+- `POST /api/capabilities/invoke`：通过统一 Adapter 调用能力；写或高风险能力需
+  `confirmed=true`。输入输出执行 Schema 校验，审计只保存摘要。
+- `POST /api/workspaces`：创建共享 Goal／Evidence／Decision 工作空间。
+- `PUT /api/workspaces/{id}/plan`：保存或显式重规划 capability DAG。
+- `POST /api/workspaces/{id}/execute`：并行执行、共享 Evidence、失败回退和有界恢复。
+
+GUI、指挥官、操作助手和普通 Agent 使用同一调用面。Provider 未验证或 Adapter 未实现时，
+返回结构化错误，不把声明、模拟结果或 blocked 记录为真实业务成功。
 """

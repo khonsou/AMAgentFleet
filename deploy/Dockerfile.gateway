@@ -1,6 +1,10 @@
 ARG BASE_IMAGE=am-agent-fleet-gateway-base:am-fleet-base-v2
 FROM ${BASE_IMAGE}
 
+# ADR-0043：保留上游修复，确保 tool_groups=null 可清除旧白名单。
+COPY deploy/patches/apply_deerflow_fixes.py /app/apply_deerflow_fixes.py
+RUN python /app/apply_deerflow_fixes.py
+
 COPY deploy/config.fleet.yaml /app/config.fleet.yaml
 COPY deploy/prepare_gateway_config.py /app/prepare_gateway_config.py
 COPY fleet_tools.py /app/fleet_tools.py

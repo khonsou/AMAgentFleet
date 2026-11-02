@@ -34,7 +34,11 @@ class DeerFlowAdapter(RuntimeAdapter):
         spec = document.get("spec") or {}
         if spec.get("format") != "deerflow.custom-agent" or spec.get("version") != 1:
             raise RuntimeServiceError(422, "spec must be a deerflow.custom-agent v1 package")
-        return spec
+        agent = dict(spec.get("agent") or {})
+        # 完整对账：缺省与 null 都表示 inherit all，必须显式清除 Gateway 旧白名单。
+        for field in ("tool_groups", "mcp_plugins", "allowed_subagents", "skills"):
+            agent.setdefault(field, None)
+        return {**spec, "agent": agent}
 
     async def deploy_agent(self, name: str, document: dict[str, Any], *, client_factory=None) -> None:
         package = self.agent_package(document)

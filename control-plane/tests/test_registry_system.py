@@ -58,12 +58,16 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
         ensure_commander = AsyncMock()
         ensure_eval = AsyncMock()
         ensure_credential = AsyncMock()
+        ensure_versioned = AsyncMock()
+        render = AsyncMock()
         with patch("app.main.init_db", new=AsyncMock()), \
                 patch("app.main.singleton.acquire", new=AsyncMock(return_value=True)), \
                 patch("app.main.dispatcher.recover_claimed", new=AsyncMock(return_value=0)), \
                 patch("app.main.registry.ensure_system_agent", new=ensure_agent), \
                 patch("app.main.registry.ensure_commander_agent", new=ensure_commander), \
                 patch("app.main.registry.ensure_eval_agent", new=ensure_eval), \
+                patch("app.main.registry.ensure_versioned_agents", new=ensure_versioned), \
+                patch("app.main.mcpservers.render_and_reload", new=render), \
                 patch("app.main.ops_credentials.ensure_system_credential", new=ensure_credential), \
                 patch("app.main.ops_credentials.check_system_credential_readable", new=AsyncMock()), \
                 patch("app.main.scheduler.sync_loop", new=AsyncMock()), \
@@ -73,7 +77,9 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
         ensure_agent.assert_awaited_once_with()
         ensure_commander.assert_awaited_once_with()
         ensure_eval.assert_awaited_once_with()
+        ensure_versioned.assert_awaited_once_with()
         ensure_credential.assert_awaited_once_with()
+        render.assert_awaited_once_with(actor="startup")
 
     async def test_system_agent_always_syncs_gateway_without_version_churn(self):
         doc = {"metadata": {"name": registry.SYSTEM_AGENT_NAME}}
@@ -108,6 +114,18 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
             db_pool.return_value.acquire = lambda: acquire
             await registry.ensure_system_agent()
         upsert.assert_awaited_once_with(registry.SYSTEM_AGENT_NAME, doc)
+
+    async def test_versioned_catalog_reconciles_every_agent_in_stable_order(self):
+        ensure = AsyncMock()
+        documents = {
+            "agent-b": {"metadata": {"name": "agent-b"}},
+            "agent-a": {"metadata": {"name": "agent-a"}},
+        }
+        with patch("app.registry.load_all_yaml", return_value=documents), \
+                patch("app.registry.ensure_agent", new=ensure):
+            names = await registry.ensure_versioned_agents()
+        self.assertEqual(names, ["agent-a", "agent-b"])
+        self.assertEqual([call.args[0] for call in ensure.await_args_list], names)
 
     async def test_commander_is_deployed_but_remains_mutable(self):
         registry.assert_mutable(registry.COMMANDER_AGENT_NAME)

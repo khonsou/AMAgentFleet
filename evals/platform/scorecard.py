@@ -96,14 +96,79 @@ def _rating(score: int, gates_passed: bool, baseline: bool, repeatability: dict[
     return "平台 MVP 可用"
 
 
-def stop_reasons(measurement: dict[str, Any], score: int, rating: str, scenario: dict[str, Any]) -> list[str]:
+GUARDRAIL_FIELDS = (
+    "unauthorized_effect_count",
+    "secret_leak_count",
+    "quality_regression",
+    "cost_regression",
+    "safety_regression",
+)
+
+
+def evaluate_north_star(
+    measurement: dict[str, Any], score: int, rating: str, scenario: dict[str, Any],
+) -> dict[str, Any]:
+    """Release only on strict VGH improvement plus all other release gates."""
+    baseline_comparable = bool((measurement.get("baseline") or {}).get("comparable"))
+    base_ready = (
+        baseline_comparable
+        and rating in ("平台 MVP 可用", "可复用平台")
+        and score >= scenario.get("stop_conditions", {}).get("target_score", 75)
+    )
+    data = measurement.get("north_star")
+    required = (scenario.get("measurement_protocol") or {}).get("north_star")
+    if data is None:
+        return {
+            "status": "unmeasured" if required else "not_applicable",
+            "release_allowed": False if required else base_ready,
+            "reason": "north_star_measurement_required" if required else None,
+        }
+    candidate = data.get("candidate_vgh")
+    baseline = data.get("baseline_vgh")
+    guardrails = data.get("guardrails")
+    if (
+        not isinstance(candidate, (int, float)) or isinstance(candidate, bool)
+        or not isinstance(baseline, (int, float)) or isinstance(baseline, bool)
+        or not isinstance(guardrails, dict)
+        or any(field not in guardrails for field in GUARDRAIL_FIELDS)
+    ):
+        return {
+            "status": "unmeasured",
+            "release_allowed": False,
+            "reason": "north_star_measurement_or_guardrails_missing",
+            "candidate_vgh": candidate,
+            "baseline_vgh": baseline,
+        }
+    regression = (
+        guardrails["unauthorized_effect_count"] != 0
+        or guardrails["secret_leak_count"] != 0
+        or any(guardrails[field] is not False for field in ("quality_regression", "cost_regression", "safety_regression"))
+    )
+    delta = candidate - baseline
+    status = "guardrail_regression" if regression else ("improved" if delta > 0 else "not_improved")
+    return {
+        "status": status,
+        "release_allowed": base_ready and status == "improved",
+        "candidate_vgh": candidate,
+        "baseline_vgh": baseline,
+        "delta": delta,
+        "strict_improvement_required": True,
+        "guardrails": guardrails,
+        "reason": None if status == "improved" else status,
+    }
+
+
+def stop_reasons(
+    measurement: dict[str, Any], score: int, rating: str, scenario: dict[str, Any],
+    north_star_gate: dict[str, Any] | None = None,
+) -> list[str]:
     progress = measurement.get("progress") or {}
     limits = scenario.get("stop_conditions", {})
     reasons = []
     if progress.get("maintainer_stop"):
         reasons.append("maintainer_stop")
-    baseline = bool((measurement.get("baseline") or {}).get("comparable"))
-    if baseline and rating in ("平台 MVP 可用", "可复用平台") and score >= limits.get("target_score", 75):
+    gate = north_star_gate or evaluate_north_star(measurement, score, rating, scenario)
+    if gate["release_allowed"]:
         reasons.append("target_reached")
     if progress.get("no_improvement_rounds", 0) >= limits.get("max_no_improvement_rounds", 2):
         reasons.append("no_improvement")
@@ -137,7 +202,8 @@ def calculate_scorecard(measurement: dict[str, Any], scenario: dict[str, Any]) -
     cap = scenario.get("baseline", {}).get("cap_when_missing", 74)
     score = raw_score if baseline else min(raw_score, cap)
     rating = _rating(score, gates_passed, baseline, measurement.get("repeatability") or {}, scenario)
-    reasons = stop_reasons(measurement, score, rating, scenario)
+    north_star_gate = evaluate_north_star(measurement, score, rating, scenario)
+    reasons = stop_reasons(measurement, score, rating, scenario, north_star_gate)
     return {
         "schema_version": SCHEMA_VERSION,
         "scenario_id": scenario["id"],
@@ -152,6 +218,8 @@ def calculate_scorecard(measurement: dict[str, Any], scenario: dict[str, Any]) -
             "P3": baseline,
         },
         "dimension_scores": breakdown,
+        "north_star": north_star_gate,
+        "release_allowed": north_star_gate["release_allowed"],
         "stop_reasons": reasons,
         "next_experiment_allowed": not reasons,
         "scorecard_only": True,

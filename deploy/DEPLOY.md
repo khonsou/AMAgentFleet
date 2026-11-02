@@ -18,7 +18,7 @@ bash deploy/deploy.sh test
 
 K8s 的 `DATABASE_URL` 是完整远程 PostgreSQL DSN，保存在 namespace Secret `am-agent-fleet-secrets`；已有 Secret 会保留，不会覆盖。建议为 Fleet 单独创建 `deerflow` 数据库，并允许 ACK 网络访问及应用所需的建表/迁移权限；DSN 中的特殊字符需按 URL 编码。DSN 不要带 libpq 专用 `sslmode` 参数，应用使用 asyncpg。脚本不会输出 DSN。Gateway 镜像默认启用 DeerFlow `postgres` extra（安装 `asyncpg`），平台后端镜像包含 Scheduler 所需的 `croniter`。DAO JWT 公钥来自 `deploy/dao-jwt-public-key.pem`，issuer 为 `angrymiao`；脚本将它写入独立 Secret，Console backend 只读挂载公钥。脚本会构建 DeerFlow `am-fleet-base-v2` 网关镜像、平台后端与启用 OAuth 的 Console 前端镜像，推送到 `registry.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet`，随后等待状态 PVC 与 Deployment 就绪。
 
-Kubernetes 不会直接读取 `docker-compose.yml`。发布脚本按相同的构建定义生成镜像，再把镜像 tag 写入 `deploy/k8s/` 清单：网关从 `am-fleet-base-v2` 构建并把 `deploy/config.fleet.yaml` 和 `fleet_tools.py` 加入镜像；control-plane 与 Console backend 共用 `Dockerfile.fleet-python`；前端用 `Dockerfile.console-frontend`。
+Kubernetes 不会直接读取 `docker-compose.yml`。发布脚本按相同的构建定义生成镜像，再把镜像 tag 写入 `deploy/k8s/` 清单：网关从 `am-fleet-base-v2` 构建并把 `deploy/config.fleet.yaml` 和 `fleet_tools.py` 加入镜像；control-plane 与 Console backend 共用 `Dockerfile.fleet-python`；前端用 `Dockerfile.console-frontend`。`Dockerfile.gateway` 还会幂等应用 ADR-0043 的 `tool_groups=null` 重置补丁（`deploy/patches/apply_deerflow_fixes.py`），避免字段删除只修到本地开发快照、未进入部署镜像。
 
 ACK 部署不创建 PostgreSQL Pod、不拉取 PostgreSQL 镜像，也不创建数据库 PVC；数据库数据由远程 PostgreSQL 服务负责。仍保留一块 20Gi `am-agent-fleet-state` PVC（StorageClass `am-agent-fleet-ssd-retain`：`cloud_ssd`、固定可用区 `cn-shenzhen-a`、立即绑定、删除 PVC 后云盘数据保留），挂到 gateway/control-plane Pod，保存 DeerFlow 的 `.deer-flow` 运行文件、agent memory/facts，以及控制面和网关共享的 MCP 配置。部署脚本会为 `ecs.n1.xlarge` 节点补齐 ACK CSI 的 SSD 能力标签；该实例类型及现有工作负载均已验证支持此类磁盘。磁盘 I/O 对这类文件状态足够，节点池目前都在同一可用区。Pod 被重建时这些文件仍保留；前端、后端代码随镜像发布，不需要数据盘。当前 MCP 凭据实现会落文件，因此 Vault/KMS 接入前不要录入业务凭据。
 

@@ -115,18 +115,20 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["operations_protocol"], "/api/ops/protocol")
         self.assertIn("fleet_operations", payload["capabilities"])
 
-    def test_default_agent_is_least_privilege_and_not_agent_callable(self):
+    def test_default_agent_is_capability_maximal_and_agent_callable(self):
         with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
             doc = yaml.safe_load(f)
         agent = doc["spec"]["agent"]
         self.assertEqual(doc["metadata"]["name"], "fleet-ops-01")
-        self.assertEqual(agent["tool_groups"], ["fleet:ops"])
-        self.assertEqual(agent["mcp_plugins"], [])
+        self.assertEqual(doc["capability_policy"], "inherit_all")
+        self.assertTrue(doc["inherit_new_capabilities"])
+        self.assertNotIn("tool_groups", agent)
+        self.assertNotIn("mcp_plugins", agent)
         self.assertIsNone(agent["skills"])
-        self.assertEqual(agent["allowed_subagents"], [])
+        self.assertNotIn("allowed_subagents", agent)
         self.assertFalse(agent["memory_enabled"])
-        self.assertFalse(doc["triggers"]["agentCallable"])
-        self.assertEqual(doc["egress"], [])
+        self.assertTrue(doc["triggers"]["agentCallable"])
+        self.assertNotIn("egress", doc)
 
     def test_existing_task_assignment_is_discoverable_and_deterministic(self):
         operation = next(op for op in load_protocol()["operations"] if op["id"] == "loops.claim")

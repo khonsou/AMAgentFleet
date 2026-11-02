@@ -192,6 +192,14 @@ async def ensure_eval_agent() -> None:
     await ensure_agent(EVAL_AGENT_NAME)
 
 
+async def ensure_versioned_agents() -> list[str]:
+    """对账全部版本化 Agent；运行时注册的 Provider 不在此目录，不受影响。"""
+    names = sorted(load_all_yaml())
+    for name in names:
+        await ensure_agent(name)
+    return names
+
+
 async def remove_agent(name: str) -> None:
     """真销毁：YAML + 网关配置 + 注册表行全删（与前端确认框"元数据将被清除"一致）。
 
