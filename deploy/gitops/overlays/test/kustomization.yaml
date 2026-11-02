@@ -8,7 +8,7 @@ resources:
 images:
 - name: am-agent-fleet-backend
   newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
-  newTag: backend-test-sha-90fc9de60442
+  newTag: backend-test-sha-950e5a4279fb
 - name: am-agent-fleet-frontend
   newName: registry-vpc.cn-shenzhen.aliyuncs.com/angrymiao/am-agent-fleet
   newTag: frontend-test-sha-90fc9de60442
