@@ -180,7 +180,7 @@
 | 协作 | agent 互调 | **内置 `agent_message` / `agent_spawn`**，走 Dispatcher（异步、可审计、线程树） | 二期共享任务板（参考 Multica） |
 | Skills | 能力包 | DeerFlow skills 机制 + **OSS 版本化**，按需加载 | — |
 | 授权 | 身份 | **Token Vault**（OBO + M2M，借鉴 ACP 凭证 sidecar：令牌在网关侧注入，runner 不持久持有）+ 工具白名单 | OPA |
-| 入口 | 人 | **公网 ALB + OIDC SSO** 的 Console | 钉钉工作台免登 |
+| 入口 | 人 | **公网 ALB + OIDC SSO** 的 Console（仅 `role=inhouse`，ADR-0040） | 钉钉工作台免登 |
 | 观测 | 追踪 | **Langfuse 自托管**（DeerFlow 原生支持）+ OTel → SLS | — |
 | 蓝图 | 数据模型 | **照搬 ACP spec**：Project/Agent/Session/Inbox/Credential/ScheduledSession | — |
 

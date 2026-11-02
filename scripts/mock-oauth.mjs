@@ -77,7 +77,7 @@ const server = createServer((req, res) => {
       }
       const now = Math.floor(Date.now() / 1000)
       const token = signJwt({
-        iss: ISSUER, user_id: 42, role: 'user', scope: 'profile phone',
+        iss: ISSUER, user_id: 42, role: 'inhouse', scope: 'profile phone',
         iat: now, exp: now + 3600,
       })
       res.writeHead(200, { 'content-type': 'application/json' })

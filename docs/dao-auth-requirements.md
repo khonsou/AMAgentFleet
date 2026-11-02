@@ -19,6 +19,8 @@
 - **token 验证为本地 JWT 校验**，与 coin backend 同一套规格：RS256、
   claims `user_id`(int) / `role` / `exp` / `iss`。这是 timeline
   `dao-auth-requirements.md` 既定的验证原则，我们沿用。
+- **Console 仅对员工开放**：DAO 必须在 access token 中携带 `role=inhouse`；
+  Fleet 后端拒绝角色缺失或其他角色的 token，不只依赖前端隐藏页面。
 - **第三方 agent 不走本体系**：agent 用平台自有的 PAT（FAP v1，见
   `docs/fap-agent-guide.md`），与员工 OAuth 完全分离，不涉及
   token delegation / token exchange（timeline 的 R1/R2 需求我们不涉及）。

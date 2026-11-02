@@ -178,6 +178,7 @@ access token 纯内存保存，不写 localStorage：
    `allowed_scopes: profile phone`，`require_pkce: true`。当前生产 Auth 配置已登记该 client 和回调。
 2. Console backend 使用 `deploy/dao-jwt-public-key.pem` 和 issuer `angrymiao` 本地验签，
    不调用 introspection。部署脚本固定启用前后端鉴权并将验签材料放入 K8s Secret。
+   Console 仅接受 `role=inhouse` 的 access token；角色缺失或其他角色返回 `403`。
 3. 只有 `/api/console/health` 为容器探针豁免；产物下载通过带 Bearer JWT 的 fetch+blob
    完成，同样受鉴权保护。
 

@@ -73,7 +73,10 @@ class DaoAuthMiddleware(BaseHTTPMiddleware):
         uid = claims.get("user_id")
         if type(uid) is not int or uid <= 0:
             return JSONResponse({"detail": "令牌缺少有效 user_id"}, status_code=401)
+        role = claims.get("role")
+        if role != "inhouse":
+            return JSONResponse({"detail": "仅限 inhouse 员工访问 Console"}, status_code=403)
         # 身份写入请求状态，路由内可读（验收人真实身份、审计归因的挂钩点）
         request.state.dao_user_id = uid
-        request.state.dao_role = claims.get("role", "")
+        request.state.dao_role = role
         return await call_next(request)

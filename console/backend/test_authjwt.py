@@ -38,12 +38,15 @@ class DaoAuthTests(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
-    def token(self, **overrides):
+    def token(self, _omit=(), **overrides):
         claims = {
             "iss": "dao-test", "aud": "am-agent-fleet", "exp": int(time.time()) + 120,
             "user_id": 42, "client_id": "am-agent-fleet", "token_type": "access",
+            "role": "inhouse",
         }
         claims.update(overrides)
+        for name in _omit:
+            claims.pop(name)
         return jwt.encode(claims, self.private_key, algorithm="RS256")
 
     def test_fleet_access_token_reaches_both_endpoints(self):
@@ -53,6 +56,17 @@ class DaoAuthTests(unittest.TestCase):
                 response = self.client.get(path, headers={"Authorization": f"Bearer {token}"})
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), {"user_id": 42})
+
+    def test_rejects_missing_or_non_inhouse_role(self):
+        tokens = [self.token(_omit=("role",))]
+        tokens.extend(self.token(role=role) for role in (None, "", "user", "external", "Inhouse"))
+        for token in tokens:
+            with self.subTest(token=token):
+                response = self.client.get(
+                    "/api/console/agents", headers={"Authorization": f"Bearer {token}"},
+                )
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json(), {"detail": "仅限 inhouse 员工访问 Console"})
 
     def test_rejects_invalid_identity_and_token_binding(self):
         for overrides in (
