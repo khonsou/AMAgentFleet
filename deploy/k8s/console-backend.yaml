@@ -58,6 +58,10 @@ spec:
                 secretKeyRef:
                   name: am-agent-fleet-auth
                   key: FLEET_AUTH_JWT_ISSUER
+            - name: FLEET_INHOUSE_GROUP_API_URL
+              value: https://miao-coin.angrymiao.com/api/group/current-user
+            - name: FLEET_INHOUSE_GROUP_ID
+              value: "2"
           resources:
             requests:
               cpu: 100m

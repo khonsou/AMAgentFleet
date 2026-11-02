@@ -2,9 +2,10 @@
 
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import jwt
+import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Request
@@ -22,11 +23,19 @@ class DaoAuthTests(unittest.TestCase):
         ).decode()
 
     def setUp(self):
+        authjwt._group_cache.clear()
+        self.addCleanup(authjwt._group_cache.clear)
         config = patch.multiple(
-            authjwt, _ENABLED=True, _ISSUER="dao-test", _PUBLIC_KEY=self.public_key,
+            authjwt, _ENABLED=True, _ISSUER="dao-test", _PUBLIC_KEY=self.public_key, _GROUP_ID=2,
         )
         config.start()
         self.addCleanup(config.stop)
+        # 默认：coin 分组接口返回内部员工组 2，个别用例再改写
+        self.real_fetch = authjwt._fetch_group_ids
+        self.fetch = AsyncMock(return_value=[1, 17, 2])
+        fetcher = patch.object(authjwt, "_fetch_group_ids", self.fetch)
+        fetcher.start()
+        self.addCleanup(fetcher.stop)
         app = FastAPI()
         app.add_middleware(authjwt.DaoAuthMiddleware)
 
@@ -42,7 +51,6 @@ class DaoAuthTests(unittest.TestCase):
         claims = {
             "iss": "dao-test", "aud": "am-agent-fleet", "exp": int(time.time()) + 120,
             "user_id": 42, "client_id": "am-agent-fleet", "token_type": "access",
-            "role": "inhouse",
         }
         claims.update(overrides)
         for name in _omit:
@@ -56,17 +64,72 @@ class DaoAuthTests(unittest.TestCase):
                 response = self.client.get(path, headers={"Authorization": f"Bearer {token}"})
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), {"user_id": 42})
+        self.fetch.assert_awaited_once_with(token)
 
-    def test_rejects_missing_or_non_inhouse_role(self):
-        tokens = [self.token(_omit=("role",))]
-        tokens.extend(self.token(role=role) for role in (None, "", "user", "external", "Inhouse"))
-        for token in tokens:
-            with self.subTest(token=token):
-                response = self.client.get(
-                    "/api/console/agents", headers={"Authorization": f"Bearer {token}"},
-                )
-                self.assertEqual(response.status_code, 403)
-                self.assertEqual(response.json(), {"detail": "仅限 inhouse 员工访问 Console"})
+    def test_rejects_token_outside_inhouse_group(self):
+        self.fetch.return_value = [1, 17]
+        response = self.client.get(
+            "/api/console/agents",
+            headers={"Authorization": f"Bearer {self.token()}"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"detail": "仅限 inhouse 员工访问 Console"})
+
+    def test_role_claim_does_not_bypass_group_check(self):
+        self.fetch.return_value = [1, 17]
+        response = self.client.get(
+            "/api/console/agents",
+            headers={"Authorization": f"Bearer {self.token(role='inhouse')}"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_group_id_must_be_an_exact_integer(self):
+        self.fetch.return_value = [1, "2", True]
+        response = self.client.get(
+            "/api/console/agents",
+            headers={"Authorization": f"Bearer {self.token()}"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_fails_closed_when_group_api_unavailable(self):
+        self.fetch.side_effect = authjwt.InhouseCheckUnavailable("coin down")
+        token = self.token()
+        for _ in range(2):
+            response = self.client.get(
+                "/api/console/agents", headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json(), {"detail": "员工身份校验服务不可用，请稍后重试"})
+        # 失败结果不缓存：两次请求各自回源
+        self.assertEqual(self.fetch.await_count, 2)
+
+    def test_caches_group_result_within_ttl(self):
+        token = self.token()
+        for _ in range(3):
+            response = self.client.get(
+                "/api/console/agents", headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.fetch.await_count, 1)
+
+    def test_group_api_request_forwards_the_user_token(self):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["authorization"] = request.headers.get("authorization")
+            return httpx.Response(200, json={"ids": [1, 17, 2]})
+
+        real_client = httpx.AsyncClient
+        with patch.object(authjwt, "_fetch_group_ids", self.real_fetch), patch.object(
+            authjwt.httpx, "AsyncClient",
+            lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+        ):
+            token = self.token()
+            response = self.client.get(
+                "/api/console/agents", headers={"Authorization": f"Bearer {token}"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(seen["authorization"], f"Bearer {token}")
 
     def test_rejects_invalid_identity_and_token_binding(self):
         for overrides in (
@@ -81,6 +144,7 @@ class DaoAuthTests(unittest.TestCase):
                     headers={"Authorization": f"Bearer {self.token(**overrides)}"},
                 )
                 self.assertEqual(response.status_code, 401)
+        self.fetch.assert_not_awaited()
 
 
 if __name__ == "__main__":

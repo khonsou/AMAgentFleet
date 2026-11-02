@@ -335,10 +335,11 @@ bash scripts/test_fleet_ops_all.sh
 | [0037](docs/adr/0037-reuse-yaml-timeline-access.md) | Timeline 访问复用现有 YAML 能力，否决专用代理层 | 已接受 |
 | [0038](docs/adr/0038-thirdparty-execution-access-semantics.md) | 第三方执行接入：单 PAT、结构化终态、批量读取、确认取消与真实能力发现 | 已接受 |
 | [0039](docs/adr/0039-ops-bounded-task-wait.md) | Ops 长任务的有界服务端等待，消除模型内紧密轮询 | 已接受 |
-| [0040](docs/adr/0040-console-inhouse-only.md) | Console 仅允许 `role=inhouse`，FAP/PAT 通道保持不变 | 已接受 |
-| [0041](docs/adr/0044-vgh-and-bounded-manual-evaluation-runner.md) | VGH 北极星、单 Agent 对照与有界手动评测启动器 | 已接受 |
+| [0040](docs/adr/0040-console-inhouse-only.md) | Console 仅允许 `role=inhouse`，FAP/PAT 通道保持不变（第 1、4 条已被 ADR-0041 取代） | 已接受 |
+| [0041](docs/adr/0041-console-inhouse-group-check.md) | Console inhouse 判定改为 coin 分组查询（`ids` 含 2），失败 fail-closed | 已接受 |
 | [0042](docs/adr/0042-runtime-capability-plane-awareness-and-orchestration.md) | 运行时 Capability Plane、Agent 感知、共享工作空间与自适应编排 | 已接受 |
 | [0043](docs/adr/0043-effective-agent-config-reconciliation.md) | 版本化 Agent 全量配置对账与 inherit-all 重置 | 已接受 |
+| [0044](docs/adr/0044-vgh-and-bounded-manual-evaluation-runner.md) | VGH 北极星、单 Agent 对照与有界手动评测启动器 | 已接受 |
 
 ## 关键输入（已确认的 QA 结论）
 
