@@ -339,8 +339,13 @@ async def _lookup_pat(token: str) -> dict | None:
     }
 
 
+def scope_allows(required: str, scopes: set[str]) -> bool:
+    """write 隐含 read；独立 read PAT 仍保留只读观察者语义。"""
+    return required in scopes or (required == "read" and "write" in scopes)
+
+
 async def pat_auth_middleware(request: Request, call_next):
-    """PAT 校验：写操作要 write scope，读操作要 read scope。
+    """PAT 校验：写操作要 write scope，读操作要 read scope；write 隐含 read。
 
     放行（QA-7）：平台内部直连流量（Console 后端 _cp、dispatcher 本机调用），
     口径与限速豁免一致：可信 proxy 直连 + 无 Authorization + 无 XFF。
@@ -360,7 +365,7 @@ async def pat_auth_middleware(request: Request, call_next):
     if pat is None:
         return JSONResponse({"detail": "PAT 无效或已吊销"}, status_code=401)
     need = PAT_SCOPE_WRITE if request.method in _WRITE_METHODS else PAT_SCOPE_READ
-    if need not in pat["scopes"]:
+    if not scope_allows(need, pat["scopes"]):
         return JSONResponse(
             {"detail": f"PAT scope 不足：{request.method} 需要 {need}"},
             status_code=403,

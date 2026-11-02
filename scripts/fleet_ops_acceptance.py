@@ -206,6 +206,9 @@ class Acceptance:
         assert returned["status"] == "returned"
         again = await self.raw("POST", f"{CP}/api/loops/{loop_id}/deliver", json={"content": "第二版真实交付", "author": ACTOR})
         assert again.status_code == 200, again.text
+        waited = await self.call("tasks.wait", path={"task_id": task_id}, query={
+            "target": "version_gt", "loop_ids": str(loop_id), "version_gt": 1, "timeout_seconds": 5})
+        assert waited["wait_status"] == "condition_met" and waited["loops"][0]["version"] >= 2
         accepted = await self.call("tasks.accept", path={"task_id": task_id}, body={"loop_id": loop_id, "author": ACTOR})
         assert accepted["pool_status"] == "done"
         detail = await self.raw("GET", f"{CP}/api/tasks/{task_id}")

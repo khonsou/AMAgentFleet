@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from . import dispatcher, inbox, mcpservers, models, registry, scheduler, singleton, templates
 from . import pool as poolmod
-from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation, runtime_api
+from . import fap, fap_middleware, fap_pats, fleet_ops, ops_credentials, conversation, runtime_api, evaluation, execution
 from .db import audit, init_db, pool
 from .runtime import get_runtime
 
@@ -39,6 +39,7 @@ app.include_router(fleet_ops.router)
 app.include_router(ops_credentials.router)
 app.include_router(conversation.router)
 app.include_router(runtime_api.router)
+app.include_router(evaluation.router)
 fap.set_feature_flag("idempotency", True)
 fap.set_feature_flag("pat_auth", True)
 
@@ -62,9 +63,10 @@ async def _ensure_agent_with_retry(name: str, ensure, timeout: float = 120.0) ->
 @app.on_event("startup")
 async def startup() -> None:
     await init_db()
-    # 版本化内置 Agent 均随项目部署；Ops 只读，指挥官仍可由用户正常优化。
+    # 版本化内置 Agent 均随项目部署；Ops/Eval 只读，指挥官仍可由用户正常优化。
     await _ensure_agent_with_retry(registry.SYSTEM_AGENT_NAME, registry.ensure_system_agent)
     await _ensure_agent_with_retry(registry.COMMANDER_AGENT_NAME, registry.ensure_commander_agent)
+    await _ensure_agent_with_retry(registry.EVAL_AGENT_NAME, registry.ensure_eval_agent)
     # 系统 Agent 与其凭证必须同时可用；仅初始化 PAT 不足以解析 assistant。
     await ops_credentials.ensure_system_credential()
     await ops_credentials.check_system_credential_readable()
@@ -260,7 +262,8 @@ async def list_tasks(
     agent: str | None = None,
     status: str | None = None,
     pool_status: str | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
+    ids: str | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
     filters, args = [], []
@@ -273,6 +276,15 @@ async def list_tasks(
     if pool_status:
         args.append(pool_status)
         filters.append(f"t.pool_status=${len(args)}")
+    if ids:
+        try:
+            task_ids = [int(value.strip()) for value in ids.split(",") if value.strip()]
+        except ValueError as exc:
+            raise HTTPException(422, "ids must be comma-separated integers") from exc
+        if not task_ids or len(task_ids) > 100:
+            raise HTTPException(422, "ids must contain 1–100 task IDs")
+        args.append(task_ids)
+        filters.append(f"t.id=ANY(${len(args)}::bigint[])")
     clause = "WHERE " + " AND ".join(filters) if filters else ""
     args.append(limit)
     limit_param = len(args)
@@ -282,13 +294,17 @@ async def list_tasks(
         rows = await conn.fetch(
             f"""SELECT t.*, l.id AS latest_loop_id, l.thread_id AS latest_thread_id,
                        l.status AS latest_loop_status, l.deliverable AS latest_deliverable,
+                       l.error AS loop_error, l.failure_kind, l.next_retry_at, l.recovery_action,
+                       l.recursion_limit, l.summary_chars,
                        claimants.items AS claimants,
                        (SELECT re.content FROM run_events re
                         WHERE re.thread_id=l.thread_id AND re.event_type='llm.ai.response'
                         ORDER BY re.seq DESC LIMIT 1) AS latest_message_content
                 FROM fleet_tasks t
                 LEFT JOIN LATERAL (
-                  SELECT id, thread_id, status, deliverable FROM fleet_task_loops
+                  SELECT id, thread_id, status, deliverable, error, failure_kind,
+                         next_retry_at, recovery_action, recursion_limit, summary_chars
+                  FROM fleet_task_loops
                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                 ) l ON true
                 LEFT JOIN LATERAL (
@@ -308,7 +324,7 @@ async def list_tasks(
         item["latest_message"] = content_text(raw)[:500] or None
         if isinstance(item.get("claimants"), str):
             item["claimants"] = json.loads(item["claimants"])
-        result.append(item)
+        result.append(execution.enrich_execution(item))
     return result
 
 
@@ -481,6 +497,8 @@ class TaskCreateBody(BaseModel):
     caller_thread_id: str | None = None  # runner 工具反解父 task 用
     model_profile: str | None = None
     subagent_model_policy: str = Field(default="auto", pattern="^(auto|inherit)$")
+    recursion_limit: int | None = Field(default=None, ge=1, le=300)
+    summary_chars: int = Field(default=500, ge=100, le=1000)
     idempotency_key: str | None = None  # spawn/写请求重试去重
 
 
@@ -506,7 +524,8 @@ async def task_create(body: TaskCreateBody) -> dict[str, Any]:
             created_by=body.created_by, parent_task_id=parent,
             idempotency_key=body.idempotency_key,
             model_profile=body.model_profile,
-            subagent_model_policy=body.subagent_model_policy)
+            subagent_model_policy=body.subagent_model_policy,
+            recursion_limit=body.recursion_limit, summary_chars=body.summary_chars)
     except poolmod.PoolError as exc:
         raise _pool_err(exc)
     return {"task_id": t["id"], "pool_status": t["pool_status"]}
@@ -517,6 +536,8 @@ class ClaimBody(BaseModel):
     claimant: str = Field(min_length=1)
     created_by: str = "human"
     model_profile: str | None = None
+    recursion_limit: int | None = Field(default=None, ge=1, le=300)
+    summary_chars: int = Field(default=500, ge=100, le=1000)
 
 
 @app.post("/api/tasks/{task_id}/loops", status_code=201)
@@ -525,7 +546,8 @@ async def loop_claim(task_id: int, body: ClaimBody) -> dict[str, Any]:
     try:
         loop = await poolmod.claim_loop(
             task_id, body.claimant_type, body.claimant,
-            created_by=body.created_by, model_profile=body.model_profile)
+            created_by=body.created_by, model_profile=body.model_profile,
+            recursion_limit=body.recursion_limit, summary_chars=body.summary_chars)
     except poolmod.PoolError as exc:
         raise _pool_err(exc)
     return {"loop_id": loop["id"], "status": loop["status"]}
@@ -599,6 +621,33 @@ class CommentBody(BaseModel):
 async def task_comment(task_id: int, body: CommentBody) -> dict[str, str]:
     await poolmod.add_comment(task_id, author=body.author, content=body.content, loop_id=body.loop_id)
     return {"status": "ok"}
+
+
+@app.get("/api/tasks/{task_id}/wait")
+async def task_wait(
+    task_id: int,
+    target: str,
+    loop_ids: str | None = None,
+    version_gt: int | None = Query(default=None, ge=0),
+    timeout_seconds: float = Query(default=60, ge=0, le=120),
+) -> dict[str, Any]:
+    """服务端有界等待 Task／Loop 状态，避免 Ops 在模型回合内紧密轮询。"""
+    selected = None
+    if loop_ids is not None:
+        try:
+            selected = {int(item.strip()) for item in loop_ids.split(",")}
+        except ValueError as exc:
+            raise HTTPException(422, "loop_ids 必须是逗号分隔的正整数") from exc
+        if not selected or any(item <= 0 for item in selected):
+            raise HTTPException(422, "loop_ids 必须是逗号分隔的正整数")
+    try:
+        detail = await poolmod.wait_task(
+            task_id, target=target, loop_ids=selected,
+            version_gt=version_gt, timeout_seconds=timeout_seconds)
+    except poolmod.PoolError as exc:
+        raise _pool_err(exc)
+    await _attach_latest_outputs(detail)
+    return detail
 
 
 @app.get("/api/tasks/{task_id}")
@@ -683,9 +732,58 @@ async def tasks_pending_review() -> list[dict[str, Any]]:
     return await poolmod.pending_review()
 
 
+async def _cancel_active_runs(task_id: int) -> int:
+    """关闭前确认活动 Runtime Run 已停止；仅收到请求不等于取消完成。"""
+    from .runtime import RuntimeServiceError
+
+    cancelled = 0
+    async with (await pool()).acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, thread_id FROM fleet_task_loops
+               WHERE task_id=$1 AND status IN ('claimed','running') AND thread_id IS NOT NULL""",
+            task_id,
+        )
+        for row in rows:
+            runtime = get_runtime()
+            try:
+                detail = await runtime.get_thread(row["thread_id"])
+            except RuntimeServiceError as exc:
+                if exc.status == 404:  # 已入队但尚未创建 Runtime Thread，没有 Run 可取消。
+                    continue
+                raise HTTPException(exc.status, f"无法确认 Runtime Run 状态，Task 未关闭：{exc}") from exc
+            for run in detail.get("runs") or []:
+                if run.get("status") not in ("created", "running", "pending"):
+                    continue
+                if not runtime.capabilities().cancel:
+                    raise HTTPException(
+                        409, f"Runtime '{runtime.name}' 不支持取消，Task {task_id} 未关闭")
+                run_id = run.get("run_id")
+                if not run_id:
+                    raise HTTPException(503, "活动 Run 缺少 run_id，Task 未关闭")
+                await conn.execute(
+                    """UPDATE fleet_task_loops
+                       SET cancel_requested_at=now(), cancelled_at=NULL, updated_at=now()
+                       WHERE id=$1""", row["id"])
+                try:
+                    result = await runtime.cancel_run(row["thread_id"], run_id, wait=True)
+                except RuntimeServiceError as exc:
+                    raise HTTPException(exc.status, f"Run 取消失败，Task 未关闭：{exc}") from exc
+                status_code = result[0] if isinstance(result, tuple) else getattr(result, "status_code", None)
+                if status_code != 204:
+                    raise HTTPException(
+                        503, f"Runtime 未确认 Run {run_id} 已停止（HTTP {status_code}），Task 未关闭")
+                await conn.execute(
+                    """UPDATE fleet_task_loops
+                       SET cancelled_at=now(), updated_at=now()
+                       WHERE id=$1 AND cancel_requested_at IS NOT NULL""", row["id"])
+                cancelled += 1
+    return cancelled
+
+
 @app.post("/api/tasks/{task_id}/close")
-async def task_close(task_id: int, author: str = "human") -> dict[str, str]:
-    """关闭作废：task 终结（非采纳路径），所有 loop 归档。"""
+async def task_close(task_id: int, author: str = "human") -> dict[str, Any]:
+    """关闭作废：确认活动 Run 停止后才终结 Task；失败时不归档。"""
+    cancelled = await _cancel_active_runs(task_id)
     async with (await pool()).acquire() as conn:
         ok = await conn.fetchval(
             "UPDATE fleet_tasks SET pool_status='done', status='rejected', finished_at=now(), updated_at=now() WHERE id=$1 AND pool_status != 'done' RETURNING id",
@@ -695,8 +793,9 @@ async def task_close(task_id: int, author: str = "human") -> dict[str, str]:
         await conn.execute(
             "UPDATE fleet_task_loops SET status='archived', updated_at=now() WHERE task_id=$1 AND status NOT IN ('accepted','archived')",
             task_id)
-    await audit("task.closed", actor=author, detail={"task_id": task_id})
-    return {"pool_status": "done"}
+    await audit("task.closed", actor=author,
+                detail={"task_id": task_id, "cancelled_runs": cancelled})
+    return {"pool_status": "done", "cancelled_runs": cancelled}
 
 
 @app.post("/api/loops/{loop_id}/requeue", status_code=202)
@@ -739,4 +838,4 @@ async def loop_by_thread(thread_id: str) -> dict[str, Any]:
             return {"loop": None}
         task = await conn.fetchrow(
             "SELECT id, pool_status, input FROM fleet_tasks WHERE id=$1", row["task_id"])
-    return {"loop": dict(row), "task": dict(task)}
+    return {"loop": execution.enrich_execution(dict(row)), "task": dict(task)}

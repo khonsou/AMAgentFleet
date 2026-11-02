@@ -8,6 +8,7 @@ import TaskConversation from './components/TaskConversation'
 import OperationsCenter from './components/OperationsCenter'
 import TaskCreateForm from './components/TaskCreateForm'
 import AgentConversation from './components/AgentConversation'
+import AgentTaskConversation from './components/AgentTaskConversation'
 import './playground.css'
 
 type Drawer = { type: 'agent' | 'agents' | 'pool' | 'task' | 'operations'; id?: string | number }
@@ -152,7 +153,7 @@ function PlaygroundContent() {
     {drawer && <><div className="drawer-backdrop open" onClick={() => setDrawer(null)}></div><aside className="detail-drawer open" aria-label="Playground 详情" aria-hidden="false">
       {drawer.type === 'task' && <TaskConversation key={Number(drawer.id)} taskId={Number(drawer.id)} agents={scene?.agents || []} onClose={() => setDrawer(null)} onChanged={() => void loadScene()} />}
       {drawer.type === 'operations' && <OperationsCenter onClose={() => setDrawer(null)} />}
-      {selectedAgent && <AgentDrawer key={selectedAgent.id} agent={selectedAgent} onClose={() => setDrawer(null)} onTask={openTask} onChanged={() => void loadScene()} />}
+      {selectedAgent && <AgentDrawer key={selectedAgent.id} agent={selectedAgent} agents={scene?.agents || []} onClose={() => setDrawer(null)} onTask={openTask} onChanged={() => void loadScene()} />}
       {drawer.type === 'pool' && <PoolDrawer tasks={openTasks} agents={scene?.agents || []} onClose={() => setDrawer(null)} onTask={openTask} onCreated={(taskId) => { void loadScene(); setDrawer({ type: 'task', id: taskId }) }} />}
       {drawer.type === 'agents' && <AgentsDrawer agents={scene?.agents || []} onClose={() => setDrawer(null)} onAgent={(id) => selectObject('agent', id)} />}
     </aside></>}
@@ -162,14 +163,18 @@ function PlaygroundContent() {
 function DrawerHead({ kicker, title, subtitle, onClose }: { kicker: string; title: string; subtitle: string; onClose: () => void }) {
   return <><div className="drawer-top"><span className="drawer-kicker">{kicker}</span><button className="drawer-close" onClick={onClose} aria-label="关闭详情">×</button></div><h2>{title}</h2><p className="drawer-subtitle">{subtitle}</p></>
 }
-function AgentDrawer({ agent, onClose, onTask, onChanged }: { agent: AgentView; onClose: () => void; onTask: (task: FleetTask) => void; onChanged: () => void }) {
+function AgentDrawer({ agent, agents, onClose, onTask, onChanged }: { agent: AgentView; agents: AgentView[]; onClose: () => void; onTask: (task: FleetTask) => void; onChanged: () => void }) {
   const [tab, setTab] = useState<'tasks' | 'chat'>(agent.id === 'fleet-ops-01' ? 'chat' : 'tasks')
   return <>
     <DrawerHead kicker={`AGENT / ${agent.id}`} title={agent.name} subtitle={agent.role} onClose={onClose} />
     <span className="drawer-status" style={{ '--status': STATUS_COLOR[agent.status] } as React.CSSProperties}><i></i>{STATUS_LABEL[agent.status]}</span>
     <div className="drawer-stats"><div><strong>{String(agent.tasks.length).padStart(2, '0')}</strong><span>OPEN TASKS</span></div><div><strong>{String(agent.tasks.filter((task) => task.latest_deliverable).length).padStart(2, '0')}</strong><span>OUTPUT</span></div><div><strong>{agent.registryStatus === 'destroyed' ? '×' : '✓'}</strong><span>REGISTRY</span></div></div>
     <div className="drawer-tabs" role="tablist"><button role="tab" aria-selected={tab === 'tasks'} className={tab === 'tasks' ? 'active' : ''} onClick={() => setTab('tasks')}>TASKS</button><button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>AGENT CHAT</button></div>
-    {tab === 'chat' ? <AgentConversation agent={agent} onChanged={onChanged} /> : <section className="drawer-section"><h3>TASKS / SELECT TO OPEN GROUP CHAT</h3>{agent.tasks.map((task) => <button className="drawer-task" key={task.id} onClick={() => onTask(task)}><span><b>{task.input}</b><small>TASK #{task.id} · {task.latest_loop_status || task.status}</small></span><span>↗</span></button>)}{!agent.tasks.length && <div className="empty-state">正在草地休息区待命。</div>}</section>}
+    {tab === 'chat'
+      ? agent.id === 'fleet-ops-01'
+        ? <AgentConversation agent={agent} onChanged={onChanged} />
+        : <AgentTaskConversation agent={agent} agents={agents} onClose={onClose} onChanged={onChanged} />
+      : <section className="drawer-section"><h3>TASKS / SELECT TO OPEN GROUP CHAT</h3>{agent.tasks.map((task) => <button className="drawer-task" key={task.id} onClick={() => onTask(task)}><span><b>{task.input}</b><small>TASK #{task.id} · {task.latest_loop_status || task.status}</small></span><span>↗</span></button>)}{!agent.tasks.length && <div className="empty-state">正在草地休息区待命。</div>}</section>}
   </>
 }
 function PoolDrawer({ tasks, agents, onClose, onTask, onCreated }: { tasks: FleetTask[]; agents: AgentView[]; onClose: () => void; onTask: (task: FleetTask) => void; onCreated: (taskId: number) => void }) {

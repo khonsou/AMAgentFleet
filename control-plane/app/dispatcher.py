@@ -152,7 +152,7 @@ async def _run_loop(loop_id: int) -> None:
         model_profile=loop.get("model_profile"),
         recovery_action=recovery_action,
         checkpoint_ref=loop.get("last_checkpoint_id"),
-        recursion_limit=RUN_RECURSION_LIMIT,
+        recursion_limit=loop.get("recursion_limit") or RUN_RECURSION_LIMIT,
         subagent_enabled=True,
     )
 

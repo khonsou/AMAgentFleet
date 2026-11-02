@@ -22,7 +22,13 @@ FAP_AGENT_DOC_MD = r"""# AM Agent Fleet — Agent API Doc (FAP v1, protocol 1.0)
   fleet_operations / idempotency / pat_auth / threads` 均在本控制面；Thread／Run
   由当前 RuntimeAdapter 提供，第三方不直接依赖 DeerFlow 网关，见 §4。
 - **鉴权**：`Authorization: Bearer <PAT>`（PAT 由员工在 Console 设置页签发，
-  scope 仅 `read`/`write`，不做数据隔离）。未启用 PAT 的实例所有端点仅内网可达。
+  scope 仅 `read`/`write`，不做数据隔离）。**write 隐含 read**：执行器只需一个
+  write PAT 即可完成读取与写入；独立 read PAT 仍是只读观察者。`GET/HEAD/OPTIONS`
+  需要 read，`POST/PUT/PATCH/DELETE` 需要 write。`/api/meta` 的
+  `authentication.method_scope_matrix` 与 `public_operations` 是当前部署的权威清单；
+  未启用 PAT 的实例所有端点仅内网可达。
+- **部署识别**：`api_version` 是 Control Plane API 版本，`deployment_version` 是
+  部署标识（环境变量 `FLEET_DEPLOY_VERSION`，缺省同 API 版本）。二者均不含秘密。
 - **组织作用域**：单一共享组织，全员可见所有 agent 与任务（QA-5）。
 
 ## 1. 写操作三件套（所有变更类 POST/PUT/DELETE）
@@ -82,14 +88,44 @@ POST /api/tasks/{id}/loops
 ### 3.3 状态查询
 
 ```
-GET /api/tasks?limit=200          → 全量任务列表（含最新 loop/thread 引用）
+GET /api/tasks?limit=200          → 任务列表（含最新 loop/thread 引用）
+GET /api/tasks?ids=24,25,26       → 单次读取 1–100 个指定 Task，减少轮询请求
 GET /api/tasks/{id}               → task + loops 详情
+GET /api/tasks/{id}/wait          → 服务端有界等待交付／终态／新版本（ADR-0039）
 GET /api/review-queue             → 待确认（review）任务列表
 GET /api/loops/by-thread/{tid}    → thread → 所属 loop + task 池状态
 ```
 
-loop 状态机：`claimed → running → delivered`（自动捕获交付）；
-异常回 `claimed`（error 落库，可重派）；验收相关：`accepted / archived / returned`。
+`tasks.wait` 的 `target` 支持 `delivered / all_delivered / terminal / version_gt`；
+可选 `loop_ids` 为逗号分隔字符串，`version_gt` 条件必须同时传旧版本号，单次
+`timeout_seconds` 为 0–120 秒。响应在 Task 详情上增加 `wait_status` 与 `reason`；
+只有 `condition_met` 表示条件满足，`timeout` 与 `failed` 均不得当成交付成功。
+
+内部 Loop 状态机：`claimed → running → delivered`（自动捕获交付）；
+异常回 `claimed` 以保留内部恢复兼容性；验收相关：`accepted / archived / returned`。
+**第三方收集必须读取结构化执行字段，不能只猜 `claimed + error`**：
+
+- `execution_status`：`queued / running / succeeded / failed / closed`；
+- `is_terminal`：当前执行是否终态；`last_error` 与 `failure_kind` 给出失败证据；
+- `retryable=true` 且 `recovery_action` 非空表示仍有自动恢复动作，
+  `next_retry_at` 给出调度时间；无恢复动作的错误一律映射为 `failed`；
+- `worker_state`：`queued / retry_scheduled / running / terminal`。
+
+```python
+# 低频批量收集；429 时按 Retry-After 完整退避，不把等待记为模型失败。
+items = GET("/api/tasks", params={"ids": ",".join(map(str, pending_ids))})
+for item in items:
+    if item["is_terminal"]:
+        persist_result(item)       # succeeded/failed/closed 都结束等待
+    elif item["retryable"]:
+        keep_pending(item["next_retry_at"])
+    else:
+        keep_pending()             # 正常 queued/running
+```
+
+若列表含多个 Loop，以 Task 返回的 `latest_loop_id` 为准；需要逐 Loop 判断时读取
+`GET /api/tasks/{id}` 的 `loops[]` 同名字段。`execution_status` 描述执行，不替代
+`pool_status=open/review/done` 的验收状态。
 
 ### 3.4 交付验收（强制）
 
@@ -124,10 +160,16 @@ agent loop 的交付通常由 dispatcher 自动捕获，无需手工调用；
 
 ```
 POST /api/tasks/{id}/comments   {"author": "...", "content": "...", "loop_id": <可选>}
-POST /api/tasks/{id}/close      关闭作废（非采纳路径，所有 loop 归档）
+POST /api/tasks/{id}/close      关闭作废（非采纳路径）
 POST /api/loops/{id}/requeue    重新执行 agent loop（新指令续接 Thread，副作用幂等）
 POST /api/loops/{id}/resume     从最新 checkpoint 断点续跑（不重复原始输入）
 ```
+
+close 会先请求并等待活动 Runtime Run 停止，再归档 Loop。成功响应为
+`{"pool_status":"done","cancelled_runs":N}`；`cancel_requested_at` 表示请求时间，
+`cancelled_at` 只记录 Runtime 确认停止的时间。Runtime 不支持取消、取消失败或未确认
+停止时返回非 2xx，**Task 不归档**。`/api/meta` 仅在当前 Runtime 支持时声明
+`runtime_cancel`。
 
 ## 4. Thread 执行与对话（Control Plane 稳定 Runtime 面）
 
@@ -158,7 +200,6 @@ POST   /api/agents/{name}/start    拉起（幂等，恢复 cron）
 POST   /api/agents/{name}/stop     休眠
 POST   /api/agents/{name}/dispatch 兼容层：建 task + 指派（新代码请直接用 §3.1）
 GET    /api/agents/{name}/tasks    该 agent 的任务
-GET    /api/agents/{name}/audit    该 agent 的审计
 POST   /api/agents/{name}/inbox    agent 唤醒 agent（攒批合并唤醒）
 GET    /api/agents/{name}/inbox    inbox 状态
 ```

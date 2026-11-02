@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { ExternalLink, MessageSquare, X } from 'lucide-react'
 import { api, type ChatMessage } from '@/lib/api'
@@ -7,9 +7,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Led } from '@/components/console/Status'
 import CollapsibleContent from './CollapsibleContent'
 import { normalizeOpsMessages } from './opsMessages'
+import {
+  FLEET_OPS_AGENT_ID as AGENT_ID,
+  FLEET_OPS_THREAD_STORAGE_KEY as STORAGE_KEY,
+  readAgentThreadId,
+  writeAgentThreadId,
+} from '@/lib/fleetOps'
 
-const STORAGE_KEY = 'fleet-ops-thread-id'
-const AGENT_ID = 'fleet-ops-01'
 const INPUT_CLS = 'rounded-[2px] border-hairline bg-inset text-ink placeholder:text-ink-3 focus-visible:ring-signal/40'
 
 /** 首页自然语言操作入口。业务动作统一由已注册的 Fleet Ops Agent 与协议执行。 */
@@ -25,12 +29,13 @@ export default function FleetOpsWidget() {
   const creating = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const loadMessages = async (id: string) => {
+  const loadMessages = useCallback(async (id: string) => {
     const raw = await api.messages(id)
     const normalized = normalizeOpsMessages(raw)
     setMessages(normalized)
+    setError('')
     return normalized
-  }
+  }, [])
 
   useEffect(() => {
     if (!open || threadId || creating.current) return
@@ -39,7 +44,7 @@ export default function FleetOpsWidget() {
     setLoading(true)
     setError('')
     const initialize = async () => {
-      const saved = window.localStorage.getItem(STORAGE_KEY)
+      const saved = readAgentThreadId(AGENT_ID)
       try {
         if (saved) {
           const detail = await api.thread(saved)
@@ -53,7 +58,7 @@ export default function FleetOpsWidget() {
         }
         const created = await api.create(undefined, AGENT_ID)
         if (!created.thread_id) throw new Error('操作助手未返回 Thread ID')
-        window.localStorage.setItem(STORAGE_KEY, created.thread_id)
+        writeAgentThreadId(AGENT_ID, created.thread_id)
         if (active) {
           setThreadId(created.thread_id)
           setMessages([])
@@ -73,7 +78,26 @@ export default function FleetOpsWidget() {
     }
     void initialize()
     return () => { active = false }
-  }, [open, threadId, attempt])
+  }, [open, threadId, attempt, loadMessages])
+
+  useEffect(() => {
+    if (!open || !threadId) return
+    const timer = window.setInterval(() => {
+      void loadMessages(threadId).catch((reason) => setError(String(reason)))
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [open, threadId, loadMessages])
+
+  useEffect(() => {
+    if (!open) return
+    const syncThread = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || !event.newValue || event.newValue === threadId) return
+      setThreadId(event.newValue)
+      void loadMessages(event.newValue).catch((reason) => setError(String(reason)))
+    }
+    window.addEventListener('storage', syncThread)
+    return () => window.removeEventListener('storage', syncThread)
+  }, [open, threadId, loadMessages])
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

@@ -1,33 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentView } from '../core/types'
 import { useOperations } from '@/protocol/useOperations'
+import { normalizeOpsMessages } from '@/components/console/opsMessages'
+import {
+  FLEET_OPS_AGENT_ID,
+  agentThreadStorageKey,
+  readAgentThreadId,
+  writeAgentThreadId,
+} from '@/lib/fleetOps'
 
 interface ChatMessage { id: string; role: 'human' | 'ai'; content: string; delivery?: 'sending' | 'failed' }
 interface ThreadDetail { thread: { assistant_id?: string; agent_name?: string } }
 
-function textOf(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value.map((part) => typeof part === 'string' ? part : textOf(part)).join('')
-  if (value && typeof value === 'object' && 'text' in value) return textOf((value as { text: unknown }).text)
-  return ''
-}
 function normalize(raw: unknown): ChatMessage[] {
-  const rows = Array.isArray(raw) ? raw : (raw as { messages?: unknown[] })?.messages || []
-  return rows.flatMap((row, index) => {
-    const event = row as Record<string, unknown>
-    const inner = (event.content && typeof event.content === 'object' ? event.content : event) as Record<string, unknown>
-    const type = String(inner.type || event.event_type || '')
-    const role = ['human', 'user', 'llm.human.input'].includes(type) ? 'human' : ['ai', 'assistant', 'llm.ai.response'].includes(type) ? 'ai' : null
-    const content = textOf(inner.content)
-    return role && content.trim() ? [{ id: `${index}-${type}`, role, content }] : []
-  })
+  return normalizeOpsMessages(raw).flatMap((message, index) =>
+    message.role === 'human' || message.role === 'ai'
+      ? [{ id: `${index}-${message.role}`, role: message.role, content: message.content }]
+      : [],
+  )
 }
 function tempId() { return `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}` }
 interface ThreadHandle { id: string; created: boolean }
 
 export default function AgentConversation({ agent, onChanged }: { agent: AgentView; onChanged: () => void }) {
   const { execute } = useOperations()
-  const storageKey = `playground-agent-thread-${agent.id}`
+  const storageKey = agentThreadStorageKey(agent.id)
   const threadPromise = useRef<Promise<ThreadHandle> | null>(null)
   const loadSequence = useRef(0)
   const [threadId, setThreadId] = useState('')
@@ -35,7 +32,7 @@ export default function AgentConversation({ agent, onChanged }: { agent: AgentVi
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
 
-  const loadMessages = async (id: string) => {
+  const loadMessages = useCallback(async (id: string) => {
     const sequence = ++loadSequence.current
     const response = await execute('threads.messages', { path_params: { tid: id } })
     if (sequence !== loadSequence.current) return
@@ -46,10 +43,11 @@ export default function AgentConversation({ agent, onChanged }: { agent: AgentVi
         !serverMessages.some((server) => server.role === optimistic.role && server.content === optimistic.content),
       )]
     })
-  }
+    setError('')
+  }, [execute])
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(storageKey)
+    const saved = readAgentThreadId(agent.id)
     if (!saved) return
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -68,9 +66,26 @@ export default function AgentConversation({ agent, onChanged }: { agent: AgentVi
       })()
     }, 0)
     return () => window.clearTimeout(timer)
-    // Agent 切换时由父组件 key 触发完整重挂载。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.id])
+  }, [agent.id, execute, loadMessages, storageKey])
+
+  useEffect(() => {
+    if (!threadId) return
+    const timer = window.setInterval(() => {
+      void loadMessages(threadId).catch((reason) => setError(String(reason)))
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [threadId, loadMessages])
+
+  useEffect(() => {
+    if (agent.id !== FLEET_OPS_AGENT_ID) return
+    const syncThread = (event: StorageEvent) => {
+      if (event.key !== storageKey || !event.newValue || event.newValue === threadId) return
+      setThreadId(event.newValue)
+      void loadMessages(event.newValue).catch((reason) => setError(String(reason)))
+    }
+    window.addEventListener('storage', syncThread)
+    return () => window.removeEventListener('storage', syncThread)
+  }, [agent.id, storageKey, threadId, loadMessages])
 
   const ensureThread = (firstMessage: string): Promise<ThreadHandle> => {
     if (threadId) return Promise.resolve({ id: threadId, created: false })
@@ -80,7 +95,7 @@ export default function AgentConversation({ agent, onChanged }: { agent: AgentVi
         body: { assistant_id: agent.id, instruction: firstMessage, recursion_limit: 300 },
       }).then((response) => {
         const id = String((response.result as { thread_id: string }).thread_id)
-        window.localStorage.setItem(storageKey, id)
+        writeAgentThreadId(agent.id, id)
         setThreadId(id)
         return { id, created: true }
       }).catch((reason) => {

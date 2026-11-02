@@ -59,4 +59,28 @@ describe('AgentConversation 异步人类消息', () => {
     expect(mocks.execute.mock.calls.filter((call) => call[0] === 'threads.send')).toHaveLength(1)
     expect(mocks.onChanged).toHaveBeenCalled()
   })
+
+  it('Fleet Ops 恢复全局共享 Thread 并每 5 秒刷新消息', async () => {
+    const ops = { ...agent, id: 'fleet-ops-01', name: 'Fleet Ops' }
+    window.localStorage.setItem('fleet-ops-thread-id', 'shared-ops-thread')
+    mocks.execute.mockImplementation((operation: string) => {
+      if (operation === 'threads.get') return Promise.resolve({ result: { thread: { assistant_id: 'fleet-ops-01' } } })
+      if (operation === 'threads.messages') return Promise.resolve({ result: [] })
+      throw new Error(`unexpected operation: ${operation}`)
+    })
+    vi.useFakeTimers()
+    try {
+      render(<AgentConversation agent={ops} onChanged={mocks.onChanged} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(mocks.execute).toHaveBeenCalledWith('threads.get', { path_params: { tid: 'shared-ops-thread' } })
+      expect(mocks.execute).toHaveBeenCalledWith('threads.messages', { path_params: { tid: 'shared-ops-thread' } })
+      expect(mocks.execute.mock.calls.filter((call) => call[0] === 'threads.create')).toHaveLength(0)
+
+      const before = mocks.execute.mock.calls.filter((call) => call[0] === 'threads.messages').length
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(mocks.execute.mock.calls.filter((call) => call[0] === 'threads.messages').length).toBeGreaterThan(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -1,0 +1,66 @@
+schema_version: 1
+id: core-v1
+name: 平台多 Agent 自主编排与停止验收
+description: >-
+  开发／评测环境使用的平台参考场景。只评价 AMAgentFleet 的编排、协议、
+  Runtime、证据、Playground 与工程成本，不评价第三方业务 KPI。
+target_score: 75
+read_only: true
+dimensions:
+  task_goal:
+    weight: 20
+    label: Task Pool 与 Goal 编排
+  multi_agent:
+    weight: 20
+    label: 多 Agent 协作
+  protocol:
+    weight: 15
+    label: 统一协议层
+  runtime:
+    weight: 10
+    label: Runtime 复用与替换
+  evidence_auth:
+    weight: 10
+    label: 共享 Evidence 与统一授权
+  playground:
+    weight: 15
+    label: Playground 易用性
+  engineering_cost:
+    weight: 10
+    label: 工程质量与净成本
+hard_gates:
+  - id: P0
+    description: 多 Agent 协作、自动唤醒、独立评价与停止均完成，且无人工催促或预置输出
+  - id: P1
+    description: 协议、Runtime Contract 与安全通过，无越权 Effect 或秘密正文泄露
+  - id: P2
+    description: 非工程用户可独立完成注册、赋予 Goal、启动、观察证据与异常处理
+baseline:
+  required_for_full_score: true
+  cap_when_missing: 74
+repeatability:
+  required_for_reusable: true
+  min_runtime_types: 2
+  min_third_party_agents: 2
+  min_consecutive_stable_runs: 3
+stop_conditions:
+  target_score: 75
+  max_no_improvement_rounds: 2
+  max_experiments: 6
+  max_tokens: 2000000
+  max_minutes: 120
+reference_workflow:
+  - id: prepare
+    action: 注册两个只读测试 Agent，加载 fixtures 与 expected 中的受控事实
+  - id: delegate
+    action: 指挥官自主选择 Agent 并创建真实子 Task／Loop，不预置 worker 输出
+  - id: resume
+    action: 子任务交付自动唤醒父 Thread，禁止人工催促
+  - id: synthesize
+    action: 指挥官读取真实 OUTPUT，组装事实并标明来源与未决项
+  - id: verify
+    action: 独立评价与确定性检查核对事实、副作用、成本和停止条件
+fixtures:
+  fleet_status: fixtures/fleet-status.json
+  timeline_boards: fixtures/timeline-boards.json
+expected_facts: expected/facts.json

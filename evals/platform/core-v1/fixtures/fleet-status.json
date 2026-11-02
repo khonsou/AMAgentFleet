@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-01-01T00:00:00Z",
+  "pool_status": {
+    "open": 1,
+    "review": 2,
+    "done": 3
+  },
+  "attention_task_ids": [101, 102]
+}

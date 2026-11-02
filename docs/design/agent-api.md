@@ -53,6 +53,7 @@
 | C7 | 指挥官分解子任务 | runner 工具 `agent_spawn` | ✅ 零改上游 |
 | C8 | 人机同构交付（人贴链接交付，同等验收） | `POST /api/loops/{id}/deliver` | ✅ |
 | C9 | 异常恢复（断点续跑／重新执行） | `POST /api/loops/{id}/resume`、`POST /api/loops/{id}/requeue` | ✅ ADR-0029；临时故障最多自动重试 2 次，递归异常自动续跑 1 次，人工续跑总上限 3 次 |
+| C10 | Ops 有界等待交付／终态／新版本 | `GET /api/tasks/{id}/wait` | ✅ ADR-0039；0–120 秒，timeout／failed 显式返回 |
 
 ### D. Thread 执行与对话
 

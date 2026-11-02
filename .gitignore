@@ -14,9 +14,20 @@ __pycache__/
 *.pyc
 console/backend/.venv/
 
-# Node
-console/frontend/node_modules/
-console/frontend/dist/
+# Node 与构建输出（所有 Console／原型目录）
+**/node_modules/
+**/dist/
+
+# 其他会话的工作树、输入附件与本地研究材料（保留在本机，不入库）
+.worktrees/
+.attachments/
+.research/
+
+# 一次性浏览器 smoke 脚本；正式验收脚本放 scripts/
+console/frontend/.smoke-*.mjs
+
+# 本机 Playground 临时 Bot，不作为平台内置 Agent 发布
+control-plane/agents/playground-test-bot*.yaml
 
 # 日志与系统文件
 *.log

@@ -32,11 +32,13 @@ class RegistryError(Exception):
 
 SYSTEM_AGENT_NAME = "fleet-ops-01"
 COMMANDER_AGENT_NAME = "fleet-cmd-01"
+EVAL_AGENT_NAME = "fleet-eval-01"
+READONLY_SYSTEM_AGENTS = {SYSTEM_AGENT_NAME, EVAL_AGENT_NAME}
 
 
 def assert_mutable(name: str) -> None:
     """日常管理面不得改变系统 Agent；版本化部署直接调用 apply_agent。"""
-    if name == SYSTEM_AGENT_NAME:
+    if name in READONLY_SYSTEM_AGENTS:
         raise RegistryError(403, f"系统内置 Agent '{name}' 只读，禁止通过日常管理接口修改或生命周期操作")
 
 
@@ -183,6 +185,11 @@ async def ensure_system_agent() -> None:
 async def ensure_commander_agent() -> None:
     """指挥官随项目部署，但不属于只读系统 Agent。"""
     await ensure_agent(COMMANDER_AGENT_NAME)
+
+
+async def ensure_eval_agent() -> None:
+    """平台评测 Agent 随项目部署，但专用评测调用面独立验收。"""
+    await ensure_agent(EVAL_AGENT_NAME)
 
 
 async def remove_agent(name: str) -> None:

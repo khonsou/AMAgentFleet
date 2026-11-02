@@ -31,6 +31,7 @@ control-plane/ ✅    # Registry / Dispatcher / Scheduler / Admin API (FastAPI :
   app/inbox.py       #   agent 持久 Inbox，攒批合并唤醒
   app/scheduler.py   #   YAML cron ↔ scheduled-tasks API 对账
 agents/ ✅           # agent YAML 定义（版本化，每个 agent 一个文件，一等公民）
+evals/ ✅            # 平台评测场景与确定性评分器；运行输出只进 artifacts/，不写回场景目录
 gateway/             # MCP Gateway：工具白名单校验、令牌网关侧注入、审计
 vault/               # Token Vault：OAuth token 托管（KMS 加密）
 skills/              # SKILL.md 能力包（同步 OSS）

@@ -8,11 +8,13 @@ interface Props {
   agents: AgentView[]
   onClose: () => void
   onChanged: () => void
+  /** 嵌入 Agent 详情时保留外层抽屉头，避免重复标题与关闭按钮。 */
+  embedded?: boolean
 }
 
 function tempId() { return `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}` }
 
-export default function TaskConversation({ taskId, agents, onClose, onChanged }: Props) {
+export default function TaskConversation({ taskId, agents, onClose, onChanged, embedded = false }: Props) {
   const { execute, busy } = useOperations()
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [error, setError] = useState('')
@@ -113,7 +115,7 @@ export default function TaskConversation({ taskId, agents, onClose, onChanged }:
   }
 
   return <>
-    <div className="drawer-top"><span className="drawer-kicker">TASK GROUP CHAT / #{taskId}</span><button className="drawer-close" onClick={onClose} aria-label="关闭群聊">×</button></div>
+    {!embedded && <div className="drawer-top"><span className="drawer-kicker">TASK GROUP CHAT / #{taskId}</span><button className="drawer-close" onClick={onClose} aria-label="关闭群聊">×</button></div>}
     <h2>{conversation?.task.input || `Task #${taskId}`}</h2>
     <p className="drawer-subtitle">消息立即上屏，Agent 在后台执行；可以连续发送，无需等待上一条完成。</p>
     {error && <p role="alert" className="operation-error">{error}</p>}

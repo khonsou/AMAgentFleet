@@ -1,0 +1,36 @@
+{
+  "platform_version": "candidate-example",
+  "scenario_version": "core-v1",
+  "gates": {
+    "P0": true,
+    "P1": true,
+    "P2": true
+  },
+  "dimensions": {
+    "task_goal": 4,
+    "multi_agent": 4,
+    "protocol": 4,
+    "runtime": 3,
+    "evidence_auth": 4,
+    "playground": 3,
+    "engineering_cost": 3
+  },
+  "baseline": {
+    "comparable": true,
+    "total_score": 66
+  },
+  "repeatability": {
+    "runtime_types": 1,
+    "third_party_agents": 1,
+    "consecutive_stable_runs": 2
+  },
+  "progress": {
+    "no_improvement_rounds": 0,
+    "repeated_failure": false,
+    "experiments": 1,
+    "tokens": 1000,
+    "minutes": 4,
+    "no_new_hypothesis": false,
+    "maintainer_stop": false
+  }
+}

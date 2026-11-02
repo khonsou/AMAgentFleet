@@ -55,10 +55,19 @@ class SpawnArgs(BaseModel):
         default=None,
         description="可选的子任务唯一标识；重试保持不变。同文但确实不同的子任务必须使用不同标识",
     )
+    recursion_limit: int | None = Field(
+        default=None, ge=1, le=300,
+        description="本子任务的最大 graph steps；检索任务建议 60–100，缺省沿用平台默认 300",
+    )
+    summary_chars: int = Field(
+        default=500, ge=100, le=1000,
+        description="父级唤醒时每个子任务结果的最大摘要字符数，完整 OUTPUT 仍独立保存",
+    )
 
 
 async def _spawn(task: str, assignee: str | None = None, acceptance_hint: str = "",
                  model_profile: str | None = None, spawn_key: str | None = None,
+                 recursion_limit: int | None = None, summary_chars: int = 500,
                  config: RunnableConfig = None) -> str:
     caller = _caller(config)
     cfg = (config or {}).get("configurable", {}) if isinstance(config, dict) else {}
@@ -74,6 +83,8 @@ async def _spawn(task: str, assignee: str | None = None, acceptance_hint: str = 
         "created_by": caller,
         "caller_thread_id": cfg.get("thread_id"),
         "model_profile": model_profile,
+        "recursion_limit": recursion_limit,
+        "summary_chars": summary_chars,
         "idempotency_key": idempotency_key,
     }
     out = await _cp("/api/tasks", body, idempotency_key=idempotency_key)

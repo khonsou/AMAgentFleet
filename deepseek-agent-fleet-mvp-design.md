@@ -342,6 +342,7 @@ task（open → review → done，只前进不回退）
   采纳记审计。打回 = 对该 loop 评论 → 同 thread 水合续跑 → 交 v2，不影响 task 与其他 loop。
 - **人机同构**：人领取后在 Console 对话交付，产出结构与 agent loop 一致。
 - 数据模型：`fleet_task_loops`（loop 表）、`fleet_task_comments`；`fleet_tasks` 状态收敛 open|review|done。
+- **Ops 有界等待（ADR-0039）**：`GET /api/tasks/{id}/wait` 在控制面等待 delivered／all_delivered／terminal／version_gt，避免 Ops 在模型 Run 内重复 `tasks.get`；仅 `condition_met` 可进入后续验收，`timeout` 与 `failed` 不得伪装成交付。`version_gt` 要求新版本已再次交付，running／returned 不算。单次等待 0–120 秒，第一版采用服务端短间隔 PG 检查，不提高 DeerFlow 循环检测阈值。
 
 ### 7.7++ Thread 实例选模（2026-10-28，ADR-0028）
 
@@ -381,6 +382,8 @@ ADR-0010"3 个并行 loop"措辞澄清为"终身累计 ≤3 个 agent loop"
 
 FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户端只适配各自既有身份通道，不新增 Playground 特权。Task 群聊通过通用 `tasks.conversation` 只读投影聚合多个 LOOP、Thread、评论与 OUTPUT，不创建新业务实体；写操作仍调用既有 operation。群聊输入默认发给选中的 Agent／LOOP，“全组”只写 Task comment，避免隐式广播收费 RUN。Diorama 3D renderer 与协议客户端解耦，视觉严格沿用团队 review 的 demo。
 
+普通业务 Agent 不再维护独立的 Playground 私聊：有可继续 Task 时，聊天入口选择具体 Task 并进入与 Task Detail 相同的 `tasks.conversation`；没有可继续 Task 时，首条消息调用 `tasks.create(assignee=agent.id)` 并进入新 Task 群聊。已结束 Task 不默认复活，多个 Task 必须显式选择。`fleet-ops-01` 是例外，Playground 与其他页面的操作助手共用 `fleet-ops-thread-id` 指向的持久 Thread，并以 5 秒刷新及同源 storage 事件同步消息；旧 Playground 会话键只迁移，不拼接历史。当前键作用域是同源浏览器，跨 origin 的服务端主会话映射不在本批范围。
+
 ### 7.12 RuntimeAdapter 与整站冷切换（2026-11-01，ADR-0032）
 
 内部执行通过 `control-plane/app/runtime/` 的窄 RuntimeAdapter 隔离。Fleet 核心只使用运行时无关的 Agent 部署、Run、恢复引用、模型目录和 capabilities 契约；DeerFlow 原生 API、LangGraph payload、结果提取与旧 cron 兼容集中在 `DeerFlowAdapter`。`FLEET_RUNTIME` 缺省为 `deerflow`，未知值启动失败。Thread／Run 的 FAP operation ID 和路径保持不变，统一由 Control Plane 的稳定 Runtime surface 提供；Console 旧端点只做兼容代理，不再直读 DeerFlow 表，SSE 暂保留原生兼容通道。第一版只允许整站单 Runtime 冷切换：排干活动 Loop，旧 Thread／Checkpoint 不跨 Runtime 续跑，不做 per-Agent 混跑或热迁移。实施与验收门见 [分阶段实施拆解](docs/dev/protocol-runtime-adapter-rollout.md)。
@@ -392,6 +395,28 @@ FAP 是 Console GUI、Agent 与 Playground 的唯一能力清单；三类客户�
 GUI 不再对所有写操作弹确认框。普通 Task／Thread 消息由当前动作直接确认，保留 `confirmed: true`、幂等和服务端 actor 校验；只有 `confirmation: high_risk` 的破坏性、凭证或外部连接操作需要额外确认。确认仅表示同意发送命令，弹窗立即关闭，后台继续执行并独立展示结果，不等待 Agent 回复。风险级别统一登记在 `fleet-ops-protocol.json`，不改变 FAP／Agent 工具的写确认语义。
 
 Bot 对话与 Task 群聊采用 ADR-0034 的乐观消息模型：人类输入立即上屏并清空输入框，发送按钮不因上一条仍在执行而禁用。首次创建复用同一 Promise 区分创建者与后续发送者，避免重复 Thread；服务端快照与乐观消息合并去重，不覆盖发送中或失败消息。
+
+### 7.14 平台评测 Agent 与有界自迭代（2026-11-01，ADR-0035）
+
+`fleet-eval-01` 是唯一平台评测身份，开发时执行版本化场景并评估开发效率，发布后持续只读监控运行状态；第三方业务 Goal 与评分始终由运营方负责。场景位于 `evals/platform/`，确定性评分器计算七维平台分数，模型不得自评。真实执行复用 `fleet_task_loops` 与 Thread／Run，结构化评分进入 `fleet_eval_reports`，建议进入 `fleet_eval_recommendations`，大型证据进入 artifact store。建议只能经维护者接受后进入开发，达到发布门、无净改善、预算耗尽或缺少新证据假设时必须停止。首批只实现场景、评分器、状态机与停止条件，不隐式完成生产监控或评测 GUI。
+
+### 7.15 子任务完成续跑、共享凭据与执行预算（2026-11-02，ADR-0036）
+
+直接子 Task 全部终态后，Control Plane 将真实 OUTPUT 或错误按 `summary_chars` 压缩为系统修正意见，唤醒最新一个已交付父 Loop；复用 `returned → 同 Thread 续跑`，正在执行、已 returned 或已验收的父 Loop 不重复触发。`agent_spawn` 可携带 `recursion_limit` 与 `summary_chars` 并随 Loop 持久化，完整 OUTPUT 独立保存，合计和占比由代码校验。
+
+真实端到端验收通过提前交付夹具确认父 Loop 自动进入 `version=2` 并再次交付，无人工续发消息。
+
+### 7.16 Timeline 访问复用现有 YAML 能力（2026-11-02，ADR-0037）
+
+Timeline 的读取能力继续由现有 Agent YAML（`mcp_plugins`、`egress`）与 Gateway 提供，不新增 `timeline-read`、专用代理路由、专用工具组或激活流程。ADR-0036 中平行的凭据句柄实现已撤回，凭据句柄部分由 ADR-0037 取代；自动唤醒、执行预算和确定性数值校验继续有效。
+
+### 7.17 第三方执行接入语义（2026-11-02，ADR-0038）
+
+真实 GEO 集成反馈后，FAP 保持协议 major 不变并补齐执行器闭环：`write` PAT 隐含 `read`，独立 `read` 仍只读；Task／Loop 以附加字段投影 `execution_status`、`is_terminal`、`retryable`、`failure_kind`、`last_error`、`next_retry_at` 和 `worker_state`。任何错误只要没有恢复动作都为 `failed`，包括 transient／recursion 预算耗尽；内部 `claimed → running → delivered` 与恢复机制不变。`GET /api/tasks?ids=...` 单次读取 1–100 个 Task，第三方按 `Retry-After` 完整退避，不逐题高频轮询。
+
+close 先调用当前 RuntimeAdapter 的活动 Run cancel 并等待停止确认，再归档 Loop 和终结 Task；`cancel_requested_at` 与 `cancelled_at` 不得混写，202 未确认、调用失败或 Runtime 不支持取消时 Task 不归档。`/api/meta` 的 `public_operations` 是操作协议与当前 FastAPI 路由的交集，仅公开 Control Plane PAT 面；部署版本、method×scope、限速与 `runtime_cancel` 等能力按当前部署返回。
+
+本地真实 API 已验证单 write PAT、PG 批量查询、HTTP 幂等重放／冲突与 close；活动 Run 取消后 Runtime 为 `interrupted`。这些结果仍不代表生产部署完成。发布验收必须在当前部署上重跑上述链路，补做 Provider 失败注入并核对执行槽位释放，再恢复第三方六题闭环；此前不扩大面板或启用 cron。墙钟／工具硬预算、Worker／queue position、`agent_config_version` 作为后续独立迭代，不用主观 Playground 评分替代这些工程门。
 
 ---
 

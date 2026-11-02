@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Agent Fleet 表现层原型：A1 紧凑列表与 Task 对话工作区。" />
+    <title>Agent Fleet · 表现层实验室</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
+    <header class="topbar">
+      <a class="brand" href="#compact" aria-label="Fleet Lab 首页">
+        <span class="brand-mark"><b></b><b></b><b></b></span>
+        <span><strong>AM / FLEET LAB</strong><small>表现层原型 · DUMMY DATA</small></span>
+      </a>
+      <div class="top-actions">
+        <span class="dummy-badge">A1 · COMPACT LIST</span>
+        <button class="live-button" id="live-toggle" type="button" aria-pressed="true">
+          <span class="live-dot"></span><span id="live-label">LIVE</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="lab-intro">
+        <div>
+          <p class="eyebrow">AGENT FLEET / PRESENTATION STUDY</p>
+          <h1>Fleet 工作台。</h1>
+          <p>A1 紧凑列表：聚焦 Task 层级、执行状态与 Thread 对话。</p>
+        </div>
+        <div class="fleet-readout" aria-label="Fleet 摘要">
+          <div><strong id="agent-count">6</strong><span>AGENTS</span></div>
+          <div><strong id="task-count">8</strong><span>TASKS</span></div>
+          <div><strong id="attention-count" class="amber">3</strong><span>需注意</span></div>
+          <div><strong id="token-total">44.1k</strong><span>TOKENS</span></div>
+        </div>
+      </section>
+
+      <section class="view-heading" id="view-heading"></section>
+      <section class="viewport" id="view" aria-live="polite"></section>
+
+      <footer class="lab-note">
+        <span>PROTOTYPE ONLY</span>
+        <p>所有数据与回复均为 dummy data；消息只保留在原型中，不调用模型，不改变现有 Console。</p>
+      </footer>
+    </main>
+
+    <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+    <aside class="detail-drawer" id="detail-drawer" aria-label="Task 对话工作区" hidden></aside>
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

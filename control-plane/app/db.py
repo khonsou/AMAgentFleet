@@ -160,6 +160,11 @@ ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS recovery_action TEXT;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS running_action TEXT;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS last_checkpoint_id TEXT;
+-- ADR-0036：每个子任务独立执行预算与父级摘要上限。
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS recursion_limit INTEGER NOT NULL DEFAULT 300;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS summary_chars INTEGER NOT NULL DEFAULT 500;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ;
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_loops_task ON fleet_task_loops(task_id, status);
 CREATE TABLE IF NOT EXISTS fleet_task_comments (
     id         BIGSERIAL PRIMARY KEY,
@@ -202,6 +207,35 @@ CREATE TABLE IF NOT EXISTS fleet_system_credentials (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     rotated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- ADR-0035：平台评分与有界迭代建议；原始测量和大型证据不进入这些表。
+CREATE TABLE IF NOT EXISTS fleet_eval_reports (
+    id                BIGSERIAL PRIMARY KEY,
+    scenario_id       TEXT NOT NULL,
+    scenario_version  TEXT NOT NULL,
+    platform_version  TEXT NOT NULL,
+    score             INTEGER NOT NULL,
+    raw_score         INTEGER NOT NULL,
+    rating            TEXT NOT NULL,
+    hard_gates        JSONB NOT NULL,
+    dimension_scores  JSONB NOT NULL,
+    baseline          JSONB NOT NULL DEFAULT '{}',
+    stop_reasons      JSONB NOT NULL DEFAULT '[]',
+    scorecard         JSONB NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_eval_reports_scenario ON fleet_eval_reports(scenario_id, scenario_version, created_at);
+CREATE TABLE IF NOT EXISTS fleet_eval_recommendations (
+    id           BIGSERIAL PRIMARY KEY,
+    report_id    BIGINT NOT NULL REFERENCES fleet_eval_reports(id),
+    dimension    TEXT NOT NULL,
+    summary      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'proposed'
+                 CHECK (status IN ('proposed','accepted','rejected','implemented','verified','closed','failed')),
+    evidence     JSONB NOT NULL DEFAULT '{}',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_eval_recommendations_status ON fleet_eval_recommendations(status, updated_at);
 """
 
 

@@ -56,12 +56,14 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_restores_system_agent_before_credential(self):
         ensure_agent = AsyncMock()
         ensure_commander = AsyncMock()
+        ensure_eval = AsyncMock()
         ensure_credential = AsyncMock()
         with patch("app.main.init_db", new=AsyncMock()), \
                 patch("app.main.singleton.acquire", new=AsyncMock(return_value=True)), \
                 patch("app.main.dispatcher.recover_claimed", new=AsyncMock(return_value=0)), \
                 patch("app.main.registry.ensure_system_agent", new=ensure_agent), \
                 patch("app.main.registry.ensure_commander_agent", new=ensure_commander), \
+                patch("app.main.registry.ensure_eval_agent", new=ensure_eval), \
                 patch("app.main.ops_credentials.ensure_system_credential", new=ensure_credential), \
                 patch("app.main.ops_credentials.check_system_credential_readable", new=AsyncMock()), \
                 patch("app.main.scheduler.sync_loop", new=AsyncMock()), \
@@ -70,6 +72,7 @@ class SystemAgentProtectionTests(unittest.IsolatedAsyncioTestCase):
             await main.shutdown()
         ensure_agent.assert_awaited_once_with()
         ensure_commander.assert_awaited_once_with()
+        ensure_eval.assert_awaited_once_with()
         ensure_credential.assert_awaited_once_with()
 
     async def test_system_agent_always_syncs_gateway_without_version_churn(self):

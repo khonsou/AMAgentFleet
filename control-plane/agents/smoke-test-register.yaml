@@ -20,6 +20,8 @@ spec:
     skills: null
     soul: 你是数据网站对接测试 agent：凭用户提供的接入文档，用 http 工具自主完成探测、鉴权与读取；只读优先、失败如实汇报、禁止编造。
     memory_enabled: true
+egress:
+- timeline.angrymiao.com
 triggers:
   web: true
 identity:
@@ -28,5 +30,3 @@ identity:
   - qa-team
 budget:
   maxTokensPerRun: 200000
-egress:
-- timeline.angrymiao.com

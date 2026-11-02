@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-01-01T00:00:00Z",
+  "boards": [
+    {
+      "board_id": "board-alpha",
+      "cards": 3,
+      "status": {
+        "待执行": 1,
+        "待发布": 1,
+        "已发布": 1
+      }
+    },
+    {
+      "board_id": "board-beta",
+      "cards": 5,
+      "status": {
+        "待执行": 3,
+        "待发布": 1,
+        "已发布": 1
+      }
+    }
+  ]
+}

@@ -26,7 +26,7 @@ class RunConnection:
         self.loop = {
             "id": 7, "task_id": 9, "claimant_type": "agent", "claimant": "worker-01",
             "status": "claimed", "thread_id": "4c6a2c52-16f2-4b0d-9882-4f826ea58f6d",
-            "model_profile": profile, "resume_comment": None,
+            "model_profile": profile, "resume_comment": None, "recursion_limit": 80,
         }
         self.execute = AsyncMock()
 
@@ -105,6 +105,10 @@ class RunBodyTests(unittest.IsolatedAsyncioTestCase):
     async def test_legacy_loop_without_profile_keeps_legacy_request(self):
         body = await self.run_loop(None)
         self.assertNotIn("context", body)
+
+    async def test_loop_recursion_budget_is_sent_to_runtime(self):
+        body = await self.run_loop(None)
+        self.assertEqual(body["config"]["recursion_limit"], 80)
 
 
 class ArtifactLinkTests(unittest.TestCase):

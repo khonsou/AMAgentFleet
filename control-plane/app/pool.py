@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 import asyncpg
 
 from .db import audit, pool
 from .dispatcher import enqueue_loop_run
+from .execution import enrich_execution
 
+logger = logging.getLogger("fleet.pool")
 MAX_LOOPS_PER_TASK = 3
 
 
@@ -90,6 +93,8 @@ async def create_task(
     idempotency_key: str | None = None,
     model_profile: str | None = None,
     subagent_model_policy: str = "auto",
+    recursion_limit: int | None = None,
+    summary_chars: int = 500,
 ) -> dict[str, Any]:
     """建 Task 并可指派 Agent；模型继承、创建和认领在同一事务内完成。"""
     loop = None
@@ -106,6 +111,7 @@ async def create_task(
                     conn, task["id"], "agent", assignee,
                     created_by=created_by, idempotent=True,
                     model_profile=model_profile,
+                    recursion_limit=recursion_limit, summary_chars=summary_chars,
                 )
     if task_created:
         await audit("task.created", agent_name=assignee, actor=created_by,
@@ -141,6 +147,8 @@ async def _claim_loop_with_conn(
     created_by: str,
     model_profile: str | None = None,
     idempotent: bool = False,
+    recursion_limit: int | None = None,
+    summary_chars: int = 500,
 ) -> tuple[dict[str, Any], bool]:
     """在调用方事务内认领 Loop；agent Loop 在入库前锁定不含秘密的模型快照。"""
     from . import models
@@ -182,13 +190,18 @@ async def _claim_loop_with_conn(
                 claimant, model_profile or task_profile, selected_by=created_by)
         except models.ModelError as exc:
             raise PoolError(exc.status, exc.message) from exc
+    if recursion_limit is not None and not 1 <= recursion_limit <= 300:
+        raise PoolError(422, "recursion_limit must be between 1 and 300")
+    if not 100 <= summary_chars <= 1000:
+        raise PoolError(422, "summary_chars must be between 100 and 1000")
     row = await conn.fetchrow(
         """INSERT INTO fleet_task_loops
            (task_id, claimant_type, claimant, created_by,
-            model_profile, model_snapshot, model_selected_by)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING *""",
+            model_profile, model_snapshot, model_selected_by, recursion_limit, summary_chars)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9) RETURNING *""",
         task_id, claimant_type, claimant, created_by,
         model_profile, json.dumps(snapshot) if snapshot else None, selected_by,
+        recursion_limit or 300, summary_chars,
     )
     # 认领即占用：agent → 其名；human → 'human'。任何认领后 task 不再 'unassigned'
     # （池过滤/展示统一依赖此语义——人 agent 一视同仁，ADR-0010）
@@ -206,13 +219,16 @@ async def claim_loop(
     *,
     created_by: str,
     model_profile: str | None = None,
+    recursion_limit: int | None = None,
+    summary_chars: int = 500,
 ) -> dict[str, Any]:
     """领取 = 建 loop（竞争非独占，≤3）。agent 领取直接入队执行；human 领取等人交付。"""
     async with (await pool()).acquire() as conn:
         async with conn.transaction():
             loop, _ = await _claim_loop_with_conn(
                 conn, task_id, claimant_type, claimant, created_by=created_by,
-                model_profile=model_profile)
+                model_profile=model_profile, recursion_limit=recursion_limit,
+                summary_chars=summary_chars)
     await audit("loop.claimed", agent_name=claimant if claimant_type == "agent" else None,
                 actor=created_by, detail={"loop_id": loop["id"], "task_id": task_id,
                                           "claimant": f"{claimant_type}:{claimant}",
@@ -256,6 +272,84 @@ async def deliver_loop(loop_id: int, content: str, *, tokens: int | None = None,
             )
     await audit("loop.delivered", actor="system" if by_system else "human",
                 detail={"loop_id": loop_id, "task_id": task_id})
+    await _resume_parent_when_children_settled(task_id)
+
+
+def bounded_summary(content: Any, limit: int) -> str:
+    """Compress parent-facing output to the child Loop's explicit character budget."""
+    text = " ".join(str(content).split())
+    if len(text) <= limit:
+        return text
+    cut = text[: max(1, limit - 1)]
+    boundary = max(cut.rfind("。"), cut.rfind("；"), cut.rfind(". "), cut.rfind("\n"))
+    if boundary >= int(limit * 0.6):
+        cut = cut[:boundary]
+    return cut.rstrip() + "…"
+
+
+async def _resume_parent_when_children_settled(task_id: int) -> None:
+    """全部直接子 Task 终态后，以真实 OUTPUT 唤醒最新已交付父 Loop。
+
+    仅已经提前交付的父 Loop 需要被唤醒；仍在执行、已 returned 或已验收的
+    父 Loop 不重复触发。多个子任务并发交付时，return_loop 的状态门闩保证
+    只有一个调用能把父 Loop 从 delivered 改为 returned。
+    """
+    terminal = ("success", "error", "rejected")
+    async with (await pool()).acquire() as conn:
+        parent_task_id = await conn.fetchval(
+            "SELECT parent_task_id FROM fleet_tasks WHERE id=$1", task_id)
+        if parent_task_id is None:
+            return
+        children = await conn.fetch(
+            """SELECT t.id, t.agent_name, t.status, l.id AS loop_id,
+                      l.deliverable, l.error, l.summary_chars
+               FROM fleet_tasks t
+               JOIN LATERAL (
+                   SELECT id, deliverable, error, summary_chars FROM fleet_task_loops
+                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
+               ) l ON TRUE
+               WHERE t.parent_task_id=$1 ORDER BY t.id""",
+            parent_task_id,
+        )
+        logger.warning(
+            "parent resume check: task=%s parent=%s child_states=%s",
+            task_id, parent_task_id, [row["status"] for row in children],
+        )
+        if not children or any(row["status"] not in terminal for row in children):
+            return
+        parent_loop = await conn.fetchrow(
+            """SELECT id FROM fleet_task_loops
+               WHERE task_id=$1 AND status='delivered'
+               ORDER BY id DESC LIMIT 1""",
+            parent_task_id,
+        )
+    if parent_loop is None:
+        logger.warning("parent resume skipped: parent=%s has no delivered Loop", parent_task_id)
+        return
+    logger.warning(
+        "parent resume triggered: parent=%s loop=%s children=%s",
+        parent_task_id, parent_loop["id"], [row["id"] for row in children],
+    )
+    lines = [
+        "【全部直接子任务已终态】请基于以下真实结果继续原任务：核对来源与数字、去重合并、"
+        "纠正矛盾并交付最终答案；存在失败或缺口必须明确说明。不得重复派发相同子任务，"
+        "不得只复述分工计划。"
+    ]
+    for child in children:
+        content = child["deliverable"] or child["error"] or "(无交付)"
+        summary = bounded_summary(content, child.get("summary_chars") or 500)
+        lines.append(
+            f"- Task #{child['id']} / Loop #{child['loop_id']} / "
+            f"{child['agent_name']} / {child['status']}: {summary}"
+        )
+    try:
+        await return_loop(
+            parent_loop["id"], "\n".join(lines), author="system:child-completion")
+    except PoolError as exc:
+        if exc.status != 409:
+            raise
+        logger.warning("parent resume conflict ignored: parent=%s loop=%s", parent_task_id, parent_loop["id"])
+        # 另一个子任务或人工验收已先改变父 Loop；不重复唤醒。
 
 
 async def human_deliver(loop_id: int, content: str, *, author: str) -> None:
@@ -377,9 +471,82 @@ async def task_detail(task_id: int) -> dict[str, Any] | None:
         comments = await conn.fetch("SELECT * FROM fleet_task_comments WHERE task_id=$1 ORDER BY id", task_id)
         children = await conn.fetch(
             "SELECT * FROM fleet_tasks WHERE parent_task_id=$1 ORDER BY id", task_id)
-    return {"task": dict(task), "loops": [dict(l) for l in loops],
+    return {"task": dict(task), "loops": [enrich_execution(dict(l)) for l in loops],
             "comments": [dict(c) for c in comments],
             "children": [dict(child) for child in children]}
+
+
+WAIT_TARGETS = {"delivered", "all_delivered", "terminal", "version_gt"}
+
+
+def _wait_selection(detail: dict[str, Any], loop_ids: set[int] | None) -> list[dict[str, Any]]:
+    loops = detail.get("loops") or []
+    if loop_ids is None:
+        return loops
+    selected = [loop for loop in loops if loop["id"] in loop_ids]
+    missing = sorted(loop_ids - {loop["id"] for loop in selected})
+    if missing:
+        raise PoolError(404, f"task {detail['task']['id']} 不存在 Loop: {missing}")
+    return selected
+
+
+def _evaluate_wait(
+    detail: dict[str, Any], *, target: str, loop_ids: set[int] | None,
+    version_gt: int | None,
+) -> tuple[str | None, str]:
+    """返回（结束状态, 原因）；None 表示条件尚未满足，应继续有界等待。"""
+    task = detail["task"]
+    loops = _wait_selection(detail, loop_ids)
+    if task.get("status") in ("error", "rejected") and not (
+            target == "terminal" and task.get("pool_status") == "done"):
+        return "failed", f"Task 已终止：{task.get('status')}"
+    failed = [loop for loop in loops if loop.get("execution_status") == "failed"]
+    if failed:
+        return "failed", f"Loop {failed[0]['id']} 执行失败：{failed[0].get('last_error') or '未知错误'}"
+    if target == "terminal":
+        if task.get("pool_status") == "done" or task.get("status") in ("error", "rejected"):
+            return "condition_met", "Task 已进入终态"
+        if loops and all(loop.get("is_terminal") for loop in loops):
+            return "condition_met", "指定 Loop 已全部进入执行终态"
+    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")]
+    if target == "delivered" and delivered:
+        return "condition_met", f"Loop {delivered[0]['id']} 已交付"
+    if target == "all_delivered" and loops and len(delivered) == len(loops):
+        return "condition_met", f"{len(loops)} 个指定 Loop 已全部交付"
+    if target == "version_gt":
+        newer = [loop for loop in delivered if int(loop.get("version") or 1) > version_gt]
+        if newer:
+            return "condition_met", f"Loop {newer[0]['id']} 已交付 version={newer[0]['version']}"
+    return None, f"条件尚未满足：target={target}，已交付 {len(delivered)}/{len(loops)}"
+
+
+async def wait_task(
+    task_id: int, *, target: str, loop_ids: set[int] | None = None,
+    version_gt: int | None = None, timeout_seconds: float = 60,
+) -> dict[str, Any]:
+    """服务端有界等待；timeout／failed 均不得被调用方解释为交付成功。"""
+    if target not in WAIT_TARGETS:
+        raise PoolError(422, f"target 仅支持 {sorted(WAIT_TARGETS)}")
+    if target == "version_gt" and (version_gt is None or version_gt < 0):
+        raise PoolError(422, "target=version_gt 时必须提供 version_gt >= 0")
+    if loop_ids is not None and not loop_ids:
+        raise PoolError(422, "loop_ids 不能为空")
+    if not 0 <= timeout_seconds <= 120:
+        raise PoolError(422, "timeout_seconds 必须在 0–120 秒之间")
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while True:
+        detail = await task_detail(task_id)
+        if detail is None:
+            raise PoolError(404, f"task {task_id} not found")
+        wait_status, reason = _evaluate_wait(
+            detail, target=target, loop_ids=loop_ids, version_gt=version_gt)
+        remaining = deadline - asyncio.get_running_loop().time()
+        if wait_status is None and remaining <= 0:
+            wait_status = "timeout"
+            reason = f"等待超时（{timeout_seconds:g}s）：{reason}"
+        if wait_status is not None:
+            return {"wait_status": wait_status, "reason": reason, **detail}
+        await asyncio.sleep(min(1.0, remaining))
 
 
 async def pending_review() -> list[dict[str, Any]]:

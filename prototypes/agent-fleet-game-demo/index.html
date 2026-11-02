@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#e9e7df" />
+    <meta name="description" content="Agent Fleet 3D 游戏表现层独立演示" />
+    <title>Agent Fleet — Operations Playground</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23ef5b2a'/%3E%3Cpath d='M16 43V21h8v22zm12-8V13h8v30zm12 8V25h8v18z' fill='%231b1e1b'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="world" aria-label="Agent Fleet 三维游戏场景"></canvas>
+      <div id="labels" aria-hidden="false"></div>
+
+      <header class="topbar">
+        <div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="brand-copy">
+          <div class="eyebrow">FLEET OPERATIONS / SIMULATOR 001</div>
+          <h1>Agent Fleet <span>/ Playground</span></h1>
+        </div>
+        <div class="top-status">
+          <span class="demo-chip">DEMO DATA</span>
+          <span class="live-chip"><b></b> LIVE</span>
+          <span class="clock" id="clock">11:09:00</span>
+        </div>
+      </header>
+
+      <aside class="panel overview-panel" aria-label="Fleet 实时概览">
+        <div class="panel-heading"><span>FLEET OVERVIEW</span><em>01</em></div>
+        <div class="metrics">
+          <div><strong id="metric-agents">06</strong><span>AGENTS</span></div>
+          <div><strong id="metric-active">04</strong><span>ACTIVE</span></div>
+          <div><strong id="metric-projects">09</strong><span>OPEN TASKS</span></div>
+        </div>
+        <div class="mini-chart" aria-hidden="true">
+          <svg viewBox="0 0 220 54" preserveAspectRatio="none"><path class="chart-fill" d="M0 46L0 37L22 40L44 24L66 31L88 18L110 25L132 12L154 21L176 8L198 15L220 5L220 46Z"/><path class="chart-line" d="M0 37L22 40L44 24L66 31L88 18L110 25L132 12L154 21L176 8L198 15L220 5"/></svg>
+          <div><span>ACTIVITY / 60 MIN</span><b id="activity-value">72%</b></div>
+        </div>
+        <div class="section-label">ON THE FIELD <span id="field-count">6</span></div>
+        <div id="agent-list" class="agent-list"></div>
+        <button class="text-action" id="show-all-agents">VIEW ALL AGENTS <span>↗</span></button>
+      </aside>
+
+      <aside class="panel control-panel" aria-label="场景控制">
+        <div class="panel-heading"><span>SCENE CONTROL</span><em>02</em></div>
+        <div class="section-label">CAMERA</div>
+        <div class="segmented" id="camera-views">
+          <button data-view="overview" class="active">OVERVIEW</button>
+          <button data-view="agents">AGENTS</button>
+          <button data-view="pool">TASK POOL</button>
+        </div>
+        <div class="section-label">DISPLAY LAYERS</div>
+        <label class="toggle-row"><span>Progress bubbles</span><input type="checkbox" id="toggle-tasks" checked><i></i></label>
+        <label class="toggle-row"><span>Agent names</span><input type="checkbox" id="toggle-links" checked><i></i></label>
+        <label class="toggle-row"><span>Ambience</span><input type="checkbox" id="toggle-ambience" checked><i></i></label>
+        <div class="control-divider"></div>
+        <button class="tour-button" id="tour-toggle"><span class="tour-icon">◇</span><span><b>AUTO TOUR</b><small id="tour-state">ON / HANDS FREE</small></span><i></i></button>
+        <div class="camera-hint"><span>DRAG</span> ORBIT <span>SCROLL</span> ZOOM <span>⇧ DRAG</span> PAN</div>
+      </aside>
+
+      <section class="scene-caption" aria-live="polite">
+        <span id="scene-index">01 / OVERVIEW</span>
+        <strong id="scene-title">A living view of your Agent Fleet.</strong>
+        <p id="scene-subtitle">Select an Agent’s name to see their Tasks.</p>
+      </section>
+
+      <footer class="playback-bar">
+        <button id="play-toggle" class="play-button" aria-label="暂停演示"><span id="play-icon">Ⅱ</span></button>
+        <div class="playback-copy"><span>SIMULATION</span><strong id="event-label">Fleet is running</strong></div>
+        <div class="timeline"><i id="timeline-progress"></i><b id="timeline-dot"></b></div>
+        <span class="event-counter" id="event-counter">EVENT 00 / 08</span>
+        <button id="next-event" class="next-button">NEXT EVENT <span>→</span></button>
+        <button id="reset-demo" class="icon-button" title="重置演示" aria-label="重置演示">↺</button>
+        <button id="fullscreen" class="icon-button" title="全屏" aria-label="全屏">⛶</button>
+      </footer>
+
+      <div id="toast" class="toast" role="status"></div>
+      <div id="drawer-backdrop" class="drawer-backdrop"></div>
+      <aside id="detail-drawer" class="detail-drawer" aria-label="对象详情" aria-hidden="true"></aside>
+      <div class="corner-note">PROCEDURAL 3D · THREE.JS<br>ALL EVENTS ARE DETERMINISTIC</div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

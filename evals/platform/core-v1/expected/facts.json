@@ -1,0 +1,20 @@
+{
+  "board_count": 2,
+  "card_count": 8,
+  "status_counts": {
+    "待执行": 4,
+    "待发布": 2,
+    "已发布": 2
+  },
+  "fleet_pool_counts": {
+    "open": 1,
+    "review": 2,
+    "done": 3
+  },
+  "required_source_fields": [
+    "task_id",
+    "loop_id",
+    "operation_id",
+    "captured_at"
+  ]
+}
