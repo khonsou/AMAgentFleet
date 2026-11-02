@@ -178,6 +178,10 @@ access token 纯内存保存，不写 localStorage：
    `allowed_scopes: profile phone`，`require_pkce: true`。当前生产 Auth 配置已登记该 client 和回调。
 2. Console backend 使用 `deploy/dao-jwt-public-key.pem` 和 issuer `angrymiao` 本地验签，
    不调用 introspection。部署脚本固定启用前后端鉴权并将验签材料放入 K8s Secret。
+   Console 随后用同一 access token 调 coin 分组接口
+   `https://miao-coin.angrymiao.com/api/group/current-user`，`ids` 含员工组 `2`
+   才放行；不在组内返回 `403`，分组接口不可用返回 `503`（fail-closed）。分组结果
+   按 token 缓存 60s。集群需允许 console-backend 访问该域名。
 3. 只有 `/api/console/health` 为容器探针豁免；产物下载通过带 Bearer JWT 的 fetch+blob
    完成，同样受鉴权保护。
 

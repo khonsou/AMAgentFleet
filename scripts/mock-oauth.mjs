@@ -9,19 +9,22 @@
  *
  * 用法：
  *   node scripts/mock-oauth.mjs [port]        默认 8111
- * 启动时生成一次性 RSA 密钥对，公钥写到 /tmp/fleet-mock-oauth-pubkey.pem，
- * 控制台打印 console-backend 需要的环境变量。仅用于本地验证，严禁接入真实数据。
+ * 启动时生成一次性 RSA 密钥对，公钥写到系统临时目录
+ * （fleet-mock-oauth-pubkey.pem），控制台打印 console-backend 需要的环境变量。
+ * 仅用于本地验证，严禁接入真实数据。
  */
 import { createServer } from 'node:http'
 import { generateKeyPairSync, createSign, createHash, randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const PORT = Number(process.argv[2] ?? 8111)
 const ISSUER = process.env.MOCK_OAUTH_ISSUER || 'mock-dao'
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const pubPem = publicKey.export({ type: 'spki', format: 'pem' })
-const PUB_PATH = '/tmp/fleet-mock-oauth-pubkey.pem'
+const PUB_PATH = join(tmpdir(), 'fleet-mock-oauth-pubkey.pem')
 writeFileSync(PUB_PATH, pubPem)
 
 const b64url = (buf) => Buffer.from(buf).toString('base64url')
@@ -77,7 +80,9 @@ const server = createServer((req, res) => {
       }
       const now = Math.floor(Date.now() / 1000)
       const token = signJwt({
-        iss: ISSUER, user_id: 42, role: 'user', scope: 'profile phone',
+        iss: ISSUER, aud: 'am-agent-fleet', user_id: 42,
+        client_id: 'am-agent-fleet', token_type: 'access',
+        role: 'user', scope: 'profile phone',
         iat: now, exp: now + 3600,
       })
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -89,6 +94,16 @@ const server = createServer((req, res) => {
     })
     return
   }
+  // 员工分组（ADR-0041）：真实接口是 miao-coin /api/group/current-user
+  if (u.pathname === '/api/group/current-user' && req.method === 'GET') {
+    const auth = req.headers.authorization ?? ''
+    if (!auth.startsWith('Bearer ')) {
+      res.writeHead(401, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ error: 'unauthorized' }))
+    }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ ids: [1, 17, 2] }))
+  }
   res.writeHead(404); res.end('mock-oauth: not found')
 })
 
@@ -99,5 +114,6 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  FLEET_AUTH_ENABLED=1`)
   console.log(`  FLEET_AUTH_JWT_PUBLIC_KEY_PATH=${PUB_PATH}`)
   console.log(`  FLEET_AUTH_JWT_ISSUER=${ISSUER}`)
+  console.log(`  FLEET_INHOUSE_GROUP_API_URL=http://127.0.0.1:${PORT}/api/group/current-user`)
   console.log('前端环境：VITE_AUTH_ENABLED=1 VITE_AUTH_ORIGIN=http://127.0.0.1:' + PORT + ' VITE_OAUTH_CLIENT_ID=agent-fleet')
 })
