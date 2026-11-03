@@ -1,0 +1,34 @@
+schema_version: 1
+id: multi-echo-v1
+name: 基础多 Agent 自动唤醒与汇总
+case_type: multi_echo
+description: 两个 worker 分别返回随机标识，指挥官经系统自动唤醒后汇总。
+read_only: true
+dimensions:
+  task_goal: {weight: 20, label: Task Goal}
+  multi_agent: {weight: 20, label: 多 Agent 协作}
+  protocol: {weight: 15, label: 唤醒协议}
+  runtime: {weight: 10, label: Runtime 状态}
+  evidence_auth: {weight: 10, label: 子任务证据}
+  playground: {weight: 15, label: 独立验收}
+  engineering_cost: {weight: 10, label: 成本}
+hard_gates:
+  - {id: P0, description: 两个真实子任务、系统唤醒、父 Loop 再次交付和随机标识全部通过}
+  - {id: P1, description: 协议与安全独立证据}
+  - {id: P2, description: 非工程用户独立验收}
+baseline: {cap_when_missing: 74}
+repeatability: {min_runtime_types: 2, min_third_party_agents: 2, min_consecutive_stable_runs: 3}
+stop_conditions: {target_score: 75, max_no_improvement_rounds: 2, max_experiments: 6, max_tokens: 500000, max_minutes: 30}
+runner:
+  prompt_version: multi-echo-v1
+  model_profile: deepseek-default
+  single_agent: fleet-eval-general-01
+  orchestrator: fleet-cmd-01
+  workers:
+    part_a: fleet-eval-source-a-01
+    part_b: fleet-eval-source-b-01
+  poll_seconds: 3
+measurement_protocol:
+  north_star: stratified_zero_human_verified_success_rate
+  success: zero_human_and_real_children_and_system_resume_and_independent_output_check
+  vgh_role: diagnostic_only

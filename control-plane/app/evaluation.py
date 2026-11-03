@@ -186,7 +186,7 @@ async def _assert_candidate_release(conn, body: TransitionInput) -> None:
     if body.candidate_report_id is None:
         raise HTTPException(409, {
             "code": "CANDIDATE_REPORT_REQUIRED",
-            "message": "verify 必须携带 candidate_report_id 并通过 VGH improve 验收门",
+            "message": "verify 必须携带 candidate_report_id 并通过 SZ-VSR improve 验收门",
         })
     report = await conn.fetchrow(
         "SELECT id,scorecard FROM fleet_eval_reports WHERE id=$1", body.candidate_report_id)
@@ -197,7 +197,7 @@ async def _assert_candidate_release(conn, body: TransitionInput) -> None:
     if not gate.get("release_allowed"):
         raise HTTPException(409, {
             "code": "NORTH_STAR_NOT_IMPROVED",
-            "message": "候选报告未满足 VGH 严格改善、硬门、评分与护栏要求",
+            "message": "候选报告未满足 SZ-VSR 严格改善、硬门、评分与护栏要求",
             "details": gate,
         })
 

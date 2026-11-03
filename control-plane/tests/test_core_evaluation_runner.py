@@ -59,8 +59,9 @@ def projection(status="succeeded", terminal=True):
 class FakeClient:
     """In-memory Fleet with one early parent delivery followed by auto-resume."""
 
-    def __init__(self, mode):
+    def __init__(self, mode, natural=False):
         self.mode = mode
+        self.natural = natural
         self.phase = 0
         self.dispatches = []
         self.puts = []
@@ -93,9 +94,13 @@ class FakeClient:
                 "status": "delivered",
                 "version": version,
                 "deliverable": valid_delivery(),
-                **projection(),
+                **projection(
+                    "running" if self.natural and self.phase == 1 else "succeeded",
+                    not (self.natural and self.phase == 1),
+                ),
             }],
-            "comments": [],
+            "comments": ([{"author": "system:child-completion", "content": "children settled"}]
+                         if self.mode == "multi" else []),
             "children": children,
         }
 
@@ -106,7 +111,10 @@ class FakeClient:
             "latest_loop_id": 11,
             "latest_thread_id": "thread-root",
             "claimants": [],
-            **projection(),
+            **projection(
+                "running" if self.natural and self.phase == 1 else "succeeded",
+                not (self.natural and self.phase == 1),
+            ),
         }]
         if self.mode == "multi":
             children_terminal = self.phase >= 2
@@ -224,6 +232,19 @@ class CoreEvaluationRunnerTests(unittest.TestCase):
                 for item in multi["recommendations"]
             ))
 
+    def test_auto_resume_evidence_does_not_require_early_delivery(self):
+        client = FakeClient("multi", natural=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_core_evaluation(
+                client, Path(temporary) / "candidate-multi", "multi",
+                active_human_seconds=60,
+                platform_version="test-version",
+                sleep=lambda _: None,
+            )
+        self.assertFalse(result["early_delivery"])
+        self.assertTrue(result["checks"]["auto_resume_version_gte_2"])
+        self.assertEqual(result["accepted_goal"], 1)
+
     def test_interpretation_tokens_cannot_push_run_past_hard_budget(self):
         client = InterpretClient("multi")
         with tempfile.TemporaryDirectory() as temporary:
@@ -260,19 +281,25 @@ class CoreEvaluationRunnerTests(unittest.TestCase):
             "run_id": "single-1",
             "mode": "single",
             "scenario_id": "core-v1",
+            "north_star_contract": "stratified_zero_human_verified_success_rate",
             "prompt_version": "core-v1-runner-v1",
             "model_profile": "deepseek-default",
             "fixtures_sha256": "same",
+            "status": "succeeded",
             "accepted_goal": 1,
+            "production_write_count": 0,
+            "human": {"human_intervention_count": 0},
             "active_human_seconds": 60,
             "vgh": 60,
         }
         candidate = dict(baseline, run_id="multi-1", mode="multi")
-        self.assertTrue(validate_baseline(baseline, candidate)["comparable"])
+        comparison = validate_baseline(baseline, candidate)
+        self.assertTrue(comparison["comparable"])
+        self.assertEqual(comparison["sz_vsr_delta"], 0)
         with self.assertRaises(ExecutionError):
             validate_baseline(baseline, dict(candidate, fixtures_sha256="changed"))
         with self.assertRaises(ExecutionError):
-            validate_baseline(dict(baseline, vgh=None), candidate)
+            validate_baseline(dict(baseline, human={"human_intervention_count": 1}), candidate)
 
     def test_structured_execution_fields_are_mandatory(self):
         with self.assertRaises(ExecutionError):

@@ -108,7 +108,7 @@ GUARDRAIL_FIELDS = (
 def evaluate_north_star(
     measurement: dict[str, Any], score: int, rating: str, scenario: dict[str, Any],
 ) -> dict[str, Any]:
-    """Release only on strict VGH improvement plus all other release gates."""
+    """Release only on strict improvement of the scenario's declared metric."""
     baseline_comparable = bool((measurement.get("baseline") or {}).get("comparable"))
     base_ready = (
         baseline_comparable
@@ -123,8 +123,11 @@ def evaluate_north_star(
             "release_allowed": False if required else base_ready,
             "reason": "north_star_measurement_required" if required else None,
         }
-    candidate = data.get("candidate_vgh")
-    baseline = data.get("baseline_vgh")
+    use_sz_vsr = required == "stratified_zero_human_verified_success_rate"
+    candidate_key = "candidate_sz_vsr" if use_sz_vsr else "candidate_vgh"
+    baseline_key = "baseline_sz_vsr" if use_sz_vsr else "baseline_vgh"
+    candidate = data.get(candidate_key)
+    baseline = data.get(baseline_key)
     guardrails = data.get("guardrails")
     if (
         not isinstance(candidate, (int, float)) or isinstance(candidate, bool)
@@ -136,8 +139,9 @@ def evaluate_north_star(
             "status": "unmeasured",
             "release_allowed": False,
             "reason": "north_star_measurement_or_guardrails_missing",
-            "candidate_vgh": candidate,
-            "baseline_vgh": baseline,
+            "metric": required,
+            candidate_key: candidate,
+            baseline_key: baseline,
         }
     regression = (
         guardrails["unauthorized_effect_count"] != 0
@@ -149,11 +153,17 @@ def evaluate_north_star(
     return {
         "status": status,
         "release_allowed": base_ready and status == "improved",
-        "candidate_vgh": candidate,
-        "baseline_vgh": baseline,
+        "metric": required,
+        candidate_key: candidate,
+        baseline_key: baseline,
         "delta": delta,
         "strict_improvement_required": True,
         "guardrails": guardrails,
+        "diagnostics": {
+            "candidate_vgh": data.get("candidate_vgh"),
+            "baseline_vgh": data.get("baseline_vgh"),
+            "human_intervention_count": data.get("human_intervention_count"),
+        },
         "reason": None if status == "improved" else status,
     }
 

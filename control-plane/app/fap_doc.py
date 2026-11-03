@@ -261,9 +261,9 @@ curl -s "$BASE/api/tasks/$(echo $TASK|jq .task_id)" -H "Authorization: Bearer $P
 标记 `human_only`。`mode=single` 只生成技术对照产物，不能持久化为平台候选报告；
 `mode=multi` 可携带同协议 single 基线、独立 P1／P2 证据并选择持久化报告。
 
-每次调用只执行一轮，返回真实 Task／Loop／Thread、Token、墙钟、人工时间、VGH、
-确定性评分和 `proposed` 建议。响应中的 `auto_development_allowed=false`；后续开发
-必须由维护者通过既有建议 transition 显式 `accept`，不会因报告生成而自动启动。
+每次调用只执行一轮，返回真实 Task／Loop／Thread、Token、墙钟、人工时间、SZ-VSR、
+VGH 诊断、确定性评分和 `proposed` 建议。响应中的 `auto_development_allowed=false`；
+后续开发必须由维护者通过既有建议 transition 显式 `accept`，不会因报告生成而自动启动。
 
 ## 8. 运行时 Capability Plane
 

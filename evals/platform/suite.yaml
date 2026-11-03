@@ -1,0 +1,47 @@
+schema_version: 1
+id: platform-basic-v2
+name: Fleet 六项基础能力 E2E
+north_star: stratified_zero_human_verified_success_rate
+repeat_k: 3
+release_policy:
+  require_full_case_coverage: true
+  require_holdout: true
+  require_candidate_pass_k: true
+  forbid_case_regression: true
+cases:
+  - id: core-v1
+    scenario: core-v1/scenario.yaml
+    category: dual_source_synthesis
+    difficulty: intermediate
+    split: optimization
+    weight: 1
+    required_modes: [single, multi]
+    candidate_mode: multi
+    comparison_group: dual_source
+  - id: time-now-v1
+    scenario: time-now-v1/scenario.yaml
+    category: time_evidence
+    difficulty: basic
+    split: optimization
+    weight: 1
+    required_modes: [single]
+    candidate_mode: single
+    comparison_group:
+  - id: multi-echo-v1
+    scenario: multi-echo-v1/scenario.yaml
+    category: multi_agent_resume
+    difficulty: basic
+    split: optimization
+    weight: 1
+    required_modes: [multi]
+    candidate_mode: multi
+    comparison_group:
+  - id: external-info-v1
+    scenario: external-info-v1/scenario.yaml
+    category: runtime_capability_discovery
+    difficulty: intermediate
+    split: holdout
+    weight: 1
+    required_modes: [single, multi]
+    candidate_mode: multi
+    comparison_group: runtime_capability

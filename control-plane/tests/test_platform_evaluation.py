@@ -83,12 +83,12 @@ class PlatformEvaluationTests(unittest.TestCase):
     def test_north_star_requires_strict_improvement(self):
         measurement = copy.deepcopy(self.measurement)
         measurement["dimensions"] = {key: 5 for key in measurement["dimensions"]}
-        measurement["north_star"]["candidate_vgh"] = 1.0
+        measurement["north_star"]["candidate_sz_vsr"] = 0.0
         result = calculate_scorecard(measurement, self.scenario)
         self.assertEqual(result["north_star"]["status"], "not_improved")
         self.assertFalse(result["release_allowed"])
         self.assertNotIn("target_reached", result["stop_reasons"])
-        measurement["north_star"]["candidate_vgh"] = 1.1
+        measurement["north_star"]["candidate_sz_vsr"] = 1.0
         result = calculate_scorecard(measurement, self.scenario)
         self.assertEqual(result["north_star"]["status"], "improved")
         self.assertTrue(result["release_allowed"])

@@ -74,11 +74,13 @@ runner:
     timeline_boards: fleet-eval-source-b-01
   poll_seconds: 5
 measurement_protocol:
-  north_star: verified_goals_per_human_hour
-  goal_unit: 一次完整的 core-v1 参考工作流计为一个 Goal；子 Task 不单独计数
+  north_star: stratified_zero_human_verified_success_rate
+  goal_unit: 一次完整的 core-v1 参考工作流只计一次运行；子 Task 不单独计数
   accepted_goal: 确定性事实、来源、模式专属编排证据与停止条件全部通过
+  success: 零人工介入、独立验收、安全和预算约束同时通过
+  vgh_role: diagnostic_only
   vgh_formula: 60 * accepted_goals / active_human_minutes
-  missing_human_time: VGH 返回 null 并记录 human_time_missing，不按零分钟计算
+  missing_human_time: VGH 返回 null 并记录 human_time_missing，不阻塞 SZ-VSR 的零人工判定
   human_time_includes:
     - 配置与发起
     - 补充提示与人工催促
@@ -104,7 +106,6 @@ measurement_protocol:
       - model_profile
       - fixtures_sha256
       - accepted_goal
-      - active_human_seconds
-      - vgh
+      - human_intervention_count
     reject_incompatible: true
   recommendation_flow: proposed -> accepted -> implemented -> verified/closed 或 failed；禁止自动开发

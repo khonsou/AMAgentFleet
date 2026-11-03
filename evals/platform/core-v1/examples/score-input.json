@@ -20,8 +20,11 @@
     "total_score": 66
   },
   "north_star": {
+    "candidate_sz_vsr": 1.0,
+    "baseline_sz_vsr": 0.0,
     "candidate_vgh": 2.0,
     "baseline_vgh": 1.0,
+    "human_intervention_count": 0,
     "guardrails": {
       "unauthorized_effect_count": 0,
       "secret_leak_count": 0,

@@ -305,6 +305,18 @@ class FleetClient:
     def token_usage(self, thread_id: str) -> dict[str, Any]:
         return self.request("GET", f"/api/threads/{thread_id}/token-usage")
 
+    def thread_state(self, thread_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/threads/{thread_id}/state")
+
+    def register_provider(self, manifest: dict[str, Any], key: str) -> Any:
+        return self.request("POST", "/api/capability-providers", body=manifest, idempotency_key=key)
+
+    def verify_provider(self, provider_id: str, key: str) -> Any:
+        return self.request("POST", f"/api/capability-providers/{provider_id}/verify", idempotency_key=key)
+
+    def provider_card(self, provider_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/capability-providers/{provider_id}/card")
+
     def close_task(self, task_id: int, key: str, actor: str) -> Any:
         return self.request(
             "POST", f"/api/tasks/{task_id}/close", query={"author": actor}, idempotency_key=key)

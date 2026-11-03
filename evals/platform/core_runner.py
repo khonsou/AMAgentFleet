@@ -37,6 +37,7 @@ from evals.platform.execution import (
     utc_now,
     vgh_measurement,
 )
+from evals.platform.north_star import SZ_VSR, zero_human_verified_success
 from evals.platform.scorecard import DIMENSIONS, calculate_scorecard, load_scenario
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -253,6 +254,7 @@ def execute_core_run(
     prompt = build_prompt(inputs, mode)
     context = {
         "scenario_id": scenario["id"],
+        "north_star_contract": SZ_VSR,
         "mode": mode,
         "prompt_version": runner["prompt_version"],
         "model_profile": runner["model_profile"],
@@ -350,10 +352,15 @@ def execute_core_run(
         mode_checks = {"no_child_tasks": len(children) == 0}
     else:
         expected_workers = set(runner["workers"].values())
+        system_resume = any(
+            comment.get("author") == "system:child-completion"
+            for comment in detail.get("comments") or []
+        )
         mode_checks = {
             "at_least_two_children": len(children) >= 2,
             "expected_distinct_workers": {child.get("agent_name") for child in children} == expected_workers,
-            "auto_resume_version_gte_2": early_delivery and max_version >= 2,
+            # 真实唤醒事件 + 再次交付是硬证据；轮询是否看到提前交付只是诊断信息。
+            "auto_resume_version_gte_2": system_resume and max_version >= 2,
             "no_human_resume": ledger.count("human_resume") == 0,
         }
     all_checks = {**checks, **mode_checks}
@@ -396,6 +403,7 @@ def execute_core_run(
         "production_write_count": 0,
         "auto_development_allowed": False,
     }
+    result["zero_human_verified_success"] = zero_human_verified_success(result)
     atomic_write_json(output_dir / "evidence.json", {
         "root_detail": detail,
         "task_summaries": items,
@@ -408,25 +416,34 @@ def execute_core_run(
 
 def validate_baseline(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     required = (
-        "scenario_id", "prompt_version", "model_profile", "fixtures_sha256",
-        "accepted_goal", "active_human_seconds", "vgh",
+        "scenario_id", "prompt_version", "model_profile", "fixtures_sha256", "accepted_goal",
     )
     missing = [key for key in required if key not in baseline]
     if missing:
         raise ExecutionError(f"对照基线缺字段：{missing}")
-    if baseline.get("mode") != "single" or baseline.get("accepted_goal") != 1:
-        raise ExecutionError("对照基线必须是独立验收通过的 single 运行")
-    if baseline.get("vgh") is None or baseline.get("active_human_seconds", 0) <= 0:
-        raise ExecutionError("对照基线缺少有效人工计时与 VGH")
+    if baseline.get("north_star_contract") != SZ_VSR or candidate.get("north_star_contract") != SZ_VSR:
+        raise ExecutionError("新旧指标协议不可混用；请使用 SZ-VSR 口径重新建立基线")
+    baseline_success = zero_human_verified_success(baseline)
+    candidate_success = zero_human_verified_success(candidate)
+    if baseline.get("mode") != "single" or baseline_success != 1:
+        raise ExecutionError("对照基线必须是零人工且独立验收通过的 single 运行")
+    if candidate_success is None:
+        raise ExecutionError("候选缺少零人工验收判定所需证据")
     for key in ("scenario_id", "prompt_version", "model_profile", "fixtures_sha256"):
         if baseline.get(key) != candidate.get(key):
             raise ExecutionError(f"对照基线与候选的 {key} 不一致")
+    vgh_delta = None
+    if baseline.get("vgh") is not None and candidate.get("vgh") is not None:
+        vgh_delta = candidate["vgh"] - baseline["vgh"]
     return {
         "comparable": True,
         "baseline_run_id": baseline["run_id"],
-        "baseline_vgh": baseline["vgh"],
-        "candidate_vgh": candidate["vgh"],
-        "vgh_delta": None if candidate["vgh"] is None else candidate["vgh"] - baseline["vgh"],
+        "baseline_sz_vsr": baseline_success,
+        "candidate_sz_vsr": candidate_success,
+        "sz_vsr_delta": candidate_success - baseline_success,
+        "baseline_vgh": baseline.get("vgh"),
+        "candidate_vgh": candidate.get("vgh"),
+        "vgh_delta": vgh_delta,
         "baseline_tokens": baseline.get("total_tokens"),
         "candidate_tokens": candidate.get("total_tokens"),
         "baseline_wall_seconds": baseline.get("wall_seconds"),
@@ -459,7 +476,11 @@ def build_measurement(
         raise ExecutionError("playground_level 必须是 0–5 整数")
     engineering_level = 0
     if candidate and comparable:
-        engineering_level = 3 if result["vgh"] is not None and result["vgh"] >= baseline["baseline_vgh"] else 2
+        engineering_level = 3 if (
+            result["vgh"] is not None
+            and baseline.get("baseline_vgh") is not None
+            and result["vgh"] >= baseline["baseline_vgh"]
+        ) else 2
     return {
         "platform_version": platform_version,
         "scenario_version": result["scenario_id"],
@@ -475,8 +496,11 @@ def build_measurement(
         },
         "baseline": baseline,
         "north_star": {
+            "candidate_sz_vsr": zero_human_verified_success(result),
+            "baseline_sz_vsr": baseline.get("baseline_sz_vsr") if comparable else None,
             "candidate_vgh": result["vgh"],
             "baseline_vgh": baseline.get("baseline_vgh") if comparable else None,
+            "human_intervention_count": result["human"].get("human_intervention_count"),
             "guardrails": independent.get("guardrails"),
         },
         "repeatability": independent.get("repeatability") or {
@@ -498,6 +522,7 @@ def build_measurement(
             "root_task_id": result["root_task_id"],
             "task_ids": result["task_ids"],
             "accepted_goal": result["accepted_goal"],
+            "zero_human_verified_success": zero_human_verified_success(result),
             "active_human_seconds": result["active_human_seconds"],
             "vgh": result["vgh"],
             "vgh_measurement_status": result["measurement_status"],

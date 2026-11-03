@@ -1,0 +1,34 @@
+schema_version: 1
+id: external-info-v1
+name: 运行时外部信息能力发现与调用
+case_type: external_info
+description: 运行时注册受控 HTTP Provider，Agent 按 Artifact 发现并调用，返回本次随机事实。
+read_only: true
+dimensions:
+  task_goal: {weight: 20, label: Task Goal}
+  multi_agent: {weight: 20, label: 协作按需}
+  protocol: {weight: 15, label: Capability Plane}
+  runtime: {weight: 10, label: 运行时注册}
+  evidence_auth: {weight: 10, label: invocation 证据}
+  playground: {weight: 15, label: 独立验收}
+  engineering_cost: {weight: 10, label: 成本}
+hard_gates:
+  - {id: P0, description: 运行时 Provider、真实 invocation、随机事实与来源全部通过}
+  - {id: P1, description: 协议与安全独立证据}
+  - {id: P2, description: 非工程用户独立验收}
+baseline: {cap_when_missing: 74}
+repeatability: {min_runtime_types: 2, min_third_party_agents: 2, min_consecutive_stable_runs: 3}
+stop_conditions: {target_score: 75, max_no_improvement_rounds: 2, max_experiments: 6, max_tokens: 300000, max_minutes: 15}
+runner:
+  prompt_version: external-info-v1
+  model_profile: deepseek-default
+  single_agent: fleet-eval-general-01
+  orchestrator: fleet-cmd-01
+  operation_id: read_external_observation
+  poll_seconds: 3
+measurement_protocol:
+  north_star: stratified_zero_human_verified_success_rate
+  success: zero_human_and_runtime_provider_invocation_and_independent_fact_check
+  provider_binding: runtime_only
+  business_website_hardcode: forbidden
+  vgh_role: diagnostic_only

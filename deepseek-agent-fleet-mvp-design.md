@@ -418,6 +418,12 @@ close 先调用当前 RuntimeAdapter 的活动 Run cancel 并等待停止确认�
 
 本地真实 API 已验证单 write PAT、PG 批量查询、HTTP 幂等重放／冲突与 close；活动 Run 取消后 Runtime 为 `interrupted`。这些结果仍不代表生产部署完成。发布验收必须在当前部署上重跑上述链路，补做 Provider 失败注入并核对执行槽位释放，再恢复第三方六题闭环；此前不扩大面板或启用 cron。墙钟／工具硬预算、Worker／queue position、`agent_config_version` 作为后续独立迭代，不用主观 Playground 评分替代这些工程门。
 
+### 7.18 分层零人工验收与基础评测集（2026-11-02，ADR-0045）
+
+平台主北极星改为分层零人工验收通过率（SZ-VSR）：只有零人工介入、独立验收、安全与预算约束同时通过的运行才计成功。VGH、Token、费用与墙钟保留为诊断或独立预算门，不再由接近零的人工计时下限单独决定发布。`platform-basic-v1` 首批包含 `core-v1`、`time-now-v1`、`multi-echo-v1` 与 `external-info-v1`，case 预声明难度、Optimization／Holdout 与固定权重；集合发布还需要 Holdout 覆盖、候选零人工 `pass^k` 和无单 case 回退。外部信息题只使用运行时注册的受控 Provider，不绑定具体业务网站。
+
+ADR-0046 将常规基础列表收敛为六项：`core-v1` 的 single／multi、`time-now-v1/single`、`multi-echo-v1/multi`、`external-info-v1` 的 single／multi。case 通过 `required_modes`、`candidate_mode` 和 `comparison_group` 声明执行目的；候选通过率与 single／multi 对照 delta 分开汇总。一轮六项共享一个 Fleet 环境，编码阶段只跑相关离线测试，候选确认后再跑全量回归；重复稳定门用于修改 case 或发布候选，不机械扩大测试矩阵。
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）
