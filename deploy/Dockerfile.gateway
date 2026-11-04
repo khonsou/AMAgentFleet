@@ -9,3 +9,5 @@ COPY deploy/config.fleet.yaml /app/config.fleet.yaml
 COPY deploy/prepare_gateway_config.py /app/prepare_gateway_config.py
 COPY fleet_tools.py /app/fleet_tools.py
 COPY fleet-ops-protocol.json /app/fleet-ops-protocol.json
+# 内置 http MCP server 由网关容器以 stdio 启动（extensions_config.json 的 args 指向这里）
+COPY mcp-servers /app/mcp-servers
