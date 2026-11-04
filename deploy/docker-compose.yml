@@ -65,6 +65,8 @@ services:
       # MCP 注册表渲染产物（control-plane 写、网关读，共享卷）
       - deerflow-cfg:/etc/deerflow
       - ./config.fleet.yaml:/app/config.fleet.yaml:ro
+      # 内置 http MCP server（control-plane 渲染的 command/args 指向仓库脚本）
+      - ../mcp-servers:/app/mcp-servers:ro
       # 舰队协作工具、配置合并器与唯一机器可读操作清单，来自本仓库
       - ../fleet_tools.py:/app/fleet_tools.py:ro
       - ../fleet-ops-protocol.json:/app/fleet-ops-protocol.json:ro
@@ -91,6 +93,8 @@ services:
       DEEPSEEK_THIN_MODEL: ${DEEPSEEK_THIN_MODEL:-deepseek-flash}
       FLEET_RUN_RECURSION_LIMIT: ${FLEET_RUN_RECURSION_LIMIT:-300}
       FLEET_DEERFLOW_ROOT: /etc/deerflow
+      FLEET_MCP_HTTP_PYTHON: /app/backend/.venv/bin/python
+      FLEET_MCP_HTTP_SCRIPT: /app/mcp-servers/http/server.py
       # FAP 同源暴露的 XFF 信任链：可信 proxy = 本机 + compose 内网网段
       # （console-backend 容器直连 _cp 拉数、fap_proxy 转发客户端流量）。
       # 客户端自带 XFF 一律由 console-backend 重建，不可信来源的 XFF 被忽略。

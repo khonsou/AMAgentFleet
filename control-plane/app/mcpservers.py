@@ -32,11 +32,17 @@ EXTENSIONS_CONFIG = os.path.join(DEERFLOW_ROOT, "extensions_config.json")
 # 出口白名单 = agent YAML egress 声明并集）。内置 = 不依赖注册表、不可删除/覆盖，
 # 注册表 tab 只面向未来的真实业务 MCP server。
 _WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 容器部署时 FLEET_DEERFLOW_ROOT 指向配置卷，网关 venv 与脚本路径需单独覆盖；
+# 本地 dev 保持默认值（spike/deer-flow + 仓库目录）。
+_MCP_HTTP_PYTHON = os.environ.get("FLEET_MCP_HTTP_PYTHON") or os.path.join(
+    DEERFLOW_ROOT, "backend", ".venv", "bin", "python")
+_MCP_HTTP_SCRIPT = os.environ.get("FLEET_MCP_HTTP_SCRIPT") or os.path.join(
+    _WORKSPACE_ROOT, "mcp-servers", "http", "server.py")
 BUILTIN_HTTP = {
     "name": "http",
     "type": "stdio",
-    "command": os.path.join(DEERFLOW_ROOT, "backend", ".venv", "bin", "python"),
-    "args": [os.path.join(_WORKSPACE_ROOT, "mcp-servers", "http", "server.py")],
+    "command": _MCP_HTTP_PYTHON,
+    "args": [_MCP_HTTP_SCRIPT],
     "env": {},
     "enabled": True,
     "description": "平台内置通用 http 工具：agent 自主对接数据网站，出口由 egress 白名单强制。",

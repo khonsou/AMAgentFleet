@@ -159,6 +159,10 @@ spec:
               value: /fleet-data/deerflow-cfg
             - name: FLEET_MCP_SECRETS_DIR
               value: /fleet-data/mcp-secrets
+            - name: FLEET_MCP_HTTP_PYTHON
+              value: /app/backend/.venv/bin/python
+            - name: FLEET_MCP_HTTP_SCRIPT
+              value: /app/mcp-servers/http/server.py
             - name: FAP_TRUSTED_PROXIES
               value: 127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
           resources:
