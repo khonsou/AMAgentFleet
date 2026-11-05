@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app import pool as poolmod
+from app import dispatcher, pool as poolmod
 
 
 class ParentResumeTests(unittest.IsolatedAsyncioTestCase):
@@ -66,6 +66,26 @@ class ParentResumeTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.pool.pool", new=self._pool(conn)), \
                 patch("app.pool.return_loop", new=AsyncMock(side_effect=poolmod.PoolError(409, "changed"))):
             await poolmod._resume_parent_when_children_settled(319)
+
+    async def test_failed_child_also_triggers_parent_resume(self):
+        with patch("app.dispatcher._reset_loop", new=AsyncMock(return_value={})), \
+                patch("app.dispatcher._schedule_recovery", new=AsyncMock()), \
+                patch("app.pool._task_of", new=AsyncMock(return_value=319)), \
+                patch("app.pool._resume_parent_when_children_settled", new=AsyncMock()) as check:
+            await dispatcher._fail_loop(339, "Model output truncated by length limit (stop_reason=length)")
+        check.assert_awaited_once_with(319)
+
+    async def test_parent_resume_uses_latest_loop_failure_not_legacy_task_status(self):
+        conn = AsyncMock()
+        conn.fetchval.return_value = 318
+        conn.fetch.return_value = self._children()
+        conn.fetchrow.return_value = {"id": 338}
+        with patch("app.pool.pool", new=self._pool(conn)), \
+                patch("app.pool.return_loop", new=AsyncMock()):
+            await poolmod._resume_parent_when_children_settled(319)
+        query = conn.fetch.await_args.args[0]
+        self.assertIn("l.error IS NOT NULL AND l.recovery_action IS NULL", query)
+        self.assertIn("id, status, deliverable", query)
 
     async def test_delivery_triggers_parent_check(self):
         conn = AsyncMock()

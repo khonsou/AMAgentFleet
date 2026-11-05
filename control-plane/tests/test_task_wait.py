@@ -42,6 +42,33 @@ class WaitEvaluationTests(unittest.TestCase):
             snapshot, target="all_delivered", loop_ids={11, 12}, version_gt=None)
         self.assertEqual(status, "condition_met")
 
+    def test_orchestration_complete_requires_terminal_children_and_resume(self):
+        snapshot = detail([loop(11, "delivered", version=1)])
+        snapshot["children"] = [{"id": 100, "status": "running", "pool_status": "open"}]
+        status, _ = poolmod._evaluate_wait(
+            snapshot, target="orchestration_complete", loop_ids={11}, version_gt=None)
+        self.assertIsNone(status)
+        snapshot = detail([loop(11, "delivered", version=2)])
+        snapshot["children"] = [{"id": 100, "status": "success", "pool_status": "review"}]
+        status, reason = poolmod._evaluate_wait(
+            snapshot, target="orchestration_complete", loop_ids={11}, version_gt=None)
+        self.assertEqual(status, "condition_met")
+        self.assertIn("自动唤醒", reason)
+
+    def test_orchestration_complete_rejects_unfinished_children(self):
+        snapshot = detail([loop(11, "delivered", version=2)])
+        snapshot["children"] = [{"id": 100, "status": "running", "pool_status": "open"}]
+        status, reason = poolmod._evaluate_wait(
+            snapshot, target="orchestration_complete", loop_ids={11}, version_gt=None)
+        self.assertIsNone(status)
+        self.assertIn("children_terminal=False", reason)
+
+    def test_orchestration_complete_rejects_empty_child_set(self):
+        snapshot = detail([loop(11, "delivered", version=1)])
+        status, _ = poolmod._evaluate_wait(
+            snapshot, target="orchestration_complete", loop_ids={11}, version_gt=None)
+        self.assertIsNone(status)
+
     def test_version_gt_requires_new_version_delivered(self):
         for state in ("returned", "running", "claimed"):
             with self.subTest(state=state):
@@ -125,6 +152,43 @@ class WaitExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 422)
 
 
+class TaskDetailChildrenTests(unittest.IsolatedAsyncioTestCase):
+    async def test_children_use_latest_loop_execution_projection(self):
+        class Conn:
+            async def fetchrow(self, _query, _id):
+                return {"id": 42, "status": "queued", "pool_status": "open"}
+
+            async def fetch(self, query, _id):
+                if "fleet_task_comments" in query:
+                    return []
+                if "FROM fleet_tasks t" in query:
+                    return [{
+                        "id": 100, "status": "queued", "pool_status": "open",
+                        "latest_loop_status": "claimed", "latest_loop_version": 1,
+                        "loop_error": "Model output truncated by length limit (stop_reason=length)",
+                        "failure_kind": "permanent", "recovery_action": None, "next_retry_at": None,
+                    }]
+                return []
+
+        class Pool:
+            def acquire(self):
+                return self
+
+            async def __aenter__(self):
+                return Conn()
+
+            async def __aexit__(self, *_args):
+                return None
+
+        with patch("app.pool.pool", new=AsyncMock(return_value=Pool())):
+            snapshot = await poolmod.task_detail(42)
+        child = snapshot["children"][0]
+        self.assertEqual(child["execution_status"], "failed")
+        self.assertTrue(child["is_terminal"])
+        state = poolmod._orchestration_state(snapshot)
+        self.assertTrue(state["children_terminal"])
+
+
 class WaitProtocolTests(unittest.TestCase):
     def test_protocol_and_ops_rules_expose_bounded_wait(self):
         protocol = json.loads((ROOT / "fleet-ops-protocol.json").read_text(encoding="utf-8"))
@@ -134,6 +198,7 @@ class WaitProtocolTests(unittest.TestCase):
         self.assertNotIn("write", operation)
         self.assertEqual(operation["timeout_seconds"], 125)
         self.assertIn("version_gt", operation["query"]["target"])
+        self.assertIn("orchestration_complete", operation["query"]["target"])
         with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as handle:
             soul = yaml.safe_load(handle)["spec"]["agent"]["soul"]
         self.assertIn("固定使用 tasks.wait", soul)

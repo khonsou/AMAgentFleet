@@ -96,10 +96,17 @@ GET /api/review-queue             → 待确认（review）任务列表
 GET /api/loops/by-thread/{tid}    → thread → 所属 loop + task 池状态
 ```
 
-`tasks.wait` 的 `target` 支持 `delivered / all_delivered / terminal / version_gt`；
+`tasks.wait` 的 `target` 支持 `delivered / all_delivered / terminal / version_gt / orchestration_complete`；
 可选 `loop_ids` 为逗号分隔字符串，`version_gt` 条件必须同时传旧版本号，单次
-`timeout_seconds` 为 0–120 秒。响应在 Task 详情上增加 `wait_status` 与 `reason`；
-只有 `condition_met` 表示条件满足，`timeout` 与 `failed` 均不得当成交付成功。
+`timeout_seconds` 为 0–120 秒。响应在 Task 详情上增加 `wait_status`、`reason` 与
+`orchestration`（`waiting_children`、`children_terminal`、`root_delivered`、
+`final_delivery_version`、`wake_count`）；只有 `condition_met` 表示条件满足，
+`timeout` 与 `failed` 均不得当成交付成功。
+
+`orchestration_complete` 仅用于多 Agent 编排，要求直接子任务存在且全部进入终态，
+父任务已自动唤醒并再次交付（`wake_count>=1`）。子任务尚未出现的空集合不得通过；
+首次派单说明的 delivered 不满足该条件。编排完成不等于业务验收通过，子任务失败时
+应读取各自 execution_status，不得猜为成功。
 
 内部 Loop 状态机：`claimed → running → delivered`（自动捕获交付）；
 异常回 `claimed` 以保留内部恢复兼容性；验收相关：`accepted / archived / returned`。

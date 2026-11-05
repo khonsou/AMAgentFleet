@@ -301,11 +301,16 @@ async def _resume_parent_when_children_settled(task_id: int) -> None:
         if parent_task_id is None:
             return
         children = await conn.fetch(
-            """SELECT t.id, t.agent_name, t.status, l.id AS loop_id,
-                      l.deliverable, l.error, l.summary_chars
+            """SELECT t.id, t.agent_name,
+                      CASE
+                        WHEN l.status IN ('error','rejected')
+                          OR (l.error IS NOT NULL AND l.recovery_action IS NULL) THEN 'error'
+                        ELSE t.status
+                      END AS status,
+                      l.id AS loop_id, l.deliverable, l.error, l.summary_chars
                FROM fleet_tasks t
                JOIN LATERAL (
-                   SELECT id, deliverable, error, summary_chars FROM fleet_task_loops
+                   SELECT id, status, deliverable, error, recovery_action, summary_chars FROM fleet_task_loops
                    WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                ) l ON TRUE
                WHERE t.parent_task_id=$1 ORDER BY t.id""",
@@ -470,13 +475,43 @@ async def task_detail(task_id: int) -> dict[str, Any] | None:
         loops = await conn.fetch("SELECT * FROM fleet_task_loops WHERE task_id=$1 ORDER BY id", task_id)
         comments = await conn.fetch("SELECT * FROM fleet_task_comments WHERE task_id=$1 ORDER BY id", task_id)
         children = await conn.fetch(
-            "SELECT * FROM fleet_tasks WHERE parent_task_id=$1 ORDER BY id", task_id)
+            """SELECT t.*, l.id AS latest_loop_id, l.status AS latest_loop_status,
+                      l.version AS latest_loop_version, l.error AS loop_error,
+                      l.recovery_action, l.next_retry_at, l.failure_kind
+               FROM fleet_tasks t
+               LEFT JOIN LATERAL (
+                 SELECT id, status, version, error, recovery_action, next_retry_at, failure_kind
+                 FROM fleet_task_loops WHERE task_id=t.id ORDER BY id DESC LIMIT 1
+               ) l ON true
+               WHERE t.parent_task_id=$1 ORDER BY t.id""", task_id)
     return {"task": dict(task), "loops": [enrich_execution(dict(l)) for l in loops],
             "comments": [dict(c) for c in comments],
-            "children": [dict(child) for child in children]}
+            "children": [enrich_execution(dict(child)) for child in children]}
 
 
-WAIT_TARGETS = {"delivered", "all_delivered", "terminal", "version_gt"}
+WAIT_TARGETS = {"delivered", "all_delivered", "terminal", "version_gt", "orchestration_complete"}
+
+
+def _orchestration_state(detail: dict[str, Any]) -> dict[str, Any]:
+    children = detail.get("children") or []
+    loops = detail.get("loops") or []
+    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")]
+    final_version = max((int(loop.get("version") or 1) for loop in delivered), default=0)
+    terminal_statuses = {"success", "error", "rejected", "closed", "cancelled", "failed"}
+    terminal_pools = {"review", "done", "closed"}
+    children_terminal = all(
+        child.get("execution_status") in {"succeeded", "failed", "closed"}
+        or child.get("status") in terminal_statuses
+        or child.get("pool_status") in terminal_pools
+        for child in children
+    )
+    return {
+        "waiting_children": not children_terminal,
+        "children_terminal": children_terminal,
+        "root_delivered": bool(delivered),
+        "final_delivery_version": final_version,
+        "wake_count": max(0, final_version - 1) if children else 0,
+    }
 
 
 def _wait_selection(detail: dict[str, Any], loop_ids: set[int] | None) -> list[dict[str, Any]]:
@@ -508,6 +543,17 @@ def _evaluate_wait(
             return "condition_met", "Task 已进入终态"
         if loops and all(loop.get("is_terminal") for loop in loops):
             return "condition_met", "指定 Loop 已全部进入执行终态"
+    if target == "orchestration_complete":
+        state = _orchestration_state(detail)
+        if (
+            detail.get("children") and state["root_delivered"] and state["children_terminal"]
+            and state["wake_count"] >= 1
+        ):
+            return "condition_met", "直接子任务已终态，父任务已自动唤醒并再次交付"
+        return None, (
+            f"编排未完成：children_terminal={state['children_terminal']}，"
+            f"root_delivered={state['root_delivered']}，wake_count={state['wake_count']}"
+        )
     delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")]
     if target == "delivered" and delivered:
         return "condition_met", f"Loop {delivered[0]['id']} 已交付"
@@ -545,7 +591,12 @@ async def wait_task(
             wait_status = "timeout"
             reason = f"等待超时（{timeout_seconds:g}s）：{reason}"
         if wait_status is not None:
-            return {"wait_status": wait_status, "reason": reason, **detail}
+            return {
+                "wait_status": wait_status,
+                "reason": reason,
+                "orchestration": _orchestration_state(detail),
+                **detail,
+            }
         await asyncio.sleep(min(1.0, remaining))
 
 

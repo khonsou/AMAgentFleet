@@ -269,6 +269,11 @@ async def _fail_loop(loop_id: int, error: str, failure_kind: str = "permanent",
             logger.exception("failed to capture checkpoint for loop %s", loop_id)
     row = await _reset_loop(loop_id, error, failure_kind, checkpoint_id)
     await _schedule_recovery(loop_id, row)
+    # Failed children are terminal too; parents must be resumed to report the
+    # failure or deliver a degraded result instead of waiting forever.
+    from . import pool as poolmod
+    task_id = await poolmod._task_of(loop_id)
+    await poolmod._resume_parent_when_children_settled(task_id)
 
 
 def _extract_thread_id(result: dict) -> str | None:
