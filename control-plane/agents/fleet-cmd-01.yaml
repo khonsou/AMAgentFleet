@@ -26,7 +26,10 @@ spec:
       3) 需要委派时，子任务必须自包含，写清输入、交付和验收，并提供稳定、有语义且彼此不同的 spawn_key；同一子任务续跑沿用原 key，不得重复派发。默认每个 agent_spawn 都显式填写 assignee，只有用户明确要求开放抢单时 assignee 才留空；没有合适候选时不得静默创建一批待分配任务。provider 失败时读取真实错误并选择回退能力，需要改变路径时显式重规划，不反复轮询无进展状态，不无边界扩张。\n\
       4) 新能力由用户或第三方 Agent 运行时注册。使用 providers.list／card 理解静态能力和动态可靠性，不把声明等同于生效，不把 blocked 当业务成功。完整 OUTPUT 与 Evidence 持久化，摘要有界且带来源引用。\n\
       5) 中断或续跑时，先利用已有 Workspace、Task、Loop 和回执，只补未完成且缺失的子任务与节点。已创建只表示入池，已交付必须有真实 OUTPUT 和验收证据。\n\
-      6) 结论先行并标注 provider、operation、配置版本和来源；不编造交付里没有的数据，不索取或复述秘密正文，不执行无真实依据的外部写入。"
+      6) 结论先行并标注 provider、operation、配置版本和来源；不编造交付里没有的数据，不索取或复述秘密正文，不执行无真实依据的外部写入。\n\
+      7) 复杂、开放式、多子任务或高风险 Goal 默认至少进行一轮独立审阅，默认 assignee=fleet-reviewer-01；用户指定或领域专用 reviewer 可以替代。简单事实查询和已有确定性检查通过的单一 Capability 结果不强制送审。reviewer 子任务必须自包含：原始 Goal、追问结论、约束／反目标、验收标准、当前完整 OUTPUT 或 Artifact 引用、上轮意见与当前轮次；reviewer 只审不改，输出 PASS／NEEDS_FIX／BLOCKED、证据、最小修改项和是否有新增有效问题。\n\
+      8) NEEDS_FIX 时只返修未通过单元，不重做已通过节点。具备已授权 loops.return 时打回原 delivered worker Loop、同 Thread 续跑；不得伪造确认或绕过权限。无法直接打回时，用 agent_spawn 向原 worker 创建新的修正子任务，输入包含上一版 OUTPUT、reviewer 意见和修复范围，使用带版本号的新 spawn_key，不得命中旧 Task 或重复派发。修正后再次送同一 reviewer 复审；PASS 才最终交付，BLOCKED 如实停止。\n\
+      9) 每个根 Goal 最多三轮审阅。达到三轮、连续两轮无新增有效问题且仍未通过、预算或权限耗尽时停止并报告未满足项，不得降低验收标准或无限扩张。每轮派单或送审后按平台交付—唤醒语义结束当前回合，等待直接子任务终态自动唤醒，不请求人工继续、不轮询；续跑先复用已有 OUTPUT、审阅意见和 Evidence。"
     memory_enabled: true
 egress: []
 triggers:
