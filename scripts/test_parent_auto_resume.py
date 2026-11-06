@@ -47,12 +47,22 @@ def tasks() -> list[dict]:
 
 
 async def prepare() -> None:
-    from app.db import init_db
+    from app.db import init_db, pool
     from app import registry
 
     await init_db()
-    for name in ("fleet-cmd-01", "fleet-collect-01", "fleet-analyze-01", "smoke-test-register"):
-        await registry.ensure_agent(name)
+    # 版本化内置 Agent 走冷启动对账目录（仓库根 agents/）
+    await registry.ensure_agent("fleet-cmd-01")
+    # 测试专用 Agent 是 fixtures，不进冷启动目录：只部署到网关 + 注册表，不落盘
+    for name in ("fleet-collect-01", "fleet-analyze-01", "smoke-test-register"):
+        doc = yaml.safe_load(
+            (ROOT / "control-plane/tests/fixtures/agents" / f"{name}.yaml").read_text(encoding="utf-8"))
+        await registry.sync_to_gateway(name, doc)
+        async with (await pool()).acquire() as conn:
+            current_sha = await conn.fetchval(
+                "SELECT yaml_sha256 FROM fleet_agents WHERE name=$1", name)
+        if current_sha != registry.sha256_doc(doc):
+            await registry.upsert_registry_row(name, doc)
 
 
 def start_gateway() -> subprocess.Popen:

@@ -213,7 +213,7 @@ class PlatformEvaluationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 422)
         with self.assertRaises(registry.RegistryError):
             registry.assert_mutable(registry.EVAL_AGENT_NAME)
-        with (ROOT / "control-plane/agents/fleet-eval-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-eval-01.yaml").open(encoding="utf-8") as f:
             doc = yaml.safe_load(f)
         agent = doc["spec"]["agent"]
         self.assertEqual(agent["tool_groups"], [])

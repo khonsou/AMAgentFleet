@@ -199,7 +199,7 @@ class WaitProtocolTests(unittest.TestCase):
         self.assertEqual(operation["timeout_seconds"], 125)
         self.assertIn("version_gt", operation["query"]["target"])
         self.assertIn("orchestration_complete", operation["query"]["target"])
-        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as handle:
+        with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as handle:
             soul = yaml.safe_load(handle)["spec"]["agent"]["soul"]
         self.assertIn("固定使用 tasks.wait", soul)
         self.assertIn("不得在当前 Run 内反复调用 tasks.get", soul)

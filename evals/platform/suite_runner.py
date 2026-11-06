@@ -179,7 +179,7 @@ def _prepare_agents(client: FleetClient, run_id: str, case_type: str) -> None:
     if case_type == "multi_echo":
         names += ["fleet-eval-source-a-01", "fleet-eval-source-b-01"]
     for name in names:
-        doc = yaml.safe_load((ROOT / "control-plane/agents" / AGENT_FILES[name]).read_text(encoding="utf-8"))
+        doc = yaml.safe_load((PLATFORM_ROOT / "agents" / AGENT_FILES[name]).read_text(encoding="utf-8"))
         current = client.get_agent(name)
         if current and current.get("yaml") == doc:
             continue
@@ -578,7 +578,7 @@ def validate_suite(suite_path: Path = DEFAULT_SUITE) -> dict[str, Any]:
             if scenario["case_type"] == "external_info" and data["observation"]["value"] in prompt:
                 raise ExecutionError("外部信息题不得把随机观测值写入题面")
         validated.append({"id": scenario["id"], "status": "passed"})
-    general = yaml.safe_load((ROOT / "control-plane/agents/fleet-eval-general-01.yaml").read_text(encoding="utf-8"))
+    general = yaml.safe_load((PLATFORM_ROOT / "agents" / "fleet-eval-general-01.yaml").read_text(encoding="utf-8"))
     agent = general["spec"]["agent"]
     if agent.get("memory_enabled") is not False or agent.get("allowed_subagents") != []:
         raise ExecutionError("fleet-eval-general-01 必须零记忆、零子 Agent")

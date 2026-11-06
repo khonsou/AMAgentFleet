@@ -27,7 +27,11 @@ PG_DSN = os.environ.get("FLEET_PG_DSN", "postgresql://postgres@127.0.0.1:5432/de
 GATEWAY = os.environ.get("FLEET_GATEWAY_URL", "http://127.0.0.1:8001")
 AGENTS_DIR = os.environ.get(
     "FLEET_AGENTS_DIR",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents"),
+    # 版本化一等公民目录 = 仓库根 agents/（与生产镜像 COPY agents /app/agents 对齐）。
+    # control-plane/agents/ 曾是历史默认，已退出版本化（测试夹具在 control-plane/tests/fixtures/agents/）。
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "agents"),
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")

@@ -77,13 +77,13 @@ class CapabilityApiTests(unittest.IsolatedAsyncioTestCase):
 
     def test_meta_agents_are_capability_maximal_by_default(self):
         for name in ("fleet-cmd-01", "fleet-ops-01"):
-            doc = yaml.safe_load((ROOT / "control-plane/agents" / f"{name}.yaml").read_text(encoding="utf-8"))
+            doc = yaml.safe_load((ROOT / "agents" / f"{name}.yaml").read_text(encoding="utf-8"))
             self.assertEqual(doc["capability_policy"], "inherit_all")
             self.assertTrue(doc["inherit_new_capabilities"])
             soul = doc["spec"]["agent"]["soul"]
             self.assertIn("capabilities.invoke", soul)
             self.assertIn("workspaces", soul)
-        ops = yaml.safe_load((ROOT / "control-plane/agents/fleet-ops-01.yaml").read_text(encoding="utf-8"))
+        ops = yaml.safe_load((ROOT / "agents/fleet-ops-01.yaml").read_text(encoding="utf-8"))
         self.assertNotIn("allowed_subagents", ops["spec"]["agent"])
         self.assertNotIn("tool_groups", ops["spec"]["agent"])
         self.assertNotIn("不派生 subagent", ops["spec"]["agent"]["soul"])

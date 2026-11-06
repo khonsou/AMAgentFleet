@@ -261,7 +261,7 @@ class SchemaAndCronTests(unittest.TestCase):
                 profiles[name]["when_thinking_enabled"]["extra_body"]["thinking"]["type"], "enabled")
             self.assertEqual(
                 profiles[name]["when_thinking_disabled"]["extra_body"]["thinking"]["type"], "disabled")
-        for directory in (root / "agents", root / "control-plane/agents"):
+        for directory in (root / "agents", root / "evals/platform/agents", root / "control-plane/tests/fixtures/agents"):
             for path in directory.rglob("*.yaml"):
                 doc = yaml.safe_load(path.read_text(encoding="utf-8"))
                 agent = (doc.get("spec") or {}).get("agent") or {}

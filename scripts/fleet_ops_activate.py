@@ -28,7 +28,7 @@ def sha256_doc(doc: dict) -> str:
 
 
 def activate() -> dict:
-    with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+    with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
         doc = yaml.safe_load(f)
     with (ROOT / "fleet-ops-protocol.json").open(encoding="utf-8") as f:
         protocol = json.load(f)

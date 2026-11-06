@@ -30,8 +30,11 @@ control-plane/ ✅    # Registry / Dispatcher / Scheduler / Admin API (FastAPI :
   app/dispatcher.py  #   任务队列（PG SKIP LOCKED；Redis Stream 为部署期替换）
   app/inbox.py       #   agent 持久 Inbox，攒批合并唤醒
   app/scheduler.py   #   YAML cron ↔ scheduled-tasks API 对账
-agents/ ✅           # agent YAML 定义（版本化，每个 agent 一个文件，一等公民）
+agents/ ✅           # agent YAML 唯一定义目录（版本化，每个 agent 一个文件，一等公民；
+                     #   含内置 fleet-ops/cmd/eval/reviewer；冷启动对账与生产镜像都读这里）
 evals/ ✅            # 平台评测场景与确定性评分器；运行输出只进 artifacts/，不写回场景目录
+evals/platform/agents/ # 评测专用 agent（fleet-eval-general/single/source-*），不随冷启动注册
+control-plane/tests/fixtures/agents/ # 协作/冒烟测试夹具 agent，由测试脚本按需注册，不随冷启动注册
 gateway/             # MCP Gateway：工具白名单校验、令牌网关侧注入、审计
 vault/               # Token Vault：OAuth token 托管（KMS 加密）
 skills/              # SKILL.md 能力包（同步 OSS）

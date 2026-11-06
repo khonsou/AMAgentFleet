@@ -7,7 +7,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-AGENTS = ROOT / "control-plane" / "agents"
+# 版本化一等公民目录 = 仓库根 agents/（评测与协作夹具另有目录，不在此编目）
+AGENTS = ROOT / "agents"
 PLATFORM_FIELDS = {"egress", "triggers", "identity", "budget", "persistence"}
 
 

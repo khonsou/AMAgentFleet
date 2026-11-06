@@ -326,7 +326,7 @@ class CoreEvaluationRunnerTests(unittest.TestCase):
 
     def test_agent_definitions_are_isolated(self):
         for name in ("fleet-eval-source-a-01", "fleet-eval-source-b-01", "fleet-eval-single-01"):
-            doc = yaml.safe_load((ROOT / "control-plane/agents" / f"{name}.yaml").read_text(encoding="utf-8"))
+            doc = yaml.safe_load((ROOT / "evals/platform/agents" / f"{name}.yaml").read_text(encoding="utf-8"))
             agent = doc["spec"]["agent"]
             self.assertFalse(agent["memory_enabled"])
             self.assertEqual(agent["skills"], [])

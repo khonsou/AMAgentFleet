@@ -212,7 +212,7 @@ def _task_status_signature(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _prepare_agents(client: FleetClient, run_id: str) -> None:
     for name, filename in AGENT_FILES.items():
-        doc = yaml.safe_load((ROOT / "control-plane/agents" / filename).read_text(encoding="utf-8"))
+        doc = yaml.safe_load((ROOT / "evals/platform/agents" / filename).read_text(encoding="utf-8"))
         current = client.get_agent(name)
         if current and current.get("yaml") == doc:
             continue
@@ -691,7 +691,7 @@ def validate_offline(scenario_path: Path) -> dict[str, Any]:
             raise ExecutionError(f"{mode} 输入不得引用预期答案文件")
     agents = {}
     for name, filename in AGENT_FILES.items():
-        doc = yaml.safe_load((ROOT / "control-plane/agents" / filename).read_text(encoding="utf-8"))
+        doc = yaml.safe_load((ROOT / "evals/platform/agents" / filename).read_text(encoding="utf-8"))
         agent = doc["spec"]["agent"]
         if agent.get("memory_enabled") is not False or agent.get("allowed_subagents") != []:
             raise ExecutionError(f"{name} 未满足零记忆／零子 Agent")

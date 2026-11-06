@@ -116,7 +116,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("fleet_operations", payload["capabilities"])
 
     def test_default_agent_is_capability_maximal_and_agent_callable(self):
-        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
             doc = yaml.safe_load(f)
         agent = doc["spec"]["agent"]
         self.assertEqual(doc["metadata"]["name"], "fleet-ops-01")
@@ -135,7 +135,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(operation["method"], "POST")
         self.assertEqual(operation["path"], "/api/tasks/{task_id}/loops")
         self.assertTrue(operation["write"])
-        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
             soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
         self.assertIn("改派或指派既有 Task 时，固定使用 loops.claim", soul)
         self.assertIn("不得用 tasks.create 或 agents.dispatch 替代既有任务改派", soul)
@@ -144,13 +144,13 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         operation = next(op for op in load_protocol()["operations"] if op["id"] == "tasks.accept_reviewed")
         self.assertEqual(operation["path"], "/api/tasks/accept-reviewed")
         self.assertTrue(operation["write"])
-        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
             soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
         self.assertIn("只调用一次 tasks.accept_reviewed", soul)
         self.assertIn("不再额外查询或分页", soul)
 
     def test_ops_executes_explicit_regular_writes_without_redundant_discovery(self):
-        with (ROOT / "control-plane/agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-ops-01.yaml").open(encoding="utf-8") as f:
             soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
         self.assertIn("就是本次操作的确认", soul)
         self.assertIn("直接以 confirmed=true 执行", soul)
@@ -161,7 +161,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("每个新会话先调用", soul)
 
     def test_commander_uses_stable_spawn_keys_and_incremental_recovery(self):
-        with (ROOT / "control-plane/agents/fleet-cmd-01.yaml").open(encoding="utf-8") as f:
+        with (ROOT / "agents/fleet-cmd-01.yaml").open(encoding="utf-8") as f:
             soul = yaml.safe_load(f)["spec"]["agent"]["soul"]
         self.assertIn("稳定、有语义且彼此不同的 spawn_key", soul)
         self.assertIn("默认每个 agent_spawn 都显式填写 assignee", soul)
