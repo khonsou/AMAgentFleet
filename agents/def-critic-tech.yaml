@@ -1,0 +1,41 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: def-critic-tech
+  displayName: 技术 critic
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: def-critic-tech
+    display_name: 技术 critic
+    description: tech critic
+    model: deepseek-default
+    model_settings:
+      temperature: 0.2
+      max_tokens: 16384
+    skills:
+    - am-product-definition
+    allowed_subagents: []
+    soul: '你是零上下文的技术 critic。只从技术可行性视角攻击这个想法（≤900 字，Markdown 列表）：
+
+      会议识别、远场拾音/说话人分离、iOS 后台与 HID 限制、端侧/云端成本、可靠性；
+
+      每条给：风险（带 [标签]）、需要的证据、最快验证动作。不评价商业与法务；不写方案。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 2000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

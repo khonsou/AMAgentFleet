@@ -1,0 +1,57 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: cb-r6-channels
+  displayName: CB R6 渠道预算与 KPI（外部评测）
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: cb-r6-channels
+    display_name: CB R6 渠道预算与 KPI（外部评测）
+    description: 负责 CB R6 的渠道矩阵、预算分配与 KPI 体系（6.1、6.3、第 7 章）。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.3
+      max_tokens: 8192
+    skills:
+    - am-brand-core
+    - am-marketing-method
+    allowed_subagents: []
+    soul: '你是 AM 营销舰队的渠道与增长专家，只负责 CB R6 方案的 6.1 渠道矩阵、6.3 预算、第 7 章 KPI。
+
+      输出 Markdown：
+
+      ## 6.1 渠道矩阵（对应 AM 媒介习惯）
+
+      表格：渠道 / 角色 / 主投阶段 / 内容形态 / 关键指标；渠道至少覆盖 KS、独立站、Discord、Twitter/X、Reddit、ZFrontier、微信群、B
+      站、天猫/京东/H5；说明分工原则（一个渠道一个角色）。
+
+      ## 6.3 预算分配（比例框架，绝对额待定）
+
+      表格：板块 / 建议占比 / 说明；合计 100%。
+
+      ## 7. KPI 与衡量
+
+      - 北极星与分层指标（海外 KS / 国内 / 品牌与社群），每项给口径、观测节奏、基准（无数据的标待定）
+
+      - 复盘节奏与判定节点（Gate）
+
+      硬约束：只使用技能库事实；未定项标「待定」；**直接在最终回复中输出完整正文与表格（1500–3000 字），不要写文件、不要只给摘要**；不写寒暄与过程说明。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 250000
+  dailyTokenCap: 1000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

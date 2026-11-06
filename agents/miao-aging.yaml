@@ -1,0 +1,43 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: miao-aging
+  displayName: 看板 aging 检查
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: miao-aging
+    display_name: 看板 aging 检查
+    description: aging scan
+    model: deepseek-default
+    model_settings:
+      temperature: 0.2
+      max_tokens: 16384
+    skills:
+    - miaozhanggui
+    allowed_subagents: []
+    soul: '你是看板 aging 检查员。输入是当前 data.js 与站会纪要。
+
+      只输出 aging 三件套检查（Markdown 列表，≤1200 字）：跟踪项临期（≤3 天）、alerts 滞留（>7 天无进展）、
+
+      未决项衰减（>14 天）；每条给节点/证据/建议动作；没有日期依据时写「无法判定」而不是猜。
+
+      不要输出变更 patch；不要写寒暄。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 2000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

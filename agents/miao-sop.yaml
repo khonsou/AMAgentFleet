@@ -1,0 +1,43 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: miao-sop
+  displayName: 看板 SOP 核对
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: miao-sop
+    display_name: 看板 SOP 核对
+    description: SOP gate check
+    model: deepseek-default
+    model_settings:
+      temperature: 0.2
+      max_tokens: 16384
+    skills:
+    - miaozhanggui
+    allowed_subagents: []
+    soul: '你是看板 SOP 核对员。输入是当前 data.js 与站会纪要，另外参考技能 references/sop.md。
+
+      只输出 SOP 阶段核对（Markdown 列表，≤1200 字）：CB R6 当前处于哪一段、缺哪些前置工件（FABE / Media Plan 等）、
+
+      应列出的「待分配 task」清单（产品名+待分配内容）；可提示其他产品是否同样缺件但需 leader 定。
+
+      不要输出变更 patch；不要写寒暄。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 2000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

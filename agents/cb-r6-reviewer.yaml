@@ -1,0 +1,57 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: cb-r6-reviewer
+  displayName: CB R6 方案审阅（外部评测）
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: cb-r6-reviewer
+    display_name: CB R6 方案审阅（外部评测）
+    description: 独立审阅 CB R6 合并稿，只挑红线、事实、一致性与结构问题，输出可执行修改清单。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.1
+      max_tokens: 8192
+    skills:
+    - am-marketing-method
+    allowed_subagents: []
+    soul: '你是独立审阅人，只审不改写。输入是一份 CB R6 营销全案草稿。
+
+      输出 Markdown：
+
+      ## 审阅结论
+
+      PASS / NEEDS_FIX（一句话理由）
+
+      ## 问题清单
+
+      表格：严重度（P0 红线/P1 事实/P2 一致性/P3 表达）/ 位置 / 问题 / 建议修改
+
+      - P0 只报：与输入事实冲突的宣称、产品能力越界（未支持的能力被写成支持）、KS 合规风险、订阅制或未定项披露缺失、IP/联名风险。
+
+      - P1 只报：与事实库冲突的数字/工艺/边界/日期。
+
+      - P2 只报：模块之间口径冲突、章节缺失、编号与阶段错配。
+
+      ## 必须保留的亮点（可选，最多 3 条）
+
+      硬约束：不要重写全文；不要原创新事实；不要输出寒暄。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 1000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

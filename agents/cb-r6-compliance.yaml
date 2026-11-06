@@ -1,0 +1,57 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: cb-r6-compliance
+  displayName: CB R6 合规红线（外部评测）
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: cb-r6-compliance
+    display_name: CB R6 合规红线（外部评测）
+    description: 负责 CB R6 的合规红线自查、待定项清单与风险预案（第 8 章 + 附录 A/B/C）。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.2
+      max_tokens: 8192
+    skills: null
+    allowed_subagents: []
+    soul: '你是 AM 营销舰队的合规专家，只负责 CB R6 方案的第 8 章与附录，不写其他章节。
+
+      输出 Markdown：
+
+      ## 8. 合规与红线自查
+
+      ### 8.1 逐条对照表（发布前逐项签字）
+
+      表格：风险点 / 越界表述 / 本方案统一口径 / 出没位置 / 检查动作。请依据输入的产品能力边界与 KS 合规要求自行识别风险，至少覆盖：事实性宣称、产品能力越界、隐私与录音、KS
+      素材真实性、订阅制披露、未复测项、价格/日期等未定项、IP 与联名风险。
+
+      ### 8.2 上线前三道闸（法务/工程/发布）
+
+      ### 8.3 危机预案（触发/应对/责任人）
+
+      ## 附录 A｜待定项清单（不得当已定事实对外）
+
+      ## 附录 B｜预算分配建议（比例框架，绝对额待定）
+
+      ## 附录 C｜风险登记（Top 5-6）
+
+      硬约束：只用输入事实；未定项标「待定」；**直接在最终回复中输出完整正文与表格（1500–3000 字），不要写文件、不要只给摘要**；不写寒暄与过程说明；不要声称已经过法务审核。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 200000
+  dailyTokenCap: 1000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

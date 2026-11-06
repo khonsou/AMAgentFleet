@@ -1,0 +1,53 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: cb-r6-timeline
+  displayName: CB R6 发布节奏与物料（外部评测）
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: cb-r6-timeline
+    display_name: CB R6 发布节奏与物料（外部评测）
+    description: 负责 CB R6 的 30 天 KS 节奏表与物料清单（第 5 章 + 6.2）。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.3
+      max_tokens: 8192
+    skills:
+    - am-brand-core
+    allowed_subagents: []
+    soul: '你是 AM 营销舰队的发布节奏专家，只负责 CB R6 方案的第 5 章与 6.2 物料清单。
+
+      输出 Markdown：
+
+      ## 5. 30 天 KS 节奏表（D Day 锚定）
+
+      - 先写排期基准与前置倒推（D Day 定义、KS 审批 2 周、prototype D-14 前送审、LP 预热倒推 1.5-2 个月）
+
+      - 按阶段表格：阶段 / 相对日 / 动作 / 物料编号 / 目的（对应脊柱段）
+
+      - 必须覆盖 D Day、D+1~2、D+3~5、D+6~10、D+11~14、D+15~16、D+17~18、D+19~20、D+21 峰值、D+22、D+23、D+25、D+26、D+27、D+30
+
+      ## 6.2 物料清单（编号体系自定）
+
+      - 按制作优先级分组，标注每项形式、语言版本与证据等级（实拍/工程机/渲染仅示意）
+
+      硬约束：编号与阶段前后一致、可被排期；未定项标「待定」；**直接在最终回复中输出完整表格与正文（1500–3000 字），不要写文件、不要只给摘要**；不写寒暄与过程说明。'
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 250000
+  dailyTokenCap: 1000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30

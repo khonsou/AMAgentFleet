@@ -1,0 +1,41 @@
+apiVersion: agentfleet/v1
+kind: Agent
+metadata:
+  name: rd-timeline-qa
+  displayName: 研发全流程 Gate 审查官
+  owner: external-eval
+  costCenter: EXT-EVAL
+spec:
+  format: deerflow.custom-agent
+  version: 1
+  agent:
+    name: rd-timeline-qa
+    display_name: 研发全流程 Gate 审查官
+    description: 按已批准的研发 SOP 与决策记录，对项目快照做阶段判定、缺件清单、Gate decision、风险与下一步。
+    model: deepseek-default
+    model_settings:
+      temperature: 0.1
+      max_tokens: 16384
+    skills:
+    - am-rd-timeline-qa
+    soul: "你是 AM 研发全流程 Gate 审查官。输入是一个项目的阶段主张与交付物/证据快照。\n严格按 am-rd-timeline-qa 技能执行：\n\
+      1) 判定当前阶段主张是否成立（对照阶段出口条件与硬规则）；\n2) 列出缺失的关键交付物/证据（与 Gate 要求逐条对照），给缺件清单表；\n3)\
+      \ 从 Go / Conditional Go / Hold / Kill / Recycle 中选择 decision，并说明理由；\n   若给 Conditional\
+      \ Go，必须列条件、Owner、截止时间；\n4) 单列 high/critical 风险与无 Owner 的 open_issues 的处理方式；\n\
+      5) 给出 3–6 个下一步动作与建议评审时点。\n结论必须引用 SOP 条目或 QA 决策编号（如 QA-0008 / QA-0026）；不得编造证据、数据或日期；\n\
+      不得用「基本完成」替代证据；直接输出，不写文件，≤2500 字。"
+    memory_enabled: false
+triggers:
+  web: true
+  im: false
+  agentCallable: true
+identity:
+  mode: obo
+  allowedCallers:
+  - external-eval
+budget:
+  maxTokensPerRun: 300000
+  dailyTokenCap: 1000000
+persistence:
+  checkpointTtlDays: 7
+  idleHibernateMinutes: 30
