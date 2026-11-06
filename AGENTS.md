@@ -90,6 +90,10 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
 ## 常用命令
 
 ```bash
+# 全新机器／全新 clone：先重建本机资产（spike 底座、PG、venv、node_modules、
+# config.yaml/.env 骨架均不入库），幂等可重跑；密钥只需人工填 .env 里的 DEEPSEEK_API_KEY
+scripts/bootstrap_local.sh
+
 # Console 全栈（PG → 网关:8001 → Console 后端:8002 → Control Plane:8003 → 前端）
 # console/frontend 下同一命令也是全栈入口；Ctrl+C 只回收本次启动的服务
 cd console && npm run dev
