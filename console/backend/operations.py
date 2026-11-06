@@ -91,13 +91,23 @@ async def execute_gui_operation(
         cp_path = path.removeprefix("/api")
         if query:
             cp_path += "?" + urlencode(query, doseq=True)
-        result = await _cp(
-            cp_path,
-            operation["method"],
-            body,
-            timeout=timeout,
-            idempotency_key=payload.idempotency_key,
-        )
+        try:
+            result = await _cp(
+                cp_path,
+                operation["method"],
+                body,
+                timeout=timeout,
+                idempotency_key=payload.idempotency_key,
+            )
+        except HTTPException as exc:
+            # 下游错误也必须包进 envelope：前端按 envelope.status 判断成败
+            # （如浮窗依赖 404 识别失效 Thread 并自动重建）。
+            return {
+                "operation_id": payload.operation_id,
+                "status": exc.status_code,
+                "result": exc.detail,
+                "truncated": False,
+            }
         return {"operation_id": payload.operation_id, "status": 200, "result": result, "truncated": False}
 
     bases = {"console": CONSOLE_SELF, "gateway": GATEWAY}
