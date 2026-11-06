@@ -15,7 +15,10 @@ def enrich_execution(item: dict[str, Any]) -> dict[str, Any]:
     error = item["loop_error"] if "loop_error" in item else item.get("error")
     failure_kind = item.get("failure_kind")
     recovery = item.get("recovery_action")
-    if status in ("delivered", "accepted"):
+    waiting_for_children = item.get("waiting_for_children") is True
+    if waiting_for_children:
+        execution_status = "queued"
+    elif status in ("delivered", "accepted"):
         execution_status = "succeeded"
     elif status == "archived":
         execution_status = "closed"
@@ -32,12 +35,13 @@ def enrich_execution(item: dict[str, Any]) -> dict[str, Any]:
     item.update({
         "execution_status": execution_status,
         "is_terminal": terminal,
-        "retryable": (not terminal) and bool(recovery),
+        "retryable": (not terminal) and not waiting_for_children and bool(recovery),
         "failure_kind": failure_kind,
         "last_error": error,
         "next_retry_at": item.get("next_retry_at"),
         "worker_state": (
             "terminal" if terminal else
+            "waiting_children" if waiting_for_children else
             "running" if status == "running" else
             "retry_scheduled" if recovery else "queued"
         ),

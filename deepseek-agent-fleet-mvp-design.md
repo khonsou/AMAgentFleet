@@ -424,6 +424,11 @@ close 先调用当前 RuntimeAdapter 的活动 Run cancel 并等待停止确认�
 
 ADR-0046 将常规基础列表收敛为六项：`core-v1` 的 single／multi、`time-now-v1/single`、`multi-echo-v1/multi`、`external-info-v1` 的 single／multi。case 通过 `required_modes`、`candidate_mode` 和 `comparison_group` 声明执行目的；候选通过率与 single／multi 对照 delta 分开汇总。一轮六项共享一个 Fleet 环境，编码阶段只跑相关离线测试，候选确认后再跑全量回归；重复稳定门用于修改 case 或发布候选，不机械扩大测试矩阵。
 
+### 7.19 Loop 等待子任务与最终 Artifact 交付（2026-11-06，ADR-0050）
+
+Run 结束不再等同于 Loop 最终交付。直接子 Task 未终态时，Dispatcher 以 `waiting_for_children=true` 保存中间 OUTPUT，Task 保持 open；无论 Runtime 正常返回，还是因 outputs 已变化但未 present 而返回 artifact incomplete，均不得提前进入 review 或记 permanent failure。等待中的执行投影为 `queued + waiting_children + is_terminal=false`，不计入 `delivered`／`orchestration_complete`。子任务全部终态后仍通过 `return_loop` 增加 version 并复用原 Thread；最终 `deliver_loop` 清除等待标记并进入 review，且最终 Run 的 `present_files` 完整性门保持不变。`waiting_for_children=NULL` 兼容旧记录，不新增 Loop 状态或改变 FAP major；历史失败任务不自动重放。
+
+
 ---
 
 ## 8. 数据模型（RDS PG；实体名照搬 ACP spec，字段按我们裁剪）

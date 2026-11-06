@@ -51,6 +51,8 @@ class RunConnection:
     async def fetchval(self, query, *_args):
         if "SELECT pool_status FROM fleet_tasks" in query:
             return "open"
+        if "SELECT EXISTS(" in query:
+            return False
         raise AssertionError(query)
 
 
@@ -92,6 +94,7 @@ class RunBodyTests(unittest.IsolatedAsyncioTestCase):
             patch("app.dispatcher.pool", AsyncMock(return_value=FakeAcquire(conn))),
             patch("app.dispatcher._chain", AsyncMock(return_value=[(9, "worker-01")])),
             patch("app.dispatcher.httpx.AsyncClient", client),
+            patch("app.pool.has_pending_children", AsyncMock(return_value=False)),
             patch("app.pool.deliver_loop", AsyncMock()),
             patch("app.dispatcher.audit", AsyncMock()),
         ):

@@ -299,7 +299,7 @@ async def list_tasks(
             f"""SELECT t.*, l.id AS latest_loop_id, l.thread_id AS latest_thread_id,
                        l.status AS latest_loop_status, l.deliverable AS latest_deliverable,
                        l.error AS loop_error, l.failure_kind, l.next_retry_at, l.recovery_action,
-                       l.recursion_limit, l.summary_chars,
+                       l.recursion_limit, l.summary_chars, l.waiting_for_children,
                        claimants.items AS claimants,
                        (SELECT re.content FROM run_events re
                         WHERE re.thread_id=l.thread_id AND re.event_type='llm.ai.response'
@@ -307,7 +307,7 @@ async def list_tasks(
                 FROM fleet_tasks t
                 LEFT JOIN LATERAL (
                   SELECT id, thread_id, status, deliverable, error, failure_kind,
-                         next_retry_at, recovery_action, recursion_limit, summary_chars
+                         next_retry_at, recovery_action, recursion_limit, summary_chars, waiting_for_children
                   FROM fleet_task_loops
                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                 ) l ON true

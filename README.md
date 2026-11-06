@@ -237,6 +237,92 @@ PYTHONPATH=. python scripts/fleet_eval_run.py validate
 
 **当前评级：未评级。**真实 `core-v1` 第二份报告为 58 分，P0 自动唤醒闭环已通过；`fleet-eval-01` 已注册、评分与建议已持久化，但专用模型执行、生产持续监控、第三方线上接入复验和非工程用户核心路径验收仍未完成，因此不能按 P0 已通过推定整个平台达标。这与任何第三方 Goal 的业务评分无关。
 
+## 5. 统一协议层：三种调用来源与业务边界
+
+### 5.1 名称、版本与唯一真相源
+
+平台的操作协议是 **`am-fleet-ops` v1.0**，第三方接入面 FAP 使用同一 major 版本 `PROTOCOL_VERSION = "1.0"`。所有响应携带 `X-Protocol-Version`；不兼容变更必须提升 major 版本。`api_version`、`server_version` 和 `deployment_version` 是服务／部署标识，不与协议 major 混用。
+
+[`fleet-ops-protocol.json`](fleet-ops-protocol.json) 是**唯一机器可读操作清单**，登记每个 operation 的稳定 ID、HTTP method、path、surface、读写属性、风险确认和超时。新增 Control Plane API、页面独占操作或执行能力时，必须同步维护清单与协议测试，不能在页面或 Agent 里另藏一套操作语义。
+
+调用方可以自发现：
+
+| 入口 | 用途 |
+|---|---|
+| `GET /api/meta` | 当前协议版本、部署能力、鉴权矩阵和实际公开 operations |
+| `GET /api/ops/protocol` | 完整 `am-fleet-ops` 操作清单 |
+| `GET /api/agent-doc` | 面向第三方 Agent 的接入说明 |
+| `GET /openapi.json` | 当前 Control Plane 的精确请求／响应 Schema |
+
+### 5.2 三种调用来源，不是三套业务协议
+
+```text
+GUI / Playground
+  → POST /api/console/operations/execute ─┐
+                                          │
+内部 fleet-ops-01                         ├→ 同一份 operation 定义与业务 API
+  → POST /internal/ops/execute ───────────┤   → Registry / Task / Loop / Inbox
+                                          │   → Scheduler / RuntimeAdapter
+外部第三方 Agent（PAT）                   │
+  → operation 对应的 method + path ───────┘
+```
+
+| 调用来源 | 实际调用方式 | 身份与边界 |
+|---|---|---|
+| **GUI／Playground** | 前端 `executeOperation(operationId, request)` 将 `operation_id + path_params + query + body + confirmed + idempotency_key` 提交到 `POST /api/console/operations/execute`；Console 再按清单解析到实际 operation | 使用员工 OAuth／inhouse 会话；服务端覆盖真实 actor，浏览器不能伪造。不得调用 Runner 专用的 `/internal/ops/execute`，不得直读业务数据库或另造页面特权业务规则 |
+| **内部操作助手 `fleet-ops-01`** | Runner 的 `fleet:ops` 工具将同一参数信封提交到 `POST /internal/ops/execute`；内部执行代理按 operation ID 确定 surface、method 和 path | 该入口只接受内部服务调用。系统 PAT 由服务端 Vault 注入 Control Plane 请求，原始 token 不进入 Runner、Thread、YAML 或日志；模型不能任意指定 URL |
+| **外部第三方 Agent** | 先读 `/api/meta`、`/api/agent-doc` 和 `/api/ops/protocol`，再按 operation 的 method＋path 调用 Control Plane；写请求携带 `Idempotency-Key`，429 按 `Retry-After` 退避 | 使用 `Authorization: Bearer <PAT>`；读操作需要 read，写操作需要 write，write 隐含 read。不能调用内部执行代理，不能借 Agent 名称绕过 PAT scope、审计或幂等校验 |
+
+**统一协议不等于所有来源都调用同一个 URL。**当前 GUI 和内部 Runner 各有受信任的执行代理，外部第三方调用 operation 的 HTTP 绑定；目前没有面向三类客户端公开的单一 `/api/ops/invoke`。统一的是 operation 契约、业务实体、状态机、权限、幂等、错误和审计语义，而不是传输入口的表面形式。
+
+### 5.3 一个注册 Agent 的完整调用链
+
+协议清单中的操作是：
+
+```text
+agents.create → POST /api/agents
+body: { "yaml": <完整 agentfleet/v1 文档> }
+```
+
+三种来源分别这样到达同一业务操作：
+
+```text
+GUI:
+  POST /api/console/operations/execute
+  {"operation_id":"agents.create","body":{"yaml":{...}},"confirmed":true,"idempotency_key":"gui-..."}
+
+内部操作助手:
+  POST /internal/ops/execute
+  {"operation_id":"agents.create","body":{"yaml":{...}},"confirmed":true,"idempotency_key":"ops-..."}
+
+外部第三方:
+  POST /api/agents
+  Authorization: Bearer <write PAT>
+  Idempotency-Key: third-party-...
+  {"yaml":{...}}
+```
+
+前两种信封由各自执行代理解析，最终也到达 `POST /api/agents`。三者共用同一 YAML 校验、Registry 持久化、Runtime 部署、MCP／egress 对账、错误与审计路径。`providers.register` 注册的是运行时能力提供者，不是可认领 Task 的 Agent，不能混用。
+
+### 5.4 业务层与客户端／表现层怎样分离
+
+| 层 | 负责什么 | 不应该做什么 |
+|---|---|---|
+| **客户端／表现层** | 页面渲染、表单、聊天、进度展示、风险确认、OAuth／PAT 身份接入 | 不复制 Task／Loop 状态机，不直接改业务表，不把按钮或模型回复当作业务成功 |
+| **协议层** | 版本化 operation ID、参数信封、HTTP 绑定、能力发现、读写与风险标记 | 不实现业务 Goal，不用自然语言代替权限，不允许未登记 operation 绕过执行器 |
+| **Control Plane 业务层** | Agent Registry、Task／Loop、交付验收、Inbox、Scheduler、授权、幂等和审计 | 不依赖某个页面或某个 Agent 的私有表达；不为三类客户端复制三套业务逻辑 |
+| **RuntimeAdapter／执行层** | Agent 部署、Thread／Run、恢复引用、模型目录和 capabilities | 不让客户端绕过稳定 surface 依赖 Runtime 私有表或特权接口；不支持的能力显式返回，不能伪装成功 |
+
+业务执行统一使用 **Task／Loop 和强制交付验收**；GUI 的按钮、操作助手的聊天和第三方 API 写入都只是触发方式。高风险操作仍需额外确认，human-only 操作仍由人完成，秘密正文仍只走人工表单或 Vault，协议统一不会降低这些边界。
+
+### 5.5 新开发者必须保持的约定
+
+1. 新能力先登记 operation，再接 GUI、内部 Agent 或第三方；不要先做页面私有 API 再补协议。
+2. 三类客户端可以有不同的传输适配器，但不得产生不同的业务结果、权限旁路或错误语义。
+3. 外部第三方不得调用 `/internal/ops/execute`；该内部入口使用系统凭证，不能简单公开成统一公网 invoke。
+4. 写操作保留确认与幂等；高风险、human-only 和秘密边界不能因 operation ID 而绕过。
+5. 协议测试应验证“同一 operation、三种身份通道”的一致性，同时明确当前第三方使用 HTTP operation 绑定，而非虚构一个不存在的公开统一 invoke。
+
 ## 工程现状与历史进度
 
 **阶段**：✅ Spike 0001 已通过（2026-10-08，Go）。✅ Fleet Console v0 已可用。✅ [Spike 0002](docs/spikes/0002-adrs0008-door-validation.md) 已通过（2026-10-09）——ADR-0008 开门验证全过。**阶段**：✅ [Spike 0003](docs/spikes/0003-task-pool-acceptance.md) 已通过（2026-10-09 晚，冷启动回归全绿）——ADR-0010 任务池全链路：task/loop 分离、竞争领取 ≤3、强制验收、打回同 thread 续跑、人机同构交付、runner 工具 agent_spawn/agent_message（零改 DeerFlow 源码）。Console 三件套：Fleet Loop 看板 + 交付验收 + task 详情（任何状态可进入/可终止）。
@@ -340,6 +426,7 @@ bash scripts/test_fleet_ops_all.sh
 | [0042](docs/adr/0042-runtime-capability-plane-awareness-and-orchestration.md) | 运行时 Capability Plane、Agent 感知、共享工作空间与自适应编排 | 已接受 |
 | [0043](docs/adr/0043-effective-agent-config-reconciliation.md) | 版本化 Agent 全量配置对账与 inherit-all 重置 | 已接受 |
 | [0044](docs/adr/0044-vgh-and-bounded-manual-evaluation-runner.md) | VGH 北极星、单 Agent 对照与有界手动评测启动器 | 已接受 |
+| [0050](docs/adr/0050-loop-waiting-and-final-artifact-delivery.md) | Loop 等待子任务与最终 Artifact 交付分离 | 已接受 |
 
 ## 关键输入（已确认的 QA 结论）
 

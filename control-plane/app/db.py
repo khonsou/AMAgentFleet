@@ -165,6 +165,8 @@ ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS recursion_limit INTEGER NO
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS summary_chars INTEGER NOT NULL DEFAULT 500;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ;
 ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+-- ADR-0050：true=等待直接子任务；false=最终交付；NULL=既有记录兼容语义。
+ALTER TABLE fleet_task_loops ADD COLUMN IF NOT EXISTS waiting_for_children BOOLEAN;
 CREATE INDEX IF NOT EXISTS idx_loops_task ON fleet_task_loops(task_id, status);
 CREATE TABLE IF NOT EXISTS fleet_task_comments (
     id         BIGSERIAL PRIMARY KEY,

@@ -243,12 +243,13 @@ async def claim_loop(
 
 async def deliver_loop(loop_id: int, content: str, *, tokens: int | None = None,
                        thread_id: str | None = None, by_system: bool = True) -> None:
-    """仅允许有效执行态交付；归档或已验收 Loop 的迟到结果直接拒绝。"""
+    """最终交付：清除等待标记并进入验收；迟到结果仍由状态门闩拒绝。"""
     async with (await pool()).acquire() as conn:
         async with conn.transaction():
             updated = await conn.fetchrow(
                 """UPDATE fleet_task_loops SET status='delivered', deliverable=$2,
                           tokens=COALESCE($3,tokens), thread_id=COALESCE($4,thread_id),
+                          waiting_for_children=false,
                           error=NULL, failure_kind=NULL, recovery_action=NULL, running_action=NULL,
                           next_retry_at=NULL, retry_count=0,
                           resume_comment=NULL, delivered_at=now(), updated_at=now()
@@ -275,6 +276,61 @@ async def deliver_loop(loop_id: int, content: str, *, tokens: int | None = None,
     await _resume_parent_when_children_settled(task_id)
 
 
+async def wait_loop_for_children(loop_id: int, content: str | None = None, *,
+                                 tokens: int | None = None, thread_id: str | None = None) -> None:
+    """保存中间 OUTPUT，但 Task 保持 open，等待直接子任务终态后再续跑。"""
+    async with (await pool()).acquire() as conn:
+        async with conn.transaction():
+            updated = await conn.fetchrow(
+                """UPDATE fleet_task_loops SET status='delivered',
+                          deliverable=COALESCE($2,deliverable),
+                          tokens=COALESCE($3,tokens), thread_id=COALESCE($4,thread_id),
+                          waiting_for_children=true,
+                          error=NULL, failure_kind=NULL, recovery_action=NULL, running_action=NULL,
+                          next_retry_at=NULL, retry_count=0,
+                          resume_comment=NULL, delivered_at=COALESCE(delivered_at,now()), updated_at=now()
+                   WHERE id=$1 AND status IN ('claimed','running','returned')
+                   RETURNING task_id""",
+                loop_id, content[:4000] if content is not None else None, tokens, thread_id,
+            )
+            if updated is None:
+                current = await conn.fetchrow(
+                    "SELECT task_id, status FROM fleet_task_loops WHERE id=$1", loop_id)
+                if current is None:
+                    raise PoolError(404, f"loop {loop_id} not found")
+                raise PoolError(409, f"loop {loop_id} 当前状态 {current['status']} 不可等待")
+            task_id = updated["task_id"]
+            await conn.execute(
+                """UPDATE fleet_tasks SET status='running', pool_status='open', updated_at=now()
+                   WHERE id=$1 AND pool_status='open'""",
+                task_id,
+            )
+    await audit("loop.waiting_children",
+                detail={"loop_id": loop_id, "task_id": task_id})
+
+
+async def has_pending_children(task_id: int) -> bool:
+    """与父子唤醒使用同一终态口径；没有直接子任务时返回 false。"""
+    async with (await pool()).acquire() as conn:
+        pending = await conn.fetchval(
+            """SELECT EXISTS(
+                 SELECT 1 FROM fleet_tasks t
+                 JOIN LATERAL (
+                   SELECT status, error, recovery_action FROM fleet_task_loops
+                   WHERE task_id=t.id ORDER BY id DESC LIMIT 1
+                 ) l ON TRUE
+                 WHERE t.parent_task_id=$1
+                   AND (CASE
+                     WHEN l.status IN ('error','rejected')
+                       OR (l.error IS NOT NULL AND l.recovery_action IS NULL) THEN 'error'
+                     ELSE t.status
+                   END) NOT IN ('success','error','rejected')
+               )""",
+            task_id,
+        )
+    return bool(pending)
+
+
 def bounded_summary(content: Any, limit: int) -> str:
     """Compress parent-facing output to the child Loop's explicit character budget."""
     text = " ".join(str(content).split())
@@ -288,11 +344,10 @@ def bounded_summary(content: Any, limit: int) -> str:
 
 
 async def _resume_parent_when_children_settled(task_id: int) -> None:
-    """全部直接子 Task 终态后，以真实 OUTPUT 唤醒最新已交付父 Loop。
+    """全部直接子 Task 终态后，以真实 OUTPUT 唤醒等待中的父 Loop。
 
-    仅已经提前交付的父 Loop 需要被唤醒；仍在执行、已 returned 或已验收的
-    父 Loop 不重复触发。多个子任务并发交付时，return_loop 的状态门闩保证
-    只有一个调用能把父 Loop 从 delivered 改为 returned。
+    true 是本批显式等待；NULL 保留既有提前交付记录的兼容行为。最终交付的
+    false、正在执行、已 returned 或已验收的父 Loop 不重复触发。
     """
     terminal = ("success", "error", "rejected")
     async with (await pool()).acquire() as conn:
@@ -325,6 +380,7 @@ async def _resume_parent_when_children_settled(task_id: int) -> None:
         parent_loop = await conn.fetchrow(
             """SELECT id FROM fleet_task_loops
                WHERE task_id=$1 AND status='delivered'
+                 AND waiting_for_children IS NOT FALSE
                ORDER BY id DESC LIMIT 1""",
             parent_task_id,
         )
@@ -369,7 +425,8 @@ async def return_loop(loop_id: int, comment: str, *, author: str) -> None:
         async with conn.transaction():
             loop = await conn.fetchrow(
                 """UPDATE fleet_task_loops
-                   SET status='returned', version=version+1, resume_comment=$2, updated_at=now()
+                   SET status='returned', version=version+1, resume_comment=$2,
+                       waiting_for_children=false, updated_at=now()
                    WHERE id=$1 AND status='delivered' RETURNING task_id""",
                 loop_id, comment,
             )
@@ -477,10 +534,10 @@ async def task_detail(task_id: int) -> dict[str, Any] | None:
         children = await conn.fetch(
             """SELECT t.*, l.id AS latest_loop_id, l.status AS latest_loop_status,
                       l.version AS latest_loop_version, l.error AS loop_error,
-                      l.recovery_action, l.next_retry_at, l.failure_kind
+                      l.recovery_action, l.next_retry_at, l.failure_kind, l.waiting_for_children
                FROM fleet_tasks t
                LEFT JOIN LATERAL (
-                 SELECT id, status, version, error, recovery_action, next_retry_at, failure_kind
+                 SELECT id, status, version, error, recovery_action, next_retry_at, failure_kind, waiting_for_children
                  FROM fleet_task_loops WHERE task_id=t.id ORDER BY id DESC LIMIT 1
                ) l ON true
                WHERE t.parent_task_id=$1 ORDER BY t.id""", task_id)
@@ -495,7 +552,8 @@ WAIT_TARGETS = {"delivered", "all_delivered", "terminal", "version_gt", "orchest
 def _orchestration_state(detail: dict[str, Any]) -> dict[str, Any]:
     children = detail.get("children") or []
     loops = detail.get("loops") or []
-    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")]
+    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")
+                 and loop.get("waiting_for_children") is not True]
     final_version = max((int(loop.get("version") or 1) for loop in delivered), default=0)
     terminal_statuses = {"success", "error", "rejected", "closed", "cancelled", "failed"}
     terminal_pools = {"review", "done", "closed"}
@@ -554,7 +612,8 @@ def _evaluate_wait(
             f"编排未完成：children_terminal={state['children_terminal']}，"
             f"root_delivered={state['root_delivered']}，wake_count={state['wake_count']}"
         )
-    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")]
+    delivered = [loop for loop in loops if loop.get("status") in ("delivered", "accepted")
+                 and loop.get("waiting_for_children") is not True]
     if target == "delivered" and delivered:
         return "condition_met", f"Loop {delivered[0]['id']} 已交付"
     if target == "all_delivered" and loops and len(delivered) == len(loops):

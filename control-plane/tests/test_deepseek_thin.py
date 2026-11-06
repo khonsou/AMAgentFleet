@@ -185,6 +185,7 @@ class ThinDispatcherSliceTests(unittest.IsolatedAsyncioTestCase):
                         patch("app.dispatcher._chain", AsyncMock(return_value=[(9, "worker-01")])), \
                         patch("app.dispatcher.get_runtime", return_value=adapter), \
                         patch("app.dispatcher.httpx.AsyncClient", return_value=client), \
+                        patch("app.pool.has_pending_children", AsyncMock(return_value=False)), \
                         patch("app.pool.deliver_loop", delivery), \
                         patch("app.dispatcher.audit", AsyncMock()):
                     await dispatcher._run_loop(7)

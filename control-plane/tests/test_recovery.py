@@ -98,6 +98,7 @@ class RunBodyTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.dispatcher.pool", AsyncMock(return_value=FakePool(conn))),
             patch("app.dispatcher.httpx.AsyncClient", FakeClient),
+            patch("app.pool.has_pending_children", AsyncMock(return_value=False)),
             patch("app.pool.deliver_loop", AsyncMock()),
             patch("app.dispatcher.audit", AsyncMock()),
         ):

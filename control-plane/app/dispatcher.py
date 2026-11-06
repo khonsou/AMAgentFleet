@@ -169,22 +169,36 @@ async def _run_loop(loop_id: int) -> None:
         artifacts = _extract_artifacts(result.artifacts, thread_id)
         if artifacts:
             preview = (preview or "") + "\n\n📎 产物：\n" + "\n".join(f"- {a}" for a in artifacts)
-        # 交付自动捕获 → task 入 review。状态守卫放在 UPDATE 内，避免
-        # “先查状态再交付”与验收／归档并发时重新复活 Loop。
+        # ADR-0050：子任务未终态只保存中间 OUTPUT；全部终态后才交付并进入 review。
+        # 状态守卫放在 UPDATE 内，避免验收／归档并发时重新复活 Loop。
         from . import pool as poolmod
+        waiting_for_children = await poolmod.has_pending_children(task_id)
         try:
-            await poolmod.deliver_loop(
-                loop_id, preview or "(无文本交付)", tokens=tokens, thread_id=thread_id)
+            if waiting_for_children:
+                await poolmod.wait_loop_for_children(
+                    loop_id, preview or "(无文本交付)", tokens=tokens, thread_id=thread_id)
+            else:
+                await poolmod.deliver_loop(
+                    loop_id, preview or "(无文本交付)", tokens=tokens, thread_id=thread_id)
         except poolmod.PoolError as exc:
             await audit("loop.late_result_dropped",
                         detail={"loop_id": loop_id, "reason": exc.message})
             return
-        await audit("loop.completed", agent_name=agent, tokens=tokens,
-                    detail={"loop_id": loop_id, "task_id": task_id, "thread_id": thread_id,
-                            "resumed": resuming, "recursion_limit": RUN_RECURSION_LIMIT})
+        await audit(
+            "loop.waiting_children" if waiting_for_children else "loop.completed",
+            agent_name=agent, tokens=tokens,
+            detail={"loop_id": loop_id, "task_id": task_id, "thread_id": thread_id,
+                    "resumed": resuming, "recursion_limit": RUN_RECURSION_LIMIT})
     except RuntimeServiceError as exc:
         error = str(exc)[:500]
-        await _fail_loop(loop_id, error, exc.kind, thread_id)
+        from . import pool as poolmod
+        if error.startswith("Artifact delivery incomplete:") and await poolmod.has_pending_children(task_id):
+            await poolmod.wait_loop_for_children(loop_id, thread_id=thread_id)
+            await audit("loop.waiting_children", agent_name=agent,
+                        detail={"loop_id": loop_id, "task_id": task_id, "thread_id": thread_id,
+                                "runtime_error": error})
+        else:
+            await _fail_loop(loop_id, error, exc.kind, thread_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("loop run failed: %s", loop_id)
         error = str(exc)[:500]
