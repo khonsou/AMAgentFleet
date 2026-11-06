@@ -119,6 +119,7 @@ tool_groups:
   - name: browser
   - name: knowledge
   - name: fleet
+  - name: fleet:ops
 
 
 tools:
@@ -128,6 +129,9 @@ tools:
   - name: agent_message
     group: fleet
     use: fleet_tools:agent_message
+  - name: fleet_ops_request
+    group: fleet:ops
+    use: fleet_tools:fleet_ops_request
 
 
 
