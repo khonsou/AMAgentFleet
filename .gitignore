@@ -26,8 +26,13 @@ console/backend/.venv/
 # 一次性浏览器 smoke 脚本；正式验收脚本放 scripts/
 console/frontend/.smoke-*.mjs
 
-# 本机 Playground 临时 Bot，不作为平台内置 Agent 发布（版本化目录 = 仓库根 agents/）
-agents/playground-test-bot*.yaml
+# 版本化目录白名单：仅 4 个平台内置 agent 入库（冷启动集合）。
+# 手工测试/评测注册的 agent 一律留在本机；正式业务 agent 入库需 git add -f 显式纳入。
+agents/*.yaml
+!agents/fleet-ops-01.yaml
+!agents/fleet-cmd-01.yaml
+!agents/fleet-eval-01.yaml
+!agents/fleet-reviewer-01.yaml
 
 # 日志与系统文件
 *.log
