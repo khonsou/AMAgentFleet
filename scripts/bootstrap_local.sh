@@ -81,8 +81,11 @@ step "config.yaml / .env"
 if [ ! -f spike/deer-flow/config.yaml ]; then
   cp deploy/config.fleet.yaml spike/deer-flow/config.yaml
   echo "[bootstrap] config.yaml 已从 deploy/config.fleet.yaml 生成"
+elif ! diff -q deploy/config.fleet.yaml spike/deer-flow/config.yaml >/dev/null 2>&1; then
+  echo "[bootstrap] ⚠ spike/deer-flow/config.yaml 与 deploy/config.fleet.yaml 不一致；"
+  echo "[bootstrap]   模板是真理来源（见 AGENTS.md 配置语义坑），确认后重新拷贝并重启网关"
 else
-  echo "[bootstrap] config.yaml 已存在，跳过"
+  echo "[bootstrap] config.yaml 已存在且与模板一致，跳过"
 fi
 [ -f spike/deer-flow/extensions_config.json ] || \
   cp spike/deer-flow/extensions_config.example.json spike/deer-flow/extensions_config.json

@@ -89,6 +89,12 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
   MCP 配置，再分别做协议级和 Agent 实例级最小只读验证。修改 Python 后必须确认目标
   进程已真正重启；仅执行对账脚本不会替代进程重启。MCP stdio 的非敏感 `env` 必须透传，
   秘密正文仍只允许 Gateway／Vault 内存注入。
+- **网关工具/工具组必须先写进 `deploy/config.fleet.yaml` 模板**：生产启动时的
+  `prepare_gateway_config.py` 合并器只做幂等补齐，不是配置的真理来源。新增 fleet 工具
+  只改合并器会造成模板与合并器漂移——本地 dev 直接拷贝模板，agent 静默缺失工具
+  （2026-11-06 实测：fleet_ops_request 只在合并器里，fleet-ops-01 对话中无任何
+  Fleet 操作工具）。模板更新后本地需重新 `cp deploy/config.fleet.yaml spike/deer-flow/config.yaml`
+  并重启网关。
 
 ## 常用命令
 
