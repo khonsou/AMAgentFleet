@@ -95,6 +95,11 @@ deploy/ ✅           # 生产部署资产（运维入口 DEPLOY.md；compose + 
   （2026-11-06 实测：fleet_ops_request 只在合并器里，fleet-ops-01 对话中无任何
   Fleet 操作工具）。模板更新后本地需重新 `cp deploy/config.fleet.yaml spike/deer-flow/config.yaml`
   并重启网关。
+- **agent 工具清单在 thread 创建时锁定**：config.yaml 新增工具后，存量 thread 的
+  后续 run 仍按旧清单执行（inherit-all 也不例外），只有新建 thread 获得新工具
+  （2026-11-06 实测：同一 fleet-ops-01，修复前创建的 thread 无 fleet_ops_request，
+  新建 thread 正常）。浮窗/持久会话在改完工具配置后必须重建 thread；
+  Console 浮窗的 404 自愈路径（清 localStorage → 重建）即为此设计。
 
 ## 常用命令
 
