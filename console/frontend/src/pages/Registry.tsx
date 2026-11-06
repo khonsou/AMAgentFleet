@@ -71,7 +71,7 @@ export default function RegistryPage() {
             description: reg.description.trim(),
             model: 'deepseek-default',
             model_settings: { temperature: 0.2 },
-            skills: [],
+            skills: null, // null=可见全部已启用技能；[] 会静默锁死技能（AGENTS.md 红线）
             soul: reg.description.trim() || `你是 ${reg.displayName || name}。`,
             memory_enabled: true,
           },
