@@ -117,13 +117,15 @@ async def remove_from_gateway(name: str) -> None:
 
 async def upsert_registry_row(name: str, doc: dict[str, Any]) -> None:
     meta = doc.get("metadata") or {}
+    agent_spec = (doc.get("spec") or {}).get("agent") or {}
+    description = agent_spec.get("description") or ""
     sha = sha256_doc(doc)
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow(
             """INSERT INTO fleet_agents
                (name, display_name, owner, cost_center, status, yaml_sha256,
-                triggers, identity, budget, egress, synced_at, updated_at)
-               VALUES ($1,$2,$3,$4,'registered',$5,$6,$7,$8,$9,now(),now())
+                triggers, identity, budget, egress, description, synced_at, updated_at)
+               VALUES ($1,$2,$3,$4,'registered',$5,$6,$7,$8,$9,$10,now(),now())
                ON CONFLICT (name) DO UPDATE SET
                  display_name=EXCLUDED.display_name,
                  owner=EXCLUDED.owner,
@@ -133,6 +135,7 @@ async def upsert_registry_row(name: str, doc: dict[str, Any]) -> None:
                  identity=EXCLUDED.identity,
                  budget=EXCLUDED.budget,
                  egress=EXCLUDED.egress,
+                 description=EXCLUDED.description,
                  status='registered',
                  config_version=fleet_agents.config_version + 1,
                  synced_at=now(),
@@ -147,6 +150,7 @@ async def upsert_registry_row(name: str, doc: dict[str, Any]) -> None:
             json.dumps(doc.get("identity") or {}),
             json.dumps(doc.get("budget") or {}),
             json.dumps(doc.get("egress") or []),
+            description,
         )
     await audit("agent.registered", agent_name=name, actor="admin",
                 detail={"yaml_sha256": sha, "config_version": row["config_version"]})

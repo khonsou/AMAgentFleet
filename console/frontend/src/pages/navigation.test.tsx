@@ -85,6 +85,7 @@ function makeAgent(overrides: Partial<RegistryAgent> = {}): RegistryAgent {
   return {
     name: 'worker',
     display_name: 'Worker',
+    description: '',
     owner: 'qa',
     cost_center: 'QA-1',
     status: 'registered',

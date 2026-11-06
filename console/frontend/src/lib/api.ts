@@ -228,6 +228,7 @@ export interface Pat {
 export interface RegistryAgent {
   name: string
   display_name: string
+  description: string
   owner: string
   cost_center: string
   status: string

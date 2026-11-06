@@ -182,6 +182,9 @@ export default function RegistryPage() {
                       <Link to={`/agents/${a.name}`} className="block">
                         <div className="font-medium text-ink">{a.display_name || a.name}</div>
                         <div className="mt-0.5 font-mono text-xs text-ink-3">{a.name}</div>
+                        {a.description && (
+                          <div className="mt-1 max-w-md truncate text-xs text-ink-3" title={a.description}>{a.description}</div>
+                        )}
                       </Link>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-ink-2">

@@ -121,6 +121,8 @@ CREATE TABLE IF NOT EXISTS fleet_mcp_servers (
 );
 -- 轻量迁移：agent 级外联声明（接入 = agent 能力，平台只强制出口）
 ALTER TABLE fleet_agents ADD COLUMN IF NOT EXISTS egress JSONB NOT NULL DEFAULT '[]';
+-- 职责描述：来自版本化 YAML 的 spec.agent.description，供看板与操作助手展示
+ALTER TABLE fleet_agents ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
 -- ADR-0010 任务池：task（验收单元）加 pool_status；loop/comment 新表
 ALTER TABLE fleet_tasks ADD COLUMN IF NOT EXISTS pool_status TEXT NOT NULL DEFAULT 'open'
     CHECK (pool_status IN ('open','review','done'));
